@@ -8,16 +8,6 @@ export const states = pgTable("states", {
     state_name: text("name").notNull(),
 });
 
-// // Table 2: Three High Data (Static Info)
-// export const diabetes = pgTable("diabetes", {
-//     stats_id: serial("id").primaryKey(),
-//     state_id: integer("state_id").notNull().references(() => states.state_id),
-//     year: integer("year").notNull(),
-//     population: integer("population").notNull(),
-//     patients: integer("patients").notNull(),
-//     diabetesPrevalence: decimal("diabetes_prevalence").notNull(),
-// });
-
 // Table 2: Three High Data (Static Info)
 export const metabolic = pgTable("metabolic", {
     stats_id: serial("id").primaryKey(),
@@ -47,3 +37,25 @@ export const ethnicity = pgTable("ethnicity", {
     hypertensionPrevalence: decimal("hypertension_prevalence").notNull(),
     hyperlipidemiaPrevalence: decimal("hyperlipidemia_prevalence").notNull(),
 });
+
+// Table 5: Food Nutrition Data (Static Info)
+export const food = pgTable("food", {
+    food_id: integer("food_id").primaryKey(),
+    food_type: text("food_type").notNull(),
+    serving_size: text("serving_size").notNull(),
+    calories: integer("calories_kcal").notNull(),
+    sugar: doublePrecision("sugar_g").notNull(),
+    gi_value: integer("gi_value").notNull(),
+    fat: doublePrecision("fat_g").notNull(),
+    sodium: integer("sodium_mg").notNull(),
+    image_url: text("image_url").notNull(),
+});
+
+// Table 6: Food Data Translations (Static Info)
+export const food_translations = pgTable("food_translations", {
+    translation_id: serial("translation_id").primaryKey(),
+    food_id: integer("food_id").notNull().references(() => food.food_id),
+    language: varchar("language", { length: 2 }).notNull(), // "en", "ms", "zh"
+    food_name: text("food_name").notNull(),
+    health_tip: text("health_tip").notNull(),
+}); 

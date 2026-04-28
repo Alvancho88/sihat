@@ -1,5 +1,5 @@
 import { db } from "@/db"; // adjust path to your db folder
-import { states, metabolic, trend, ethnicity } from "@/db/schema";
+import { states, metabolic, trend, ethnicity, food, food_translations } from "@/db/schema";
 import { desc, eq, sql, avg, min, max, and, gte, lte, asc, ilike } from "drizzle-orm";
 
 export async function getMetabolicDataByYear(year: number) {
@@ -83,3 +83,29 @@ export async function getEthnicityData() {
         .from(ethnicity);
     return data;
 }
+
+export async function getAllFoodData() {
+    const rows = await db
+        .select({
+            food_id: food.food_id,
+            food_type: food.food_type,
+            serving_size: food.serving_size,
+            calories: food.calories,
+            sugar: food.sugar,
+            gi_value: food.gi_value,
+            fat: food.fat,
+            sodium: food.sodium,
+            image_url: food.image_url,
+            language: food_translations.language,
+            food_name: food_translations.food_name,
+            health_tip: food_translations.health_tip,
+        })
+        .from(food)
+        .leftJoin(food_translations, eq(food.food_id, food_translations.food_id))
+        .orderBy(asc(food.food_id));
+
+    return rows;
+}
+
+/** Convenience type for a single row returned by getAllFoodData */
+export type FoodDataRow = Awaited<ReturnType<typeof getAllFoodData>>[number];
