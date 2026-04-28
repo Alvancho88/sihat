@@ -930,8 +930,6 @@ function MythCard({ item }: { item: { myth: string; fact: string } }) {
   )
 }
 
-
-
 export default function LearnClient() {
   const [activeEduIndex, setActiveEduIndex] = useState(0)
   const [learnMoreOpen, setLearnMoreOpen] = useState(false)
