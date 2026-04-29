@@ -381,8 +381,10 @@ function FoodResultCard({ food, isBest, t, lang }: { food: FoodItem; isBest: boo
           }`} />
           <p className={`text-base ${
             isHighRisk
-              ? "text-[#856404] font-extrabold"
-              : "text-foreground"
+              ? "text-red-700 font-extrabold"
+              : isMediumRisk
+                ? "text-[var(--risk-medium)] font-extrabold"
+                : "text-foreground"
           }`}>
             <span className="font-bold">{t.tip_label}:</span> {tipText}
           </p>

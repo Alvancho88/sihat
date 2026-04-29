@@ -85,7 +85,7 @@ const pageContent = {
     pagination_showing: "Showing",
     pagination_of: "of",
     pagination_results: "results",
-    exceeded_by: "Exceeded by",
+    exceeded_by: "Exceeded",
     remove: "Remove",
     clear_all: "Clear All",
     total: "Total",
@@ -669,11 +669,11 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
           />
         </div>
         {isOver && excessAmount > 0 && (
-          <div className="mt-1 flex items-center gap-1">
-            <span className="inline-block bg-red-600 text-white text-[12px] font-black px-1.5 py-0.5 rounded-full leading-none tracking-wide uppercase">
-              +{excessAmount}{unit} {t.exceeded_by.toLowerCase()}
+          <div className="mt-1 flex flex-col items-start gap-1">
+            <span className="text-sm text-red-700 font-semibold">
+              +{excessAmount}{unit} {t.exceeded_by}
             </span>
-            <span className="text-sm md:text-base text-red-700 font-semibold">{statusOver}</span>
+            <span className="text-sm md:text-base text-black font-semibold">{statusOver}</span>
           </div>
         )}
         {!isOver && (
@@ -721,11 +721,11 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
           />
         </div>
         {isOver && excessAmount > 0 && (
-          <div className="mt-1.5 flex items-center gap-2">
-            <span className="inline-block bg-red-600 text-white text-sm font-black px-2 py-0.5 rounded-full leading-none tracking-wide uppercase">
-              +{excessAmount}{unit} {t.exceeded_by.toLowerCase()}
+          <div className="mt-1.5 flex flex-col items-start gap-2">
+            <span className="text-sm text-red-700 font-semibold">
+              +{excessAmount}{unit} {t.exceeded_by}
             </span>
-            <span className="text-sm text-red-700 font-semibold">{statusOver}</span>
+            <span className="text-sm text-black font-semibold">{statusOver}</span>
           </div>
         )}
         {!isOver && (
