@@ -232,6 +232,10 @@ function getModelForLanguage(language: string): string {
  * @returns Complete prompt string for AI analysis
  */
 function buildAnalysisPrompt(combinedOcr: string, userText: string, language: string = "en"): string {
+  if (language === "zh") {
+    return buildChinesePrompt(combinedOcr, userText);
+  }
+  
   const languageMap: Record<string, { label: string; reinforcement: string }> = {
     "en": {
       label: "English",
@@ -240,13 +244,6 @@ function buildAnalysisPrompt(combinedOcr: string, userText: string, language: st
     "ms": {
       label: "Bahasa Malaysia",
       reinforcement: "Semua penjelasan mesti ditulis dalam Bahasa Malaysia yang jelas dan betul.",
-    },
-    "zh": {
-      label: "Simplified Chinese (简体中文)",
-      // Reinforcement written in Chinese itself for better model compliance.
-      // Explicitly forbids pinyin and other scripts, and mandates complete Chinese sentences
-      // in the tip and best_reason fields — the two fields that were showing gibberish.
-      reinforcement: "所有解释必须使用简体中文书写。请勿使用拼音、繁体中文、英文或任何其他语言。tip 和 best_reason 字段必须是完整、通顺的简体中文句子。",
     },
   };
 
@@ -285,9 +282,15 @@ TASK:
      - If ANY indicator is High -> Final Risk = "High"
      - Else if ANY indicator is Medium -> Final Risk = "Medium"
      - If ALL indicators are Low -> Final Risk = "Low"
-4. Write a short practical health tip for EVERY item (one sentence) focusing on reducing salt, sugar, or fat.
-5. For EVERY item, include a "best_reason" field explaining the choice based on the Three Highs (Hypertension, Hyperglycemia, Hyperlipidemia). If all 3 foods in that category is high risk, suggest a similiar healthier food alternative (if the food is es kacang, es dawet, es teler for example can suggest es buah).
- 
+4. Write a short practical health tip for EVERY item (one sentence):
+   - NORMAL CASE: Focus on reducing salt, sugar, or fat for that specific item (e.g., "Ask for less sauce", "Skip the sweet syrup", "Choose grilled instead of fried")
+   - ALL HIGH RISK CASE: If all top 3 items in a category are High risk, change the tip to recommend a similar healthier food alternative outside the scanned items (e.g., "Try plain water instead of sweet drinks", "Choose fresh fruit instead of sweet desserts", "Opt for clear soup instead of creamy dishes")
+5. For EVERY item, include a "best_reason" field explaining WHY this specific item is the best choice compared to others in its category:
+   - Focus on the nutritional advantages (e.g., "Chinese tea is the best drink choice because it contains the least amount of sugar, salt, and fat among all drinks")
+   - Compare it to other items in the same category
+   - Explain the specific health benefits based on the Three Highs
+   - Make it different from the tip - tip is actionable advice, best_reason is the rationale
+
 RANKING LOGIC (apply per category):
 1. Highest Priority: Risk (Low first, then Medium, then High)
 2. Tie Breaker (tie-breaker if there are multiple items with the same risk[3 top items all have low risks for example] then rank those 3 items based on in order Salt, Sugar, then Saturated Fat):
@@ -303,6 +306,53 @@ IMPORTANT OUTPUT RULES:
 {"Appetizer":[],"Main Dish":[],"Dessert":[],"Drinks":[],"uniqueFoodCount":number}
 - Every item must follow this shape: {"f":"name","sugar":number,"salt":number,"fat":number,"risk":"Low"|"Medium"|"High","tip":"string","best_reason":"string"}
 `;
+}
+
+/**
+ * Builds simplified Chinese prompt for GPT-OSS model with stricter JSON formatting.
+ * Uses explicit JSON structure and removes response_format constraint to avoid validation errors.
+ *
+ * @param combinedOcr - OCR results from all images
+ * @param userText - Manual input from user
+ * @returns Simplified Chinese prompt with explicit JSON structure
+ */
+
+function buildChinesePrompt(combinedOcr: string, userText: string): string {
+  return `你是一个专业的营养分析API。你的输出必须仅包含一个有效的JSON对象，严禁包含任何Markdown格式（如 \`\`\`json）、解释性文字或开场白。
+
+输入数据:
+- 菜单OCR: ${combinedOcr}
+- 用户手动输入: ${userText}
+
+重要要求:
+1. 所有分析、提示和建议必须使用简体中文。食物原名保持不变。
+2. 严禁虚构食物，仅分析提供的OCR或输入内容。
+3. 如果项目过多，请优先处理前20个以确保响应不被截断。
+
+任务:
+1. 分类: 将项目归入 'Appetizer', 'Main Dish', 'Dessert', 'Drinks'。
+2. 评估逻辑:
+   - 糖(g): 低(≤5), 中(6-15), 高(>15)
+   - 盐/钠(mg): 低(≤200), 中(201-600), 高(>600)
+   - 脂肪(g): 低(≤3), 中(3.1-7), 高(>7)
+   - 风险等级(risk): 任一指标高=High; 无高且有中=Medium; 全低=Low。
+3. 字段说明:
+   - 'tip': 针对减少盐、糖、脂的建议。
+   - 'best_reason': 基于"三高"（高血压、高血糖、高血脂）人群的健康获益解释。
+4. 排序: 风险等级(Low > Medium > High)，其次按盐 > 糖 > 脂肪从小到大排序。
+
+输出格式要求:
+- 每个类别只输出前3个最佳项目。
+- 包含 "uniqueFoodCount" 字段。
+- 必须严格遵守以下JSON结构，且确保括号完全闭合:
+
+{
+  "Appetizer": [{"f":"食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":"简短建议","best_reason":"理由"}],
+  "Main Dish": [],
+  "Dessert": [],
+  "Drinks": [],
+  "uniqueFoodCount": 数字
+}`;
 }
 
 // ─── NUTRITIONAL ANALYSIS WITH GROQ ────────────────────────────────────────────────
@@ -332,21 +382,28 @@ async function analyzeWithGroq(
 
   console.log(`[predict] Using model: ${model} for language: ${language}`);
 
+  // Build request body differently for Chinese vs other languages
+  const requestBody: any = {
+    model,
+    messages: [
+      { role: "system", content: language === "zh" ? "请始终输出有效的JSON格式。" : "You are a health assistant. Always output valid JSON." },
+      { role: "user", content: prompt }
+    ],
+    temperature: 0.1,
+  };
+
+  // Only add response_format for non-Chinese models (GPT-OSS has stricter JSON validation)
+  if (language !== "zh") {
+    requestBody.response_format = { type: "json_object" };
+  }
+
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "You are a health assistant. Always output valid JSON." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.1,
-      response_format: { type: "json_object" }
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!res.ok) {

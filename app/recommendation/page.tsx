@@ -275,7 +275,7 @@ function RiskBadge({ risk, t }: { risk: string; t: typeof content.en }) {
   const configs = {
     low: { label: t.risk_low, icon: TrendingDown, bg: "bg-[var(--risk-low-bg)]", text: "text-[var(--risk-low)]", border: "border-[var(--risk-low)]/30" },
     medium: { label: t.risk_medium, icon: Minus, bg: "bg-[var(--risk-medium-bg)]", text: "text-[var(--risk-medium)]", border: "border-[var(--risk-medium)]/30" },
-    high: { label: t.risk_high, icon: TrendingUp, bg: "bg-[var(--risk-high-bg)]", text: "text-red-700", border: "border-red-700/30" },
+    high: { label: t.risk_high, icon: TrendingUp, bg: "bg-[#FFF3CD]", text: "text-[#856404]", border: "border-[#856404]/30" },
   }
   const c = configs[risk as keyof typeof configs] || configs.medium
   const isHigh = risk === "high"

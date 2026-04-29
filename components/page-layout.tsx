@@ -2,6 +2,7 @@
 import { useState, useEffect, type ReactNode } from "react"
 import { Navbar } from "@/components/navbar"
 import { AIChatbot } from "@/components/ai-chatbot"
+import { ThreeHighsPopup } from "@/components/three-highs-popup"
 
 type LangCode = "en" | "ms" | "zh"
 
@@ -60,6 +61,8 @@ export function PageLayout({ children }: { children: (lang: LangCode) => ReactNo
       </footer>
       {/* AI Chatbot */}
       {/* <AIChatbot lang={lang} /> */}
+      {/* 3 Highs Educational Popup */}
+      <ThreeHighsPopup lang={lang} />
     </div>
   )
 }
