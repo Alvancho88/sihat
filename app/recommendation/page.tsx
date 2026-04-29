@@ -307,7 +307,7 @@ function computeRiskFromIndicators(sugar: number, salt: number, fat: number, api
 
 function indicatorClass(level: "low" | "medium" | "high") {
   if (level === "high") return "bg-[#FFF3CD] border border-[#856404]/30 text-[#856404]" 
-  //if (level === "medium") return "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40 text-[var(--risk-medium)]"
+  if (level === "medium") return "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40 text-[var(--risk-medium)]"
   return "bg-muted text-foreground"
 }
 
@@ -376,13 +376,13 @@ function FoodResultCard({ food, isBest, t, lang }: { food: FoodItem; isBest: boo
               : "bg-accent/20"
         }`}>
           <Info className={`w-5 h-5 shrink-0 mt-0.5 ${
-            isHighRisk ? "text-red-700" : isMediumRisk ? "text-[var(--risk-medium)]" : "text-accent-foreground"
+            isHighRisk ? "text-[#856404]" : isMediumRisk ? "text-[var(--risk-medium)]" : "text-accent-foreground"
           }`} />
           <p className={`text-base ${
             isHighRisk
-              ? "text-red-700 font-extrabold"
-              : isMediumRisk
-                ? "text-[var(--risk-medium)] font-extrabold"
+              ? "text-[#856404] font-extrabold"
+              //: isMediumRisk
+                //? "text-[var(--risk-medium)] font-extrabold"
                 : "text-foreground"
           }`}>
             <span className="font-bold">{t.tip_label}:</span> {tipText}

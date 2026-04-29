@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect, type ReactNode } from "react"
+import { usePathname } from "next/navigation"
 import { Navbar } from "@/components/navbar"
 import { AIChatbot } from "@/components/ai-chatbot"
 import { ThreeHighsPopup } from "@/components/three-highs-popup"
@@ -27,6 +28,11 @@ const useLangPersistence = () => {
 
 export function PageLayout({ children }: { children: (lang: LangCode) => ReactNode }) {
   const [lang, setLang] = useLangPersistence()
+  const pathname = usePathname()
+  
+  // Only show popup on home page (path "/" or empty)
+  const isHomePage = pathname === "/" || pathname === ""
+  
   return (
     <div className="min-h-screen bg-background">
       <Navbar lang={lang} setLang={setLang} />
@@ -61,8 +67,8 @@ export function PageLayout({ children }: { children: (lang: LangCode) => ReactNo
       </footer>
       {/* AI Chatbot */}
       {/* <AIChatbot lang={lang} /> */}
-      {/* 3 Highs Educational Popup */}
-      <ThreeHighsPopup lang={lang} />
+      {/* 3 Highs Educational Popup - Only on home page */}
+      {isHomePage && <ThreeHighsPopup lang={lang} />}
     </div>
   )
 }

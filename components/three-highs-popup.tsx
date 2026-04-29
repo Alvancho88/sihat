@@ -89,12 +89,16 @@ export function ThreeHighsPopup({ lang }: { lang: LangCode }) {
   const t = content[lang]
 
   useEffect(() => {
-    // Check if user has dismissed the popup before
-    const dismissed = localStorage.getItem('dismissed_3high_popup')
-    if (!dismissed) {
+    // Check if popup has been shown in current session
+    const sessionShown = sessionStorage.getItem('3high_popup_shown_session')
+    const permanentlyDismissed = localStorage.getItem('dismissed_3high_popup')
+    
+    if (!sessionShown && !permanentlyDismissed) {
       // Show popup after a short delay to allow page to load
       const timer = setTimeout(() => {
         setIsVisible(true)
+        // Mark as shown in current session
+        sessionStorage.setItem('3high_popup_shown_session', 'true')
       }, 1000)
       return () => clearTimeout(timer)
     }
@@ -105,6 +109,7 @@ export function ThreeHighsPopup({ lang }: { lang: LangCode }) {
       localStorage.setItem('dismissed_3high_popup', 'true')
     }
     setIsVisible(false)
+    // Session already marked as shown, no need to update
   }
 
   const handleLearnMore = () => {
@@ -112,7 +117,7 @@ export function ThreeHighsPopup({ lang }: { lang: LangCode }) {
       localStorage.setItem('dismissed_3high_popup', 'true')
     }
     setIsVisible(false)
-    // TODO: Redirect to learn page or FAQ
+    // Session already marked as shown, no need to update
     window.location.href = '/learn'
   }
 
