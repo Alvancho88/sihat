@@ -371,9 +371,7 @@ function FoodResultCard({ food, isBest, t, lang }: { food: FoodItem; isBest: boo
         <div className={`flex items-start gap-2 rounded-xl p-4 ${
           isHighRisk
             ? "bg-[#FFF3CD] border border-[#856404]/30"
-            : isMediumRisk
-              ? "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40"
-              : "bg-accent/20"
+            : "bg-accent/20"
         }`}>
           <Info className={`w-5 h-5 shrink-0 mt-0.5 ${
             isHighRisk ? "text-[#856404]" : isMediumRisk ? "text-[var(--risk-medium)]" : "text-accent-foreground"
@@ -381,9 +379,7 @@ function FoodResultCard({ food, isBest, t, lang }: { food: FoodItem; isBest: boo
           <p className={`text-base ${
             isHighRisk
               ? "text-[#856404] font-extrabold"
-              //: isMediumRisk
-                //? "text-[var(--risk-medium)] font-extrabold"
-                : "text-foreground"
+              : "text-foreground"
           }`}>
             <span className="font-bold">{t.tip_label}:</span> {tipText}
           </p>
@@ -994,7 +990,7 @@ export default function RecommendationPage() {
                   {[
                     { bg: "bg-[var(--risk-low-bg)]", text: "text-[var(--risk-low)]", label: t.risk_low, icon: TrendingDown, isHigh: false },
                     { bg: "bg-[var(--risk-medium-bg)]", text: "text-[var(--risk-medium)]", label: t.risk_medium, icon: Minus, isHigh: false },
-                    { bg: "bg-[var(--risk-high-bg)]", text: "text-red-700", label: t.risk_high, icon: TrendingUp, isHigh: true },
+                    { bg: "bg-[#FFF3CD]", text: "text-[#856404]", label: t.risk_high, icon: TrendingUp, isHigh: true },
                   ].map((l) => (
                     <span key={l.label} className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-base ${l.isHigh ? "font-extrabold" : "font-semibold"} ${l.bg} ${l.text}`}>
                       <l.icon className="w-5 h-5" />

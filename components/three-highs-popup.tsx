@@ -14,7 +14,7 @@ const content = {
     conditions: {
       bloodSugar: {
         name: "High Blood Sugar",
-        condition: "Hyperglycemia",
+        condition: "Diabetes",
         why: "Over time, it can damage blood vessels and vital organs."
       },
       bloodPressure: {
