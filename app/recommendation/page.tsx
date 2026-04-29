@@ -307,7 +307,7 @@ function computeRiskFromIndicators(sugar: number, salt: number, fat: number, api
 
 function indicatorClass(level: "low" | "medium" | "high") {
   if (level === "high") return "bg-[#FFF3CD] border border-[#856404]/30 text-[#856404]" 
-  //if (level === "medium") return "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40 text-[var(--risk-medium)]"
+  if (level === "medium") return "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40 text-[var(--risk-medium)]"
   return "bg-muted text-foreground"
 }
 
@@ -376,13 +376,13 @@ function FoodResultCard({ food, isBest, t, lang }: { food: FoodItem; isBest: boo
               : "bg-accent/20"
         }`}>
           <Info className={`w-5 h-5 shrink-0 mt-0.5 ${
-            isHighRisk ? "text-red-700" : isMediumRisk ? "text-[var(--risk-medium)]" : "text-accent-foreground"
+            isHighRisk ? "text-[#856404]" : isMediumRisk ? "text-[var(--risk-medium)]" : "text-accent-foreground"
           }`} />
           <p className={`text-base ${
             isHighRisk
-              ? "text-red-700 font-extrabold"
-              : isMediumRisk
-                ? "text-[var(--risk-medium)] font-extrabold"
+              ? "text-[#856404] font-extrabold"
+              //: isMediumRisk
+                //? "text-[var(--risk-medium)] font-extrabold"
                 : "text-foreground"
           }`}>
             <span className="font-bold">{t.tip_label}:</span> {tipText}
@@ -994,7 +994,7 @@ export default function RecommendationPage() {
                   {[
                     { bg: "bg-[var(--risk-low-bg)]", text: "text-[var(--risk-low)]", label: t.risk_low, icon: TrendingDown, isHigh: false },
                     { bg: "bg-[var(--risk-medium-bg)]", text: "text-[var(--risk-medium)]", label: t.risk_medium, icon: Minus, isHigh: false },
-                    { bg: "bg-[var(--risk-high-bg)]", text: "text-red-700", label: t.risk_high, icon: TrendingUp, isHigh: true },
+                    { bg: "bg-[#FFF3CD]", text: "text-[#856404]", label: t.risk_high, icon: TrendingUp, isHigh: true },
                   ].map((l) => (
                     <span key={l.label} className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-base ${l.isHigh ? "font-extrabold" : "font-semibold"} ${l.bg} ${l.text}`}>
                       <l.icon className="w-5 h-5" />
