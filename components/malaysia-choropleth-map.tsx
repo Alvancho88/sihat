@@ -174,6 +174,7 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
   const [mapLoading, setMapLoading] = useState(false)
   const [containerWidth, setContainerWidth] = useState(800)
   const mapContainerRef = useRef<HTMLDivElement>(null)
+  const detailsRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{ name: string; prevalence: number; x: number; y: number } | null>(null)
 
   const baseScale = Math.max(containerWidth * 4, 2000)
@@ -202,6 +203,17 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
         setMapLoading(false)
       })
   }, [])
+
+  // scroll to state details when a state is selected
+  useEffect(() => {
+    if (selectedState) {
+      const timer = setTimeout(() => {
+        detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [selectedState]);
 
   const stateData = dataByYear[selectedYear] ?? {}
 
@@ -430,7 +442,7 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
         const config = riskConfig[risk]
 
         return (
-          <div className="mt-4 rounded-2xl overflow-hidden shadow-md border-2">
+          <div ref={detailsRef} className="mt-4 rounded-2xl overflow-hidden shadow-md border-2">
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4" style={{ backgroundColor: config.bg }}>
               <div className="flex items-center gap-3">

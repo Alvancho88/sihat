@@ -3,7 +3,7 @@
 import { PageLayout } from "@/components/page-layout"
 import { useState, useEffect, useRef } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, Cell, LabelList } from "recharts"
-import { AlertCircle, Heart, Activity, Eye, X, ChevronDown, Check, CalendarCheck } from "lucide-react"
+import { AlertCircle, Heart, Activity, Eye, X, ChevronDown, Check, CalendarCheck, Gauge, Droplet } from "lucide-react"
 import Image from "next/image"
 import { MenuScanCTA } from "@/components/menu-scan-cta"
 import BodyMap from "@/components/body-map"
@@ -29,15 +29,15 @@ const content = {
         iconColor: "#185FA5",
         titleColor: "#0C447C",
         title: "What is diabetes?",
-        shortTitle: "Introduction",
+        shortTitle: "Diabetes",
         points: [
           "Sugar = Energy for your body.",
           "Insulin is the \"key\" that lets sugar into your cells.",
           "In diabetes, the key is broken. Sugar gets stuck in your blood.",
         ],
         types: [
-          { label: "■ Type 1", bg: "#E6F1FB", textColor: "#0C447C", desc: "Born with it.\nBody makes no insulin.\nNeeds daily injections.", image: "/images/edu/Type1.png" },
-          { label: "▲ Type 2", bg: "#E1F5EE", textColor: "#085041", desc: "Lifestyle linked.\nBody ignores insulin.\nMost common type.", image: "/images/edu/Type2.png" },
+          { label: "Type 1", bg: "#E6F1FB", textColor: "#0C447C", desc: "Born with it.\nBody makes no insulin.\nNeeds daily injections.", image: "/images/edu/Type1.png" },
+          { label: "Type 2", bg: "#E1F5EE", textColor: "#085041", desc: "Lifestyle linked.\nBody ignores insulin.\nMost common type.", image: "/images/edu/Type2.png" },
         ],
         subSection: {
           bg: "#E6F1FB",
@@ -55,6 +55,64 @@ const content = {
           "Type 2 makes up over 90% of cases in Malaysia and develops slowly over years, often without obvious signs.",
           "Doctors diagnose diabetes using an HbA1c blood test, which shows your average blood sugar over 3 months. A fasting blood sugar test is also commonly used.",
           "When sugar stays in your blood, it weakens your blood vessel walls. This makes it much easier for High Blood Pressure to cause damage or High Cholesterol to clog your \"pipes.\" Managing your sugar is the first step in protecting your heart."
+        ],
+      },
+      {
+        icon: Gauge,
+        borderColor: "#993556",
+        iconBg: "#FBEAF0",
+        iconColor: "#993556",
+        titleColor: "#72243E",
+        title: "What is hypertension?",
+        shortTitle: "Hypertension",
+        points: [
+          "Blood = Water flowing through your body.",
+          "Vessels = Pipes that carry the water.",
+          "Hypertension = High Pressure in the pipes. It's like turning a tap on too full; it wears out the pipes.",
+        ],
+        types: [
+          { label: "Primary", bg: "#FBEAF0", textColor: "#72243E", desc: "Lifestyle & Age linked.\nDevelops slowly over many years.\nMost common type in seniors.", image: "/images/edu/hypertension-primary.png" },
+          { label: "Secondary", bg: "#E1F5EE", textColor: "#085041", desc: "Medical Condition linked.\nCaused by an underlying issue.\nOften appears suddenly.", image: "/images/edu/hypertension-secondary.png" },
+        ],
+        warning: {
+          bg: "#FBEAF0",
+          iconColor: "#993556",
+          textColor: "#72243E",
+          text: "The \"Silent Killer\": Most people feel no symptoms until a stroke or heart attack happens. Managing your salt intake and staying active can help bring pressure back to normal levels."
+        },
+        learnMore: [
+          "Reduce Salt: High salt holds extra water in your body, increasing the \"pressure\" in your pipes.",
+          "The \"Silent\" Nature: You cannot feel high blood pressure. The only way to know is to check it regularly with a monitor.",
+          "Small Steps: Losing even a small amount of weight or walking 15 minutes a day can significantly lower your numbers."
+        ],
+      },
+      {
+        icon: Droplet,
+        borderColor: "#6D28D9",
+        iconBg: "#F5F3FF",
+        iconColor: "#6D28D9",
+        titleColor: "#4C1D95",
+        title: "What is high cholesterol (hyperlipidemia)?",
+        shortTitle: "Hyperlipidemia",
+        points: [
+          "Cholesterol = \"Wax\" or \"Grease\" in your blood.",
+          "The Problem: Too much grease makes the blood \"sticky\".",
+          "The Danger: It creates narrow tunnels (plaque) making it harder for blood to reach your heart and brain.",
+        ],
+        types: [
+          { label: "LDL (Bad)", bg: "#FEF3C7", textColor: "#92400E", desc: "The Blocker.\nBuilds up as plaque in your pipes.\nIncreases risk of heart attack.", image: "/images/edu/cholesterol-LDL.png"},
+          { label: "HDL (Good)", bg: "#F5F3FF", textColor: "#4C1D95", desc: "The Cleaner.\nActs like a vacuum for extra grease.\nTakes grease to liver for removal.", image: "/images/edu/cholesterol-HDL.png" },
+        ],
+        warning: {
+          bg: "#F5F3FF",
+          iconColor: "#6D28D9",
+          textColor: "#4C1D95",
+          text: "Invisible Blockage: You cannot feel your arteries narrowing; it is only found through a blood test. A diet low in saturated fats helps \"sweep\" the bad grease away."
+        },
+        learnMore: [
+          "Fats Matter: Swap \"Saturated Fats\" (like coconut milk or fatty meats) for \"Healthy Fats\" (like nuts or olive oil) to stop plaque buildup.",
+          "Fiber is a Broom: Foods like oats and vegetables act like a broom, sweeping the \"bad\" grease (LDL) out of your blood.",
+          "Active Cleanup: Regular exercise increases your \"Good\" cholesterol (HDL), which helps carry the \"Bad\" grease away to be destroyed."
         ],
       },
       {
@@ -185,6 +243,7 @@ const content = {
       },
     ],
     myth_title: "Myth VS. Fact",
+    click_myth: "👇 Tap each myth to see the truth",
     myth_show_less: "Show less",
     myth_show_more: "Show more",
     myths: [
@@ -218,7 +277,7 @@ const content = {
         iconColor: "#185FA5",
         titleColor: "#0C447C",
         title: "Apa itu diabetes?",
-        shortTitle: "Apa itu?",
+        shortTitle: "Diabetes",
         points: [
           "Badan anda memerlukan gula (glukosa) untuk tenaga",
           "Insulin adalah \"kunci\" yang membenarkan gula masuk ke dalam sel anda",
@@ -244,6 +303,64 @@ const content = {
           "Jenis 2 merangkumi lebih 90% kes di Malaysia dan berkembang perlahan selama bertahun-tahun, sering tanpa tanda yang jelas.",
           "Doktor mendiagnosis diabetes menggunakan ujian darah HbA1c, yang menunjukkan purata gula darah anda selama 3 bulan.",
           "Apabila gula tetap dalam darah, ia melemahkan dinding pembuluh darah anda. Ini memudahkan Tekanan Darah Tinggi menyebabkan kerosakan atau Kolesterol Tinggi menyumbat \"pipa\" anda. Menguruskan gula anda adalah langkah pertama dalam melindungi jantung anda.",
+        ],
+      },
+      {
+        icon: Gauge,
+        borderColor: "#993556",
+        iconBg: "#FBEAF0",
+        iconColor: "#993556",
+        titleColor: "#72243E",
+        title: "Apa itu hipertensi?",
+        shortTitle: "Hipertensi",
+        points: [
+          "Darah = Air yang mengalir di dalam badan anda.",
+          "Salur darah = Paip yang membawa air tersebut.",
+          "Hipertensi = Tekanan Tinggi dalam paip. Ia seperti membuka paip air terlalu kuat; ia melemahkan paip.",
+        ],
+        types: [
+          { label: "Primer", bg: "#FBEAF0", textColor: "#72243E", desc: "Kaitan gaya hidup & umur.\nBerkembang perlahan.\nPaling biasa dalam kalangan warga emas.", image: "/images/edu/hypertension-primary.png" },
+          { label: "Sekunder", bg: "#E1F5EE", textColor: "#085041", desc: "Kaitan masalah perubatan.\nBerpunca dari penyakit lain.\nSering muncul tiba-tiba.", image: "/images/edu/hypertension-secondary.png" },
+        ],
+        warning: {
+          bg: "#FBEAF0",
+          iconColor: "#993556",
+          textColor: "#72243E",
+          text: "\"Pembunuh Senyap\": Kebanyakan orang tidak merasa sebarang gejala sehinggalah strok atau serangan jantung berlaku. Menguruskan pengambilan garam dapat membantu memulihkan tekanan."
+        },
+        learnMore: [
+          "Kurangkan Garam: Garam berlebihan menyimpan lebih banyak air dalam badan, meningkatkan \"tekanan\" dalam paip anda.",
+          "Sifat \"Senyap\": Anda tidak dapat merasakan tekanan darah tinggi. Satu-satunya cara adalah dengan memeriksa secara berkala.",
+          "Langkah Kecil: Menurunkan sedikit berat badan atau berjalan 15 minit sehari boleh menurunkan bacaan anda dengan ketara."
+        ],
+      },
+      {
+        icon: Droplet,
+        borderColor: "#6D28D9",
+        iconBg: "#F5F3FF",
+        iconColor: "#6D28D9",
+        titleColor: "#4C1D95",
+        title: "Apa itu kolesterol tinggi (hiperlipidemia)?",
+        shortTitle: "Hiperlipidemia",
+        points: [
+          "Kolesterol = \"Lilin\" atau \"Lemak\" di dalam darah anda.",
+          "Masalah: Terlalu banyak lemak menjadikan darah \"melekit\".",
+          "Bahaya: Ia menyempitkan laluan darah (plak) dan menyukarkan darah sampai ke jantung.",
+        ],
+        types: [
+          { label: "LDL (Jahat)", bg: "#FAEEDA", textColor: "#633806", desc: "Penyumbat.\nBerkumpul sebagai plak dalam paip.\nMeningkatkan risiko serangan jantung.", image: "/images/edu/cholesterol-LDL.png" },
+          { label: "HDL (Baik)", bg: "#F5F3FF", textColor: "#4C1D95", desc: "Pencuci.\nBertindak sebagai vakum lemak.\nMembawa lemak ke hati untuk dibuang.", image: "/images/edu/cholesterol-HDL.png" },
+        ],
+        warning: {
+          bg: "#F5F3FF",
+          iconColor: "#6D28D9",
+          textColor: "#4C1D95",
+          text: "Sumbatan Terselindung: Anda tidak boleh merasai saluran darah menyempit; ia hanya dikesan melalui ujian darah."
+        },
+        learnMore: [
+          "Jenis Lemak: Tukar \"Lemak Tepu\" (seperti santan) kepada \"Lemak Sihat\" (seperti minyak zaitun) untuk menghentikan pembentukan plak.",
+          "Serat sebagai Penyapu: Makanan seperti oat dan sayuran bertindak menyapu lemak \"jahat\" (LDL) keluar dari darah.",
+          "Pembersihan Aktif: Senaman meningkatkan kolesterol \"Baik\" (HDL) yang membantu membuang lemak \"Jahat\"."
         ],
       },
       {
@@ -374,6 +491,7 @@ const content = {
       },
     ],
     myth_title: "Mitos VS. Fakta",
+    click_myth: "👇 Klik setiap mitos untuk melihat kebenarannya",
     myth_show_less: "Tunjukkan kurang",
     myth_show_more: "Tunjukkan lebih banyak",
     myths: [
@@ -431,7 +549,7 @@ const content = {
         iconColor: "#185FA5",
         titleColor: "#0C447C",
         title: "什么是糖尿病？",
-        shortTitle: "介绍",
+        shortTitle: "糖尿病",
         points: [
           "您的身体需要糖（葡萄糖）来提供能量",
           "胰岛素是让糖进入细胞的“钥匙”",
@@ -457,6 +575,64 @@ const content = {
           "2型糖尿病占马来西亚病例的90%以上，通常在数年内缓慢发展，往往没有明显症状。",
           "医生使用HbA1c血液检测来诊断糖尿病，该检测显示您过去3个月的平均血糖水平。",
           "当糖长时间停留在血液中时，它会损害您的血管壁。这使得高血压更容易造成损害，或高胆固醇更容易堵塞您的“管道”。控制好血糖是保护心脏的第一步。",
+        ],
+      },
+      {
+        icon: Gauge,
+        borderColor: "#993556",
+        iconBg: "#FBEAF0",
+        iconColor: "#993556",
+        titleColor: "#72243E",
+        title: "什么是高血压？",
+        shortTitle: "高血压",
+        points: [
+          "血液 = 在体内流动的水。",
+          "血管 = 输送水的管道。",
+          "高血压 = 管道内的高压。就像水龙头开得太大，会磨损管道。",
+        ],
+        types: [
+          { label: "原发性", bg: "#FBEAF0", textColor: "#72243E", desc: "与生活方式和年龄相关。\n发展缓慢。\n老年人中最常见。", image: "/images/edu/hypertension-primary.png" },
+          { label: "继发性", bg: "#E1F5EE", textColor: "#085041", desc: "由其他医疗问题引起。\n通常突然出现。", image: "/images/edu/hypertension-secondary.png" },
+        ],
+        warning: {
+          bg: "#FBEAF0",
+          iconColor: "#993556",
+          textColor: "#72243E",
+          text: "“沉默的杀手”：大多数人没有任何症状，直到发生中风或心脏病发作。控制盐分摄入有助于恢复正常血压。"
+        },
+        learnMore: [
+          "减少盐分：高盐会使体内积聚多余的水分，增加管道内的“压力”。",
+          "沉默的杀手：您感觉不到高血压。唯一的方法是定期使用血压计测量。",
+          "小步改善：即使减轻少量体重或每天步行15分钟，也能显著降低血压读数。"
+        ],
+      },
+      {
+        icon: Droplet,
+        borderColor: "#6D28D9",
+        iconBg: "#F5F3FF",
+        iconColor: "#6D28D9",
+        titleColor: "#4C1D95",
+        title: "什么是高胆固醇？",
+        shortTitle: "高胆固醇",
+        points: [
+          "胆固醇 = 血液中的“蜡”或“油脂”。",
+          "问题：过多的油脂会使血液变得“粘稠”。",
+          "危险：它会在血管内形成狭窄的通道（斑块），使血液难以流向心脏和大脑。",
+        ],
+        types: [
+          { label: "LDL (坏)", bg: "#FAEEDA", textColor: "#633806", desc: "阻塞者。\n在管道中积聚成斑块。\n增加心脏病发作的风险。", image: "/images/edu/cholesterol-LDL.png" },
+          { label: "HDL (好)", bg: "#F5F3FF", textColor: "#4C1D95", desc: "清洁工。\n像吸尘器一样吸走多余油脂。\n将油脂带到肝脏清除。", image: "/images/edu/cholesterol-HDL.png" },
+        ],
+        warning: {
+          bg: "#F5F3FF",
+          iconColor: "#6D28D9",
+          textColor: "#4C1D95",
+          text: "隐形阻塞：您无法感觉到动脉变窄；只能通过血液测试发现。"
+        },
+        learnMore: [
+          "脂肪的选择：将“饱和脂肪”（如椰奶或肥肉）换成“健康脂肪”（如坚果或橄榄油），以阻止斑块形成。",
+          "纤维如扫帚：燕麦和蔬菜等食物就像扫帚一样，将“坏”油脂 (LDL) 从血液中扫除。",
+          "积极清理：定期锻炼会增加您的“好”胆固醇 (HDL)，从而帮助带走“坏”油脂并将其清除。"
         ],
       },
       {
@@ -587,6 +763,7 @@ const content = {
       },
     ],
     myth_title: "谬误 VS. 事实",
+    click_myth: "👇 点击每个谬误查看真相",
     myth_show_less: "收起",
     myth_show_more: "展开",
     myths: [
@@ -1024,6 +1201,7 @@ export default function LearnClient() {
               <div className="mb-6">
                 <p className="text-lg font-medium uppercase tracking-widest text-muted-foreground mb-1.5">{t.debunk}</p>
                 <h2 className="text-3xl font-bold">{t.myth_title}</h2>
+                <p className="text-lg font-medium text-muted-foreground flex items-center gap-2"> {t.click_myth}</p>
               </div>
 
               <div className="flex flex-col gap-3">

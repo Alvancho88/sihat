@@ -222,7 +222,7 @@ const bodyMapContent: Record<string, BodyMapContent> = {
         danger: { ...COLORS.danger, label: "三重威胁", text: "这是“三高”的交汇点。糖尿病削弱心肌，高血压迫使心脏在高阻力下泵血，而高胆固醇阻塞了供应心脏的“燃料管”（动脉）。" },
         tip: { label: "SIHAT 提示", text: "您的心脏需要纤维！SIHAT 帮助您找到富含纤维的本地美食，它们就像“天然扫帚”一样清除动脉中多余的胆固醇。" },
         image: { 
-          src: "/images/body-map/diabetic-eye.jpg", 
+          src: "/images/body-map/diabetic-heart.jpg", 
           caption: "长期的高血压和高血糖会削弱心肌，使心脏更难向全身泵血。" 
         },
       },
@@ -261,11 +261,11 @@ const bodyMapContent: Record<string, BodyMapContent> = {
 // ─── Hotspot layout ────────────────────────────────────────────────────────────
 
 const hotspotPositions: { id: BodyMapId; top: string; left: string; color: string }[] = [
-  { id: "brain",   top: "10%",  left: "49%", color: "#534AB7" },
-  { id: "eyes",    top: "16%", left: "42%", color: "#185FA5" },
-  { id: "heart",   top: "35%", left: "58%", color: "#993556" },
+  { id: "brain",   top: "7%",  left: "50%", color: "#534AB7" },
+  { id: "eyes",    top: "13%", left: "45%", color: "#185FA5" },
+  { id: "heart",   top: "28%", left: "58%", color: "#993556" },
   { id: "kidneys", top: "48%", left: "40%", color: "#854F0B" },
-  { id: "feet",    top: "87%", left: "30%", color: "#0F6E56" },
+  { id: "feet",    top: "87%", left: "45%", color: "#0F6E56" },
 ]
 
 // ─── Props ────────────────────────────────────────────────────────────────
@@ -380,33 +380,54 @@ export default function BodyMap({ lang }: BodyMapProps) {
         <div className="flex-shrink-0 flex justify-center sm:justify-start">
           <div className="relative w-[220px] h-[480px]">
             <Image
-              src="/images/human-body-1.png"
+              src="/images/human-body-2.png"
               alt="Human body diagram"
               fill
               className="object-contain"
             />
             {hotspotPositions.map(({ id, top, left, color }) => (
-              <button
+              <div
                 key={id}
-                onClick={() => handleHotspot(id)}
                 className="absolute z-10 -translate-x-1/2 -translate-y-1/2 group"
                 style={{ top, left }}
-                aria-label={t.data[id].organ}
               >
-                <span
-                  className="absolute inset-0 rounded-full animate-ping"
-                  style={{ backgroundColor: color, animationDuration: "2s", opacity: 0.3 }}
-                />
-                <span
-                  className="relative flex w-6 h-6 rounded-full border-2 border-white items-center justify-center transition-transform duration-150 group-hover:scale-125"
-                  style={{
-                    backgroundColor: color,
-                    boxShadow: activeId === id ? `0 0 0 3px ${color}40` : "0 1px 4px rgba(0,0,0,0.2)",
-                  }}
+                {/* Tooltip */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 pointer-events-none
+                  opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap z-20">
+                  <div
+                    className="text-base font-medium px-2.5 py-1.5 rounded-lg shadow-md text-white"
+                    style={{ backgroundColor: color }}
+                  >
+                    {t.data[id].organ}
+                  </div>
+                  {/* Arrow */}
+                  <div
+                    className="w-2 h-2 mx-auto rotate-45 -mt-1"
+                    style={{ backgroundColor: color }}
+                  />
+                </div>
+
+                {/* Hotspot button */}
+                <button
+                  onClick={() => handleHotspot(id)}
+                  className="relative block"
+                  aria-label={t.data[id].organ}
                 >
-                  <span className="w-2 h-2 rounded-full bg-white" />
-                </span>
-              </button>
+                  <span
+                    className="absolute inset-0 rounded-full animate-ping"
+                    style={{ backgroundColor: color, animationDuration: "2s", opacity: 0.3 }}
+                  />
+                  <span
+                    className="relative flex w-6 h-6 rounded-full border-2 border-white items-center justify-center transition-transform duration-150 group-hover:scale-125"
+                    style={{
+                      backgroundColor: color,
+                      boxShadow: activeId === id ? `0 0 0 3px ${color}40` : "0 1px 4px rgba(0,0,0,0.2)",
+                    }}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-white" />
+                  </span>
+                </button>
+              </div>
             ))}
           </div>
         </div>

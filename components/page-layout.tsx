@@ -37,7 +37,7 @@ export function PageLayout({ children }: { children: (lang: LangCode) => ReactNo
           {lang === "ms" && "Maklumat untuk kesedaran umum sahaja. Sila rujuk doktor untuk nasihat perubatan."}
           {lang === "zh" && "仅供一般意识参考。请咨询医生获取医疗建议。"}
         </p>
-        <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3 text-sm">
+        {/* <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3 text-sm">
           <span>
             {lang === "en" && "Feedback? Contact us: "}
             {lang === "ms" && "Maklum balas? Hubungi kami: "}
@@ -55,7 +55,7 @@ export function PageLayout({ children }: { children: (lang: LangCode) => ReactNo
             {lang === "ms" && "Sumber Pangkalan Data Makanan"}
             {lang === "zh" && "食物数据库来源"}
           </a>
-        </div>
+        </div> */}
         <p className="mt-3 text-sm text-primary-foreground/70">© 2026 SIHAT</p>
       </footer>
       {/* AI Chatbot */}

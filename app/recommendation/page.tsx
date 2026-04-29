@@ -24,7 +24,7 @@ type LangCode = "en" | "ms" | "zh"
 const content = {
   en: {
     page_title: "Food Check & Recommendation",
-    page_subtitle: "Upload a photo of your menu and get instant food recommendation and health tips",
+    page_subtitle: "Simple photos, smarter choices. Take control of your health today.",
     guide_title: "How to Take a Good Photo",
     guide_steps: [
       { icon: "camera", text: "Hold your phone steady above the menu" },
@@ -107,7 +107,7 @@ const content = {
   },
   ms: {
     page_title: "Semak & Cadangan Makanan",
-    page_subtitle: "Muat naik foto makanan anda dan dapatkan nasihat kesihatan peribadi.",
+    page_subtitle: "Foto mudah, pilihan bijak. Urus kesihatan anda dengan lebih yakin.",
     guide_title: "Cara Mengambil Foto yang Baik",
     guide_steps: [
       { icon: "camera", text: "Pegang telefon anda dengan stabil di atas makanan" },
@@ -189,7 +189,7 @@ const content = {
   },
   zh: {
     page_title: "食物检查与推荐",
-    page_subtitle: "上传您的餐食照片，获取个性化健康建议。",
+    page_subtitle: "简单拍照，智选三餐。掌控健康，就从今天开始。",
     guide_title: "如何拍摄好照片",
     guide_steps: [
       { icon: "camera", text: "将手机稳定地放在食物上方" },

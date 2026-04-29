@@ -1,7 +1,7 @@
 "use client"
 
 import { PageLayout } from "@/components/page-layout"
-import { useState, useEffect, createContext, useContext, useRef } from "react"
+import { useState, useEffect, createContext, useContext, useRef, useMemo } from "react"
 
 import Image from "next/image"
 import { Search, X, TrendingDown, TrendingUp, Minus, Info, User, ShoppingCart, Trash2, Plus, Check, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from "lucide-react"
@@ -15,6 +15,8 @@ const pageContent = {
     subtitle: "Browse foods and plan your daily intake with nutrition tracking.",
     search_placeholder: "Search Food here...",
     no_results: "No foods found. Try a different search.",
+    nutrition_guide: "Nutrition Guide & Colour Legend",
+    nutrition_guide_description: "Tap to see colour guides for sugar, fat, sodium & GI",
     click_hint: "Tap any food to see details or add to your daily plan",
     nutrition_sugar: "Sugar",
     nutrition_cal: "Cal",
@@ -120,6 +122,8 @@ const pageContent = {
     subtitle: "Semak makanan dan rancang pengambilan harian dengan penjejakan nutrisi.",
     search_placeholder: "Cari makanan di sini...",
     no_results: "Tiada makanan dijumpai. Cuba carian lain.",
+    nutrition_guide: "Panduan Nutrisi & Legenda Warna",
+    nutrition_guide_description: "Ketik untuk melihat panduan warna untuk gula, lemak, natrium & GI",
     click_hint: "Ketik makanan untuk butiran atau tambah ke pelan harian",
     nutrition_sugar: "Gula",
     nutrition_cal: "Kal",
@@ -225,6 +229,8 @@ const pageContent = {
     subtitle: "浏览食物并规划您的每日摄入量。",
     search_placeholder: "在这里搜索食物...",
     no_results: "未找到食物。请尝试不同的搜索。",
+    nutrition_guide: "营养指南和颜色图例",
+    nutrition_guide_description: "点击查看糖、脂肪、钠和GI的颜色指南",
     click_hint: "点击食物查看详情或添加到每日计划",
     nutrition_sugar: "糖",
     nutrition_cal: "大卡",
@@ -468,7 +474,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
 
       {/* Detail Modal */}
       {open && (
-        <div className="fixed inset-0 bg-foreground/80 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 bg-foreground/80 z-80 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
           <div className="bg-card rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="relative h-48 sm:h-56 w-full">
               <Image src={food.image} alt={food.name} fill className="object-cover" />
@@ -594,11 +600,11 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
 
   // Calculate totals
   const totals = cart.reduce((acc, food) => ({
-    sugar: acc.sugar + parseInt(food.sugar.replace(/[^0-9]/g, ''), 10),
-    calories: acc.calories + parseInt(food.calories.replace(/[^0-9]/g, ''), 10),
-    fat: acc.fat + parseInt(food.fat.replace(/[^0-9]/g, ''), 10),
-    sodium: acc.sodium + parseInt(food.sodium.replace(/[^0-9]/g, ''), 10),
-    gi: acc.gi + parseInt(food.gi.replace(/[^0-9]/g, ''), 10),
+    sugar: acc.sugar + parseFloat(food.sugar.replace(/[^0-9.]/g, '')),
+    calories: acc.calories + parseFloat(food.calories.replace(/[^0-9.]/g, '')),
+    fat: acc.fat + parseFloat(food.fat.replace(/[^0-9.]/g, '')),
+    sodium: acc.sodium + parseFloat(food.sodium.replace(/[^0-9.]/g, '')),
+    gi: acc.gi + parseFloat(food.gi.replace(/[^0-9.]/g, '')),
   }), { sugar: 0, calories: 0, fat: 0, sodium: 0, gi: 0 })
 
   const limits = {
@@ -638,9 +644,16 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     const limitPct = (limit / maxDisplay) * 100
 
     return (
-      <div className="mb-2">
+      <div className={`mb-2 rounded-xl transition-all ${isOver ? "bg-red-50 border border-red-300 p-1.5 -mx-1" : ""}`}>
         <div className="flex justify-between items-baseline mb-1">
-          <span className="text-xs font-semibold">{label}</span>
+          <div className="flex items-center gap-1">
+            {isOver && (
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-red-600 shrink-0">
+                <span className="text-white font-black leading-none" style={{ fontSize: "9px" }}>!</span>
+              </span>
+            )}
+            <span className={`text-xs font-semibold ${isOver ? "text-red-800" : ""}`}>{label}</span>
+          </div>
           <span className={`text-xs font-bold ${isOver ? "text-red-800" : "text-foreground"}`}>
             {value}{unit} / {limit}{unit}
           </span>
@@ -648,20 +661,23 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
         <div className="relative h-4 bg-background rounded-full overflow-visible">
           <div
             className="h-full rounded-full transition-all"
-            style={{ width: `${fillPct}%`, backgroundColor: color, opacity: isOver ? 1 : 0.85 }}
+            style={{ width: `${fillPct}%`, backgroundColor: isOver ? "#dc2626" : color, opacity: 1 }}
           />
           <div
             className="absolute top-[-2px] bottom-[-2px] w-0.5 bg-red-700 rounded-full z-10"
             style={{ left: `${limitPct}%` }}
           />
         </div>
-        <p className={`text-xs mt-0.5 leading-relaxed ${isOver ? "text-red-800 font-semibold" : "text-muted-foreground"}`}>
-          {isOver ? statusOver : statusOk}
-        </p>
         {isOver && excessAmount > 0 && (
-          <p className="text-xs text-red-800 font-semibold">
-            {t.exceeded_by} {excessAmount}{unit}
-          </p>
+          <div className="mt-1 flex items-center gap-1">
+            <span className="inline-block bg-red-600 text-white text-[12px] font-black px-1.5 py-0.5 rounded-full leading-none tracking-wide uppercase">
+              +{excessAmount}{unit} {t.exceeded_by.toLowerCase()}
+            </span>
+            <span className="text-sm md:text-base text-red-700 font-semibold">{statusOver}</span>
+          </div>
+        )}
+        {!isOver && (
+          <p className="text-sm md:text-base mt-0.5 leading-relaxed text-muted-foreground">{statusOk}</p>
         )}
       </div>
     )
@@ -680,9 +696,16 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     const limitPct = (limit / maxDisplay) * 100
 
     return (
-      <div className="mb-3">
+      <div className={`mb-3 rounded-xl transition-all ${isOver ? "bg-red-50 border border-red-300 p-2 -mx-1" : ""}`}>
         <div className="flex justify-between items-baseline mb-1">
-          <span className="text-base font-semibold">{label}</span>
+          <div className="flex items-center gap-1.5">
+            {isOver && (
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 shrink-0">
+                <span className="text-white font-black leading-none" style={{ fontSize: "10px" }}>!</span>
+              </span>
+            )}
+            <span className={`text-base font-semibold ${isOver ? "text-red-800" : ""}`}>{label}</span>
+          </div>
           <span className={`text-base font-bold ${isOver ? "text-red-800" : "text-foreground"}`}>
             {value}{unit} / {limit}{unit}
           </span>
@@ -690,20 +713,23 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
         <div className="relative h-4 bg-background rounded-full overflow-visible">
           <div
             className="h-full rounded-full transition-all"
-            style={{ width: `${fillPct}%`, backgroundColor: color, opacity: isOver ? 1 : 0.85 }}
+            style={{ width: `${fillPct}%`, backgroundColor: isOver ? "#dc2626" : color, opacity: isOver ? 1 : 0.85}}
           />
           <div
             className="absolute top-[-3px] bottom-[-3px] w-0.5 bg-red-700 rounded-full z-10"
             style={{ left: `${limitPct}%` }}
           />
         </div>
-        <p className={`text-sm mt-1 leading-relaxed ${isOver ? "text-red-800 font-semibold" : "text-muted-foreground"}`}>
-          {isOver ? statusOver : statusOk}
-        </p>
         {isOver && excessAmount > 0 && (
-          <p className="text-sm text-red-800 font-semibold">
-            {t.exceeded_by} {excessAmount}{unit}
-          </p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="inline-block bg-red-600 text-white text-sm font-black px-2 py-0.5 rounded-full leading-none tracking-wide uppercase">
+              +{excessAmount}{unit} {t.exceeded_by.toLowerCase()}
+            </span>
+            <span className="text-sm text-red-700 font-semibold">{statusOver}</span>
+          </div>
+        )}
+        {!isOver && (
+          <p className="text-sm mt-1 leading-relaxed text-muted-foreground">{statusOk}</p>
         )}
       </div>
     )
@@ -715,7 +741,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
   const displayCart = [...cart].reverse()
 
   return (
-    <div className="fixed inset-0 bg-foreground/80 z-50 flex items-center justify-center p-2 md:p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-foreground/80 z-100 flex items-center justify-center p-2 md:p-4" onClick={onClose}>
       <div
         className="bg-card rounded-2xl w-full max-w-4xl max-h-[95vh] md:max-h-[90vh] overflow-hidden shadow-xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -1067,6 +1093,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   const [sortBy, setSortBy] = useState<"sugar" | "cal" | "gi" | "fat" | "sodium">("sugar")
   const [tempSortOrder, setTempSortOrder] = useState<"asc" | "desc">("asc")
   const [tempSortBy, setTempSortBy] = useState<"sugar" | "cal" | "gi" | "fat" | "sodium">("sugar")
+  const [guideOpen, setGuideOpen] = useState(false)
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const foodGridRef = useRef<HTMLDivElement>(null)
@@ -1074,11 +1101,6 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   const [showFloatingButton, setShowFloatingButton] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(false)
   const ITEMS_PER_PAGE = 15
-
-  // Scroll to grid on mount
-  useEffect(() => {
-    setTimeout(() => {foodGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}, 100)
-  }, [])
 
   // Track scroll position for floating button - hide when near bottom and show static button instead
   useEffect(() => {
@@ -1190,7 +1212,24 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     sessionStorage.setItem("food-search", search)
   }, [selectedCats, search, cart])
 
-  const filtered = initialFoods.filter((f) => {
+  // Randomize initial foods on first load
+  const shuffledFoods = useMemo(() => {
+    const malaysian = initialFoods.filter(f => f.category === "Malaysian")
+    const others = initialFoods.filter(f => f.category !== "Malaysian")
+
+    const shuffle = (arr: typeof initialFoods) => {
+      const a = [...arr]
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]]
+      }
+      return a
+    }
+
+    return [...shuffle(malaysian), ...shuffle(others)]
+  }, [])
+
+  const filtered = shuffledFoods.filter((f) => {
     // If no categories selected (or "All"), show all
     const foodCategories = f.category.split(",").map(c => c.trim())
     const catMatch = selectedCats.length === 0 || selectedCats.some(i => foodCategories.includes(categories.en[i]))
@@ -1220,10 +1259,6 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   useEffect(() => {
     setCurrentPage(1)
   }, [selectedCats, search, sortActive, sortBy, sortOrder])
-
-  useEffect(() => {
-    foodGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-  }, [currentPage])
 
   // Generate page numbers to display
   const getPageNumbers = () => {
@@ -1427,119 +1462,149 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           </button>
         )}
 
-        {/* Reference Guides */}
-        <div className="-mx-4 sm:-mx-6 px-2 sm:px-6 py-2 bg-background border-b border-border">
-          <div className="space-y-3 md:space-y-2">
-            {/* Sugar Guide row */}
-            <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
-              <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sugar_guide_title}:</span>
-              <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
-                  <span className="text-xs md:text-base">≤5g</span>
+        {/* Reference Guides - collapsible */}
+        <div className="-mx-4 sm:-mx-6 bg-background border-b border-border">
+          {/* Toggle button */}
+          <button
+            onClick={() => setGuideOpen(v => !v)}
+            className="w-full flex items-center justify-between px-4 sm:px-6 py-3 text-left hover:bg-muted/50 transition-colors"
+          >
+            <span className="flex flex-col gap-0.5">
+              <span className="flex items-center gap-2 font-bold text-primary text-base md:text-lg">
+                <Info className="w-6 h-6 shrink-0" />
+                {t.nutrition_guide}
+              </span>
+              {!guideOpen && (
+                <span className="text-base text-muted-foreground pl-8">
+                  {t.nutrition_guide_description}
                 </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
-                  <span className="text-xs md:text-base">6-15g</span>
-                </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
-                  <span className="text-xs md:text-base">≥16g</span>
-                </span>
-              </div>
-            </div>
+              )}
+            </span>
+            {guideOpen
+              ? <ChevronUp className="w-5 h-5 text-foreground shrink-0" />
+              : <ChevronDown className="w-5 h-5 text-foreground shrink-0" />
+            }
+          </button>
 
-            {/* Fat Guide */}
-            <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
-              <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.fat_guide_title}:</span>
-              <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
-                  <span className="text-xs md:text-base">≤5g</span>
-                </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
-                  <span className="text-xs md:text-base">6-15g</span>
-                </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
-                  <span className="text-xs md:text-base">≥16g</span>
-                </span>
-              </div>
-            </div>
+          {/* Collapsible content */}
+          {guideOpen && (
+            <div className="px-2 sm:px-6 pb-3 space-y-3 md:space-y-2">
+              {/* Reference Guides */}
+              <div className="-mx-4 sm:-mx-6 px-2 sm:px-6 py-2 bg-background border-b border-border">
+                <div className="space-y-3 md:space-y-2">
+                  {/* Sugar Guide row */}
+                  <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
+                    <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sugar_guide_title}:</span>
+                    <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
+                        <span className="text-xs md:text-base">≤5g</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
+                        <span className="text-xs md:text-base">6-15g</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
+                        <span className="text-xs md:text-base">≥16g</span>
+                      </span>
+                    </div>
+                  </div>
 
-            {/* Sodium Guide */}
-            <div className="flex flex-col gap-1.5 md:flex-row md:flex-nowrap md:items-center md:gap-3 text-sm md:text-base">
-              <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sodium_guide_title}:</span>
-              <div className="flex w-full gap-1 md:flex-nowrap md:gap-3 md:w-auto md:items-center">
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
-                  <span className="text-xs md:text-base">≤300mg</span>
-                </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
-                  <span className="text-xs md:text-base">301-600mg</span>
-                </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
-                  <span className="text-xs md:text-base">≥601mg</span>
-                </span>
-                <button
-                  onClick={() => setSodiumInfoOpen(true)}
-                  className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-base font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  <Info className="w-5 h-5" />
-                  {t.sodium_short_explanation}
-                </button>
+                  {/* Fat Guide */}
+                  <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
+                    <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.fat_guide_title}:</span>
+                    <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
+                        <span className="text-xs md:text-base">≤5g</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
+                        <span className="text-xs md:text-base">6-15g</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
+                        <span className="text-xs md:text-base">≥16g</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Sodium Guide */}
+                  <div className="flex flex-col gap-1.5 md:flex-row md:flex-nowrap md:items-center md:gap-3 text-sm md:text-base">
+                    <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sodium_guide_title}:</span>
+                    <div className="flex w-full gap-1 md:flex-nowrap md:gap-3 md:w-auto md:items-center">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
+                        <span className="text-xs md:text-base">≤300mg</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
+                        <span className="text-xs md:text-base">301-600mg</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
+                        <span className="text-xs md:text-base">≥601mg</span>
+                      </span>
+                      <button
+                        onClick={() => setSodiumInfoOpen(true)}
+                        className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-base font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <Info className="w-5 h-5" />
+                        {t.sodium_short_explanation}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setSodiumInfoOpen(true)}
+                      className="w-full md:hidden justify-center inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+                    >
+                      <Info className="w-4 h-4" />
+                      {t.sodium_short_explanation}
+                    </button>
+                  </div>
+                  {/* GI Guide */}
+                  <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
+                    <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.gi_legend_title}:</span>
+                    <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
+                        <span className="text-xs md:text-base">≤55</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
+                        <span className="text-xs md:text-base">56-69</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
+                        <span className="text-xs md:text-base">≥70</span>
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setGiInfoOpen(true)}
+                      className="w-full md:w-auto justify-center md:justify-start inline-flex items-center gap-1.5 px-3 md:px-4 py-2 md:py-2 rounded-full text-sm md:text-base font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+                    >
+                      <Info className="w-4 h-4 md:w-5 md:h-5" />
+                      {t.gi_short_explanation}
+                    </button>
+                  </div>
+                  {/* Daily Sugar Limit */}
+                  <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
+                    <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.daily_sugar_title}</span>
+                    <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[var(--cb-blue)]/15 text-[var(--cb-blue-text)] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><User className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high === "High" ? "Men" : t.risk_high === "Tinggi" ? "Lelaki" : "男性"}</span>
+                        <span className="text-xs md:text-base">&lt;36g</span>
+                      </span>
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[var(--cb-pink)]/15 text-foreground font-semibold text-sm md:text-base md:px-4 md:py-2">
+                        <span className="inline-flex items-center gap-0.5"><User className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0 text-[var(--cb-pink-text)]" />{t.risk_high === "High" ? "Women" : t.risk_high === "Tinggi" ? "Wanita" : "女性"}</span>
+                        <span className="text-xs md:text-base">&lt;25g</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <button
-                onClick={() => setSodiumInfoOpen(true)}
-                className="w-full md:hidden justify-center inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
-              >
-                <Info className="w-4 h-4" />
-                {t.sodium_short_explanation}
-              </button>
             </div>
-            {/* GI Guide */}
-            <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
-              <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.gi_legend_title}:</span>
-              <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
-                  <span className="text-xs md:text-base">≤55</span>
-                </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
-                  <span className="text-xs md:text-base">56-69</span>
-                </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
-                  <span className="text-xs md:text-base">≥70</span>
-                </span>
-              </div>
-              <button
-                onClick={() => setGiInfoOpen(true)}
-                className="w-full md:w-auto justify-center md:justify-start inline-flex items-center gap-1.5 px-3 md:px-4 py-2 md:py-2 rounded-full text-sm md:text-base font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
-              >
-                <Info className="w-4 h-4 md:w-5 md:h-5" />
-                {t.gi_short_explanation}
-              </button>
-            </div>
-            {/* Daily Sugar Limit */}
-            <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
-              <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.daily_sugar_title}</span>
-              <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[var(--cb-blue)]/15 text-[var(--cb-blue-text)] font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><User className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high === "High" ? "Men" : t.risk_high === "Tinggi" ? "Lelaki" : "男性"}</span>
-                  <span className="text-xs md:text-base">&lt;36g</span>
-                </span>
-                <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[var(--cb-pink)]/15 text-foreground font-semibold text-sm md:text-base md:px-4 md:py-2">
-                  <span className="inline-flex items-center gap-0.5"><User className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0 text-[var(--cb-pink-text)]" />{t.risk_high === "High" ? "Women" : t.risk_high === "Tinggi" ? "Wanita" : "女性"}</span>
-                  <span className="text-xs md:text-base">&lt;25g</span>
-                </span>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
         <div className="space-y-4">

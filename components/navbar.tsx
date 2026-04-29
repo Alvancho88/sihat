@@ -33,7 +33,7 @@ export function Navbar({ lang = "en", setLang }: { lang?: LangCode; setLang?: (l
   const t = (item: { en: string; ms: string; zh: string }) => item[lang]
 
   return (
-    <header className="sticky top-0 z-50 bg-background border-b-2 border-primary/20 shadow-sm">
+    <header className="sticky top-0 z-60 bg-background border-b-2 border-primary/20 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}

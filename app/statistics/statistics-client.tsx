@@ -678,6 +678,17 @@ function EthnicityBarChart({t, ethnicityData,}: {t: typeof content.en; ethnicity
     setSelectedEntry(ETHNICITY_EXPLANATIONS[data.rawEthnicity] ?? DEFAULT_EXPLANATION)
   }
 
+    // scroll to state details when a state is selected
+    useEffect(() => {
+      if (selectedEntry) {
+        const timer = setTimeout(() => {
+          explanationRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 100);
+        
+        return () => clearTimeout(timer);
+      }
+    }, [selectedEntry]);
+
   const isMobile = useIsMobile()
   return (
     <div className="bg-card rounded-2xl border border-border p-4 sm:p-6 shadow-sm mt-6">
@@ -880,12 +891,17 @@ export default function StatisticsClient({ dataByYear, availableYears, nationalT
             {/* ── Stats section ── */}
             <section className="py-8 md:py-10">
               {/* Eyebrow + heading */}
-              <p className="text-base font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-                {t.stats_eyebrow}
-              </p>
               <h2 className="text-2xl md:text-3xl font-bold mb-6 text-balance">
                 {t.stats_heading}
               </h2>
+              {/* Divider */}
+              <div className="flex items-center gap-3 my-6">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-lg font-semibold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
+                  {t.stats_eyebrow}
+                </span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
 
               {/* Diabetes cards — responsive 1 col on mobile, 3 on sm+ */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
