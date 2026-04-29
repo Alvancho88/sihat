@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { X } from "lucide-react"
 import Image from "next/image"
+import { createPortal } from "react-dom"
 
 type LangCode = "en" | "ms" | "zh"
 
@@ -117,8 +118,8 @@ export function ThreeHighsPopup({ lang }: { lang: LangCode }) {
 
   if (!isVisible) return null
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4 three-highs-popup">
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-6 pb-4">
@@ -231,6 +232,7 @@ export function ThreeHighsPopup({ lang }: { lang: LangCode }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
