@@ -306,8 +306,8 @@ function computeRiskFromIndicators(sugar: number, salt: number, fat: number, api
 }
 
 function indicatorClass(level: "low" | "medium" | "high") {
-  if (level === "high") return "bg-red-50 border border-red-200 text-red-700"
-  if (level === "medium") return "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40 text-[var(--risk-medium)]"
+  if (level === "high") return "bg-[#FFF3CD] border border-[#856404]/30 text-[#856404]" 
+  //if (level === "medium") return "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40 text-[var(--risk-medium)]"
   return "bg-muted text-foreground"
 }
 
@@ -370,7 +370,7 @@ function FoodResultCard({ food, isBest, t, lang }: { food: FoodItem; isBest: boo
         </div>
         <div className={`flex items-start gap-2 rounded-xl p-4 ${
           isHighRisk
-            ? "bg-red-50 border border-red-200"
+            ? "bg-[#FFF3CD] border border-[#856404]/30"
             : isMediumRisk
               ? "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40"
               : "bg-accent/20"
