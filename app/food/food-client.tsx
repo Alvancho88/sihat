@@ -484,6 +484,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
                 <div>
                   <h3 className="text-2xl font-bold text-foreground">{food.name}</h3>
                   <p className="text-base text-muted-foreground">{t.portion}: {translatePortion(food.portion)}</p>
+                  <p className="text-base text-muted-foreground font-medium">{food.category}</p>
                 </div>
                 <button
                   onClick={() => setOpen(false)}
