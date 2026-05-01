@@ -1,3 +1,23 @@
+/**
+ * food-client.tsx
+ *
+ * This is the main client-side component for the "Search Food" page.
+ * It allows users to browse Malaysian and other food items, view their
+ * nutritional information (sugar, calories, GI, fat, sodium), filter and
+ * sort foods by category or nutrient value, and track their daily intake
+ * using a cart-like system.
+ *
+ * Features:
+ * - Multi-language support (English, Malay, Chinese)
+ * - Food card grid with nutrition colour-coded pills
+ * - Collapsible nutrition guide with GI and sodium info modals
+ * - Daily intake cart panel with progress bars vs daily limits
+ * - Pagination (15 items per page)
+ * - Category filter (multi-select) and nutrient sort (asc/desc)
+ * - Cart and gender preference persisted in localStorage
+ * - Floating "Back to Search" button when scrolling far down
+ */
+
 "use client"
 
 import { PageLayout } from "@/components/page-layout"
@@ -7,8 +27,16 @@ import Image from "next/image"
 import { Search, X, TrendingDown, TrendingUp, Minus, Info, User, ShoppingCart, Trash2, Plus, Check, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from "lucide-react"
 import { categories, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel, dailyLimits, type FoodItem } from "@/lib/food-functions"
 
+// Supported language codes for the page
 type LangCode = "en" | "ms" | "zh"
 
+/**
+ * pageContent
+ *
+ * All UI text strings for the food search page, organized by language code.
+ * Each language key ("en", "ms", "zh") contains the full set of translated labels,
+ * button text, status messages, and nutrition guide content used across the page.
+ */
 const pageContent = {
   en: {
     title: "Search Food",
@@ -333,7 +361,16 @@ const pageContent = {
   },
 }
 
-// Cart context for daily intake
+/**
+ * CartContextType
+ *
+ * Defines the shape of the cart context shared across components.
+ * - cart: list of food items currently in the daily intake plan
+ * - addToCart: adds a food item to the cart
+ * - removeFromCart: removes a food item at a specific index
+ * - clearCart: removes all items from the cart
+ * - isInCart: checks whether a food item (by name) is already in the cart
+ */
 type CartContextType = {
   cart: FoodItem[]
   addToCart: (food: FoodItem) => void
@@ -342,33 +379,84 @@ type CartContextType = {
   isInCart: (name: string) => boolean
 }
 
+// React context for sharing cart state between FoodCard, DailyIntakePanel, and FoodClientInner
 const CartContext = createContext<CartContextType | null>(null)
 
+/**
+ * useCart
+ *
+ * Custom hook that retrieves the CartContext value.
+ * Throws an error if used outside of a CartContext.Provider.
+ */
 function useCart() {
   const context = useContext(CartContext)
   if (!context) throw new Error("useCart must be used within CartProvider")
   return context
 }
 
-// Level indicator component
+/**
+ * LevelIcon
+ *
+ * Renders a trend icon based on the given nutrition risk level:
+ * - "low"    → TrendingDown icon (green/safe)
+ * - "medium" → Minus icon (yellow/moderate)
+ * - "high"   → TrendingUp icon (orange/warning)
+ *
+ * @param level - The nutrition risk level: "low", "medium", or "high"
+ */
 function LevelIcon({ level }: { level: "low" | "medium" | "high" }) {
   if (level === "low") return <TrendingDown className="w-3 h-3" />
   if (level === "medium") return <Minus className="w-3 h-3" />
   return <TrendingUp className="w-3 h-3" />
 }
 
-// Colorblind-friendly pill styles based on level - using orange-yellow for high
+/**
+ * getLevelPillStyle
+ *
+ * Returns a Tailwind CSS class string for a nutrition pill badge
+ * based on the given risk level. Uses colorblind-friendly colour scheme:
+ * - "low"    → blue tones
+ * - "medium" → sage/olive tones
+ * - "high"   → amber/warm yellow tones
+ *
+ * @param level - The nutrition risk level: "low", "medium", or "high"
+ * @returns A string of Tailwind CSS classes for background, border, and text colour
+ */
 const getLevelPillStyle = (level: "low" | "medium" | "high") => {
   if (level === "low") return "bg-[#B5E0F1] border-[#1a5276] text-[#1a5276]"
   if (level === "medium") return "bg-[#E6EAC7] border-[#4a5a23] text-[#4a5a23]"
   return "bg-[#FFF3CD] border-[#856404] text-[#856404]"
 }
 
+/**
+ * FoodCard
+ *
+ * Renders a single food item card in the food grid.
+ * Displays the food image, name, and a colour-coded 5-nutrient grid
+ * (sugar, calories, GI, fat, sodium).
+ *
+ * Clicking the card opens a detail modal with full nutritional info,
+ * a health tip, and an add/remove button for the daily intake plan.
+ *
+ * @param food - The food item data object
+ * @param t - Translated text strings for the current language
+ * @param lang - The active language code ("en", "ms", or "zh")
+ */
 function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en; lang: LangCode }) {
+  // Controls whether the detail modal is open
   const [open, setOpen] = useState(false)
   const { addToCart, removeFromCart, isInCart, cart } = useCart()
 
-  // Translate portion text (e.g., "1 plate (350g)" -> "1 pinggan (350g)")
+  /**
+   * translatePortion
+   *
+   * Converts English portion unit words in a portion string to the
+   * equivalent word in the active language (e.g., "1 plate" → "1 pinggan").
+   * Uses regex word-boundary replacements to avoid partial matches.
+   *
+   * @param portion - The raw English portion string (e.g., "1 bowl (250g)")
+   * @returns The portion string with unit words translated into the current language
+   */
   const translatePortion = (portion: string): string => {
     return portion
       .replace(/\bplate\b/gi, t.portion_plate)
@@ -387,9 +475,13 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
       .replace(/\bslices\b/gi, t.portion_slices)
       .replace(/\bslice\b/gi, t.portion_slice)
   }
+
+  // Check if this food item is already in the daily intake cart
   const inCart = isInCart(food.name)
+  // Find the index of this food in the cart (used for removal)
   const cartIndex = cart.findIndex(f => f.name === food.name)
 
+  // Compute colour-coded risk levels for each nutrient
   const sugarLevel = getSugarLevel(food.sugar)
   const giLevel = getGILevel(food.gi)
   const fatLevel = getFatLevel(food.fat)
@@ -397,21 +489,22 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
 
   return (
     <>
+      {/* Food card — clicking opens the detail modal */}
       <div
         onClick={() => setOpen(true)}
         className="bg-card rounded-2xl border-2 border-border overflow-hidden hover:border-primary hover:shadow-lg transition-all group cursor-pointer">
-        {/* Image */}
+        {/* Food image */}
         <div className="relative h-40 sm:h-40 w-full">
           <Image src={food.image} alt={food.name} fill className="object-cover group-hover:scale-105 transition-transform" />
         </div>
 
-        {/* Content */}
+        {/* Card content: name, add button, nutrition pills */}
         <div className="p-4">
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="text-left flex-1 min-w-0">
               <h3 className="text-xl font-bold group-hover:text-primary transition-colors leading-tight">{food.name}</h3>
             </div>
-            {/* Add/Remove button - aligned with title */}
+            {/* Add to / Remove from daily intake cart button */}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -432,7 +525,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
             </button>
           </div>
 
-          {/* Nutrition grid - 2 rows for 5 values with colorblind-friendly colors */}
+          {/* Top row: Sugar | Calories | GI */}
           <div className="grid grid-cols-3 gap-2 mb-2">
             <div className={`rounded-xl px-2 py-2 text-center border ${getLevelPillStyle(sugarLevel)}`}>
               <div className="flex items-center justify-center gap-1">
@@ -453,6 +546,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
               <div className="text-xs md:text-sm font-medium">{t.nutrition_gi}</div>
             </div>
           </div>
+          {/* Bottom row: Fat | Sodium */}
           <div className="grid grid-cols-2 gap-2">
             <div className={`rounded-xl px-2 py-2 text-center border ${getLevelPillStyle(fatLevel)}`}>
               <div className="flex items-center justify-center gap-1">
@@ -472,14 +566,16 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
         </div>
       </div>
 
-      {/* Detail Modal */}
+      {/* Detail Modal — shown when the food card is clicked */}
       {open && (
         <div className="fixed inset-0 bg-foreground/80 z-80 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
           <div className="bg-card rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {/* Modal food image */}
             <div className="relative h-48 sm:h-56 w-full">
               <Image src={food.image} alt={food.name} fill className="object-cover" />
             </div>
             <div className="p-6">
+              {/* Food name, portion, and category header */}
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <h3 className="text-2xl font-bold text-foreground">{food.name}</h3>
@@ -495,7 +591,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
                 </button>
               </div>
 
-              {/* Add/Remove button */}
+              {/* Add/Remove button inside modal */}
               <button
                 onClick={() => {
                   if (inCart) {
@@ -513,7 +609,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
                 {inCart ? t.added : t.add_to_cart}
               </button>
 
-              {/* Nutrition grid in modal - matching food card style */}
+              {/* Nutrition grid in modal: Sugar | Cal | GI */}
               <div className="grid grid-cols-3 gap-2 md:gap-3 mb-3">
                 <div className={`rounded-xl px-3 py-2 text-center border min-h-[48px] ${getLevelPillStyle(sugarLevel)}`}>
                   <div className="flex items-center justify-center gap-1">
@@ -534,6 +630,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
                   <div className="text-sm font-medium">{t.nutrition_gi}</div>
                 </div>
               </div>
+              {/* Nutrition grid in modal: Fat | Sodium */}
               <div className="grid grid-cols-2 gap-2 md:gap-3 mb-4">
                 <div className={`rounded-xl px-3 py-2 text-center border min-h-[48px] ${getLevelPillStyle(fatLevel)}`}>
                   <div className="flex items-center justify-center gap-1">
@@ -551,7 +648,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
                 </div>
               </div>
 
-              {/* Daily limits reference */}
+              {/* Daily sugar reference box */}
               <div className="text-base text-muted-foreground text-center mb-4 bg-muted rounded-xl px-4 py-3">
                 <div className="font-semibold text-foreground mb-1">{t.daily_sugar_title}</div>
                 <div className="flex justify-center gap-6">
@@ -560,12 +657,14 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
                 </div>
               </div>
 
-              {/* Health tip - Three Highs focused */}
+              {/* Health tip section — highlighted in amber if any nutrient is high risk */}
               {(() => {
+                // Parse numeric values from nutrient strings for risk assessment
                 const sugarVal = typeof food.sugar === 'string' ? parseFloat(food.sugar.replace(/[^0-9.]/g, '')) : food.sugar;
                 const giVal = typeof food.gi === 'string' ? parseFloat(food.gi.replace(/[^0-9.]/g, '')) : food.gi;
                 const fatVal = typeof food.fat === 'string' ? parseFloat(food.fat.replace(/[^0-9.]/g, '')) : food.fat;
                 const sodiumVal = typeof food.sodium === 'string' ? parseFloat(food.sodium.replace(/[^0-9.]/g, '')) : food.sodium;
+                // Flag as high risk if any nutrient exceeds the "high" threshold
                 const isHighRisk = sugarVal > 22.5 || giVal >= 70 || fatVal >= 16 || sodiumVal >= 601;
                 return (
                   <div className={`flex items-start gap-2 rounded-xl p-4 ${isHighRisk ? 'bg-[#FFF3CD] border border-[#856404]' : 'bg-accent/20'}`}>
@@ -584,22 +683,52 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
   )
 }
 
-// Daily Intake Cart Panel
+/**
+ * DailyIntakePanel
+ *
+ * A full-screen overlay panel that shows the user's current daily food plan.
+ * Displays each selected food item with its nutrition values, and shows
+ * progress bars comparing total nutrient intake against recommended daily limits.
+ *
+ * The user can select their gender to apply gender-specific daily limits
+ * (e.g., sugar: women <25g, men <36g). This preference is saved to localStorage.
+ *
+ * Features:
+ * - Horizontal progress bars for sugar, fat, and sodium vs. daily limits
+ * - Red limit marker line on each bar; bar turns red and shows excess if over limit
+ * - Calorie total display (no limit enforcement)
+ * - Scrollable food item list with remove buttons
+ * - "Clear All" button to reset the plan
+ * - Responsive: single-column on mobile, two-column on desktop
+ *
+ * @param t - Translated text strings for the current language
+ * @param isOpen - Whether the panel is visible
+ * @param onClose - Callback to close the panel
+ */
 function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; isOpen: boolean; onClose: () => void }) {
   const { cart, removeFromCart, clearCart } = useCart()
+
+  // Load saved gender preference from localStorage, defaulting to "male"
   const [gender, setGender] = useState<"male" | "female">(() => {
     if (typeof window === "undefined") return "male"
     const saved = localStorage.getItem("manis-gender")
     return saved === "female" ? "female" : "male"
   })
 
-  // Save gender to localStorage when it changes
+  /**
+   * handleGenderChange
+   *
+   * Updates the selected gender and persists the choice to localStorage
+   * so it is remembered across page refreshes.
+   *
+   * @param newGender - The newly selected gender ("male" or "female")
+   */
   const handleGenderChange = (newGender: "male" | "female") => {
     setGender(newGender)
     localStorage.setItem("manis-gender", newGender)
   }
 
-  // Calculate totals
+  // Sum all nutrient values across cart items to get daily totals
   const totals = cart.reduce((acc, food) => ({
     sugar: acc.sugar + parseFloat(food.sugar.replace(/[^0-9.]/g, '')),
     calories: acc.calories + parseFloat(food.calories.replace(/[^0-9.]/g, '')),
@@ -608,6 +737,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     gi: acc.gi + parseFloat(food.gi.replace(/[^0-9.]/g, '')),
   }), { sugar: 0, calories: 0, fat: 0, sodium: 0, gi: 0 })
 
+  // Set daily limits based on selected gender
   const limits = {
     sugar: gender === "male" ? dailyLimits.sugar.men : dailyLimits.sugar.women,
     fat: gender === "male" ? dailyLimits.fat.men : dailyLimits.fat.women,
@@ -616,7 +746,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     gi: dailyLimits.gi.men,
   }
 
-  // Calculate excess amounts
+  // Calculate how much each nutrient exceeds the daily limit (0 if within limit)
   const excess = {
     sugar: totals.sugar > limits.sugar ? totals.sugar - limits.sugar : 0,
     fat: totals.fat > limits.fat ? totals.fat - limits.fat : 0,
@@ -624,15 +754,30 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     cal: totals.calories > limits.cal ? totals.calories - limits.cal : 0,
   }
 
-  // Bright bar colors
+  // Colour palette for each nutrient's progress bar
   const barColors: Record<string, string> = {
-    cal: "#3b82f6", // blue-500
-    sugar: "#BA7517", // golden brown
-    fat: "#7F77DD", // purple
+    cal: "#3b82f6",    // blue-500
+    sugar: "#BA7517",  // golden brown
+    fat: "#7F77DD",    // purple
     sodium: "#D4537E", // rose pink
   }
 
-  // Horizontal bar with red limit line - compact version for mobile
+  /**
+   * NutritionBarCompact
+   *
+   * A compact horizontal progress bar used in the mobile layout.
+   * Shows nutrient value vs. daily limit with a red vertical limit line.
+   * If the value exceeds the limit, the bar turns red and shows the excess amount.
+   *
+   * @param label - Nutrient label text (e.g., "Sugar (g)")
+   * @param value - Current total intake value
+   * @param limit - Recommended daily limit
+   * @param unit - Unit string (e.g., "g" or "mg")
+   * @param color - Bar fill colour when within limit
+   * @param excessAmount - Amount by which the value exceeds the limit
+   * @param statusOk - Message shown when within limit
+   * @param statusOver - Message shown when over limit
+   */
   const NutritionBarCompact = ({
     label, value, limit, unit, color, excessAmount, statusOk, statusOver,
   }: {
@@ -640,6 +785,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     color: string; excessAmount: number; statusOk: string; statusOver: string;
   }) => {
     const isOver = value > limit
+    // Cap the visible bar area at 110% of the limit to keep the UI clean
     const maxDisplay = limit * 1.1
     const fillPct = Math.min((value / maxDisplay) * 100, 100)
     const limitPct = (limit / maxDisplay) * 100
@@ -648,6 +794,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
       <div className={`mb-2 rounded-xl transition-all ${isOver ? "bg-red-50 border border-red-300 p-1.5 -mx-1" : ""}`}>
         <div className="flex justify-between items-baseline mb-1">
           <div className="flex items-center gap-1">
+            {/* Red exclamation badge shown when over limit */}
             {isOver && (
               <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-red-600 shrink-0">
                 <span className="text-white font-black leading-none" style={{ fontSize: "9px" }}>!</span>
@@ -659,6 +806,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
             {value}{unit} / {limit}{unit}
           </span>
         </div>
+        {/* Progress bar with red vertical limit marker */}
         <div className="relative h-4 bg-background rounded-full overflow-visible">
           <div
             className="h-full rounded-full transition-all"
@@ -669,6 +817,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
             style={{ left: `${limitPct}%` }}
           />
         </div>
+        {/* Excess amount message shown only when over limit */}
         {isOver && excessAmount > 0 && (
           <div className="mt-1 flex flex-col items-start gap-1">
             <span className="text-sm text-red-700 font-semibold">
@@ -677,6 +826,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
             <span className="text-sm md:text-base text-black font-semibold">{statusOver}</span>
           </div>
         )}
+        {/* OK status message shown when within limit */}
         {!isOver && (
           <p className="text-sm md:text-base mt-0.5 leading-relaxed text-muted-foreground">{statusOk}</p>
         )}
@@ -684,7 +834,22 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     )
   }
 
-  // Horizontal bar with red limit line - full version for desktop
+  /**
+   * NutritionBar
+   *
+   * A full-size horizontal progress bar used in the desktop layout.
+   * Functionally identical to NutritionBarCompact but with larger padding,
+   * font sizes, and spacing suitable for the two-column desktop view.
+   *
+   * @param label - Nutrient label text (e.g., "Sugar (g)")
+   * @param value - Current total intake value
+   * @param limit - Recommended daily limit
+   * @param unit - Unit string (e.g., "g" or "mg")
+   * @param color - Bar fill colour when within limit
+   * @param statusOk - Message shown when within limit
+   * @param statusOver - Message shown when over limit
+   * @param excessAmount - Amount by which the value exceeds the limit
+   */
   const NutritionBar = ({
     label, value, limit, unit, color, statusOk, statusOver, excessAmount,
   }: {
@@ -692,6 +857,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     color: string; statusOk: string; statusOver: string; excessAmount: number;
   }) => {
     const isOver = value > limit
+    // Cap the visible bar area at 110% of the limit to keep the UI clean
     const maxDisplay = limit * 1.1
     const fillPct = Math.min((value / maxDisplay) * 100, 100)
     const limitPct = (limit / maxDisplay) * 100
@@ -700,6 +866,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
       <div className={`mb-3 rounded-xl transition-all ${isOver ? "bg-red-50 border border-red-300 p-2 -mx-1" : ""}`}>
         <div className="flex justify-between items-baseline mb-1">
           <div className="flex items-center gap-1.5">
+            {/* Red exclamation badge shown when over limit */}
             {isOver && (
               <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 shrink-0">
                 <span className="text-white font-black leading-none" style={{ fontSize: "10px" }}>!</span>
@@ -711,6 +878,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
             {value}{unit} / {limit}{unit}
           </span>
         </div>
+        {/* Progress bar with red vertical limit marker */}
         <div className="relative h-4 bg-background rounded-full overflow-visible">
           <div
             className="h-full rounded-full transition-all"
@@ -721,6 +889,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
             style={{ left: `${limitPct}%` }}
           />
         </div>
+        {/* Excess amount message shown only when over limit */}
         {isOver && excessAmount > 0 && (
           <div className="mt-1.5 flex flex-col items-start gap-2">
             <span className="text-sm text-red-700 font-semibold">
@@ -729,6 +898,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
             <span className="text-sm text-black font-semibold">{statusOver}</span>
           </div>
         )}
+        {/* OK status message shown when within limit */}
         {!isOver && (
           <p className="text-sm mt-1 leading-relaxed text-muted-foreground">{statusOk}</p>
         )}
@@ -736,9 +906,10 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
     )
   }
 
+  // Do not render anything if the panel is closed
   if (!isOpen) return null
 
-  // Reverse cart for display (newest on top)
+  // Reverse cart display so the most recently added item appears at the top
   const displayCart = [...cart].reverse()
 
   return (
@@ -747,7 +918,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
         className="bg-card rounded-2xl w-full max-w-4xl max-h-[95vh] md:max-h-[90vh] overflow-hidden shadow-xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header - always visible */}
+        {/* Panel header: title, item count badge, and close button */}
         <div className="bg-card border-b border-border px-3 md:px-6 py-2 md:py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 md:gap-3">
             <ShoppingCart className="w-5 h-5 md:w-6 md:h-6 text-primary" />
@@ -759,6 +930,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
           </button>
         </div>
 
+        {/* Empty state: shown when no foods have been added */}
         {cart.length === 0 ? (
           <div className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="text-center py-12">
@@ -769,11 +941,11 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
           </div>
         ) : (
           <>
-            {/* MOBILE LAYOUT */}
+            {/* ── MOBILE LAYOUT ─────────────────────────────────────── */}
             <div className="md:hidden flex flex-col flex-1 overflow-hidden">
-              {/* Sticky top section (gender + nutrition bars + cal) */}
+              {/* Sticky top section: gender toggle + nutrition bars + calorie card */}
               <div className="shrink-0 bg-card px-3 py-2 border-b border-border">
-                {/* Gender toggle - compact */}
+                {/* Gender selector — determines which daily limits to apply */}
                 <div className="flex gap-2 mb-2">
                   <button
                     onClick={() => handleGenderChange("male")}
@@ -805,7 +977,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                   </button>
                 </div>
 
-                {/* Compact nutrition bars */}
+                {/* Compact nutrition bars (mobile) */}
                 <div className="bg-muted rounded-xl p-2 mb-2">
                   <div className="flex items-center justify-between mb-1.5">
                     <h4 className="text-xs font-bold text-foreground">{t.total} vs {t.daily_limit}</h4>
@@ -846,7 +1018,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                   />
                 </div>
 
-                {/* Cal card - full width, compact, no limit shown */}
+                {/* Calorie total card — displayed without a daily limit bar */}
                 <div className="rounded-xl px-3 py-2 bg-muted">
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-muted-foreground">{t.nutrition_cal}</p>
@@ -857,18 +1029,21 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                 </div>
               </div>
 
-              {/* Scrollable food list */}
+              {/* Scrollable food item list (mobile) */}
               <div className="flex-1 overflow-y-auto px-3 py-2">
                 <div className="space-y-2">
                   {displayCart.map((food, index) => {
+                    // Map display index back to original cart index for removal
                     const originalIndex = cart.length - 1 - index
                     return (
                       <div key={originalIndex} className="flex items-center gap-2 bg-muted rounded-xl p-2">
+                        {/* Food thumbnail */}
                         <div className="relative w-16 h-16 rounded-lg overflow-hidden shrink-0 border border-border">
                           <Image src={food.image} alt={food.name} fill className="object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="font-bold text-sm line-clamp-2">{food.name}</h4>
+                          {/* Nutrition tag pills for each food item */}
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#B5E0F1] text-[#1a5276] border border-[#1a5276]">
                               {t.nutrition_sugar} {food.sugar}
@@ -887,6 +1062,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                             </span>
                           </div>
                         </div>
+                        {/* Remove button */}
                         <button
                           onClick={() => removeFromCart(originalIndex)}
                           className="p-3 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive transition-colors shrink-0"
@@ -899,7 +1075,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                 </div>
               </div>
 
-              {/* Clear all button - always at bottom */}
+              {/* Clear all button — always pinned to the bottom of the mobile panel */}
               <div className="shrink-0 px-3 py-2 border-t border-border bg-card">
                 <button
                   onClick={clearCart}
@@ -911,11 +1087,11 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
               </div>
             </div>
 
-            {/* DESKTOP LAYOUT - Two columns */}
+            {/* ── DESKTOP LAYOUT (two columns) ────────────────────────── */}
             <div className="hidden md:flex flex-1 overflow-hidden">
-              {/* Left column - Stats (no scroll needed) */}
+              {/* Left column: gender selector + nutrition bars + calorie card */}
               <div className="w-1/2 p-4 border-r border-border flex flex-col">
-                {/* Gender toggle */}
+                {/* Gender selector */}
                 <div className="flex gap-2 mb-3">
                   <button
                     onClick={() => handleGenderChange("male")}
@@ -947,7 +1123,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                   </button>
                 </div>
 
-                {/* Nutrition bars */}
+                {/* Full-size nutrition bars (desktop) */}
                 <div className="bg-muted rounded-2xl p-3 mb-3 flex-1">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="text-base font-bold text-foreground">{t.total} vs {t.daily_limit}</h4>
@@ -989,7 +1165,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                   />
                 </div>
 
-                {/* Cal card - full width, no limit shown */}
+                {/* Calorie total card — displayed without a daily limit bar */}
                 <div className="rounded-xl p-3 bg-muted">
                   <p className="text-base text-muted-foreground mb-1">{t.nutrition_cal}</p>
                   <p className="text-2xl font-bold">
@@ -998,19 +1174,19 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                 </div>
               </div>
 
-              {/* Right column - Food list (scrollable) with Clear All at bottom */}
+              {/* Right column: scrollable food item list + Clear All button */}
               <div className="w-1/2 flex flex-col">
-                {/* Scrollable food list */}
                 <div className="flex-1 overflow-y-auto p-4">
                   <div className="space-y-2">
                     {displayCart.map((food, index) => {
+                      // Map display index back to original cart index for removal
                       const originalIndex = cart.length - 1 - index
                       const foodSugarLevel = getSugarLevel(food.sugar)
                       const foodGiLevel = getGILevel(food.gi)
                       const foodFatLevel = getFatLevel(food.fat)
                       const foodSodiumLevel = getSodiumLevel(food.sodium)
 
-                      // Pill style function for food items
+                      // Helper to get the colorblind-friendly pill style for a nutrient level
                       const getPillStyle = (level: "low" | "medium" | "high") => {
                         if (level === "low") return "bg-[#B5E0F1] border-[#1a5276] text-[#1a5276]"
                         if (level === "medium") return "bg-[#E6EAC7] border-[#4a5a23] text-[#4a5a23]"
@@ -1019,13 +1195,14 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
 
                       return (
                         <div key={originalIndex} className="flex items-start gap-3 bg-muted rounded-xl p-3">
+                          {/* Food thumbnail */}
                           <div className="relative w-14 h-14 rounded-lg overflow-hidden shrink-0 border border-border">
                             <Image src={food.image} alt={food.name} fill className="object-cover" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            {/* Row 1: Food name */}
+                            {/* Food name */}
                             <h4 className="font-bold text-base mb-2 leading-tight">{food.name}</h4>
-                            {/* Label row + value pill row — auto column widths fit content, 5 always on one line */}
+                            {/* Nutrient pills row: label above, coloured value pill below */}
                             {(() => {
                               const nutrients = [
                                 { label: t.nutrition_sugar, value: food.sugar, style: getPillStyle(foodSugarLevel), flex: "flex-1" },
@@ -1046,6 +1223,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                               )
                             })()}
                           </div>
+                          {/* Remove button */}
                           <button
                             onClick={() => removeFromCart(originalIndex)}
                             className="p-2 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive transition-colors shrink-0"
@@ -1058,7 +1236,7 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                   </div>
                 </div>
 
-                {/* Clear all button - always at bottom of right column */}
+                {/* Clear all button — always pinned to the bottom of the right column */}
                 <div className="shrink-0 px-4 py-3 border-t border-border bg-card">
                   <button
                     onClick={clearCart}
@@ -1077,33 +1255,74 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
   )
 }
 
+/**
+ * FoodClientInner
+ *
+ * The main inner component that renders the full food search and planning page.
+ * Manages all page-level state including:
+ * - Search query and category filter selections
+ * - Sort configuration (nutrient type and direction)
+ * - Pagination (15 items per page)
+ * - Cart state (loaded from and saved to localStorage)
+ * - UI states for modals and floating buttons
+ *
+ * Also provides the CartContext to all child components.
+ *
+ * @param lang - The active language code ("en", "ms", or "zh")
+ * @param initialFoods - The full list of food items loaded from the server
+ */
 function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods: FoodItem[] }) {
   const t = pageContent[lang]
   const cats = categories[lang]
 
+  // Search query input value
   const [search, setSearch] = useState("")
-  const [selectedCats, setSelectedCats] = useState<number[]>([]) // Empty = All, or array of selected indices (excluding 0 which is "All")
+  // Selected category indices (empty = All)
+  const [selectedCats, setSelectedCats] = useState<number[]>([])
+  // Daily intake cart items
   const [cart, setCart] = useState<FoodItem[]>([])
+  // Whether cart has been loaded from localStorage (prevents premature saves)
   const [cartLoaded, setCartLoaded] = useState(false)
+  // Whether the daily intake panel is open
   const [cartOpen, setCartOpen] = useState(false)
+  // Whether the GI info modal is open
   const [giInfoOpen, setGiInfoOpen] = useState(false)
+  // Whether the sodium info modal is open
   const [sodiumInfoOpen, setSodiumInfoOpen] = useState(false)
+  // Whether the sort filter panel is expanded
   const [sortOpen, setSortOpen] = useState(false)
+  // Whether a sort has been confirmed and is actively applied
   const [sortActive, setSortActive] = useState(false)
+  // Applied sort direction
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+  // Applied sort nutrient key
   const [sortBy, setSortBy] = useState<"sugar" | "cal" | "gi" | "fat" | "sodium">("sugar")
+  // Temporary sort direction (pending confirmation)
   const [tempSortOrder, setTempSortOrder] = useState<"asc" | "desc">("asc")
+  // Temporary sort nutrient key (pending confirmation)
   const [tempSortBy, setTempSortBy] = useState<"sugar" | "cal" | "gi" | "fat" | "sodium">("sugar")
+  // Whether the collapsible nutrition guide is expanded
   const [guideOpen, setGuideOpen] = useState(false)
 
+  // Ref to the search input element (used for scroll-to-search floating button)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // Ref to the food grid (unused currently, reserved for scroll-into-view if needed)
   const foodGridRef = useRef<HTMLDivElement>(null)
+  // Current pagination page number
   const [currentPage, setCurrentPage] = useState(1)
+  // Whether the floating "Back to Search" button should be shown
   const [showFloatingButton, setShowFloatingButton] = useState(false)
+  // Whether the user is near the bottom of the page (shows static button instead)
   const [isNearBottom, setIsNearBottom] = useState(false)
+  // Number of food items to show per page
   const ITEMS_PER_PAGE = 15
 
-  // Track scroll position for floating button - hide when near bottom and show static button instead
+  /**
+   * Scroll listener to control visibility of the floating "Back to Search" button.
+   * Shows the floating button when the user has scrolled more than 400px down
+   * and is NOT within 300px of the bottom of the page.
+   * When near the bottom, shows a static button inline near the pagination instead.
+   */
   useEffect(() => {
     const handleScroll = () => {
       const scrollY = window.scrollY
@@ -1111,17 +1330,19 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
       const documentHeight = document.documentElement.scrollHeight
       const distanceFromBottom = documentHeight - scrollY - windowHeight
 
-      // Show floating button only if scrolled past 400px AND more than 300px from bottom
       const nearBottom = distanceFromBottom <= 300
       setShowFloatingButton(scrollY > 400 && !nearBottom)
       setIsNearBottom(scrollY > 400 && nearBottom)
     }
     window.addEventListener("scroll", handleScroll)
-    handleScroll() // Check initial position
+    handleScroll()
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
-  // Load cart from localStorage on mount
+  /**
+   * Load the cart from localStorage on initial mount.
+   * Sets cartLoaded to true after loading to allow subsequent saves.
+   */
   useEffect(() => {
     const savedCart = localStorage.getItem("manis-cart")
     if (savedCart) {
@@ -1131,60 +1352,85 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           setCart(parsed)
         }
       } catch {
-        // Invalid JSON, ignore
+        // Silently ignore corrupted localStorage data
       }
     }
     setCartLoaded(true)
   }, [])
 
-  // Save cart to localStorage whenever it changes (only after initial load)
+  /**
+   * Persist the cart to localStorage whenever it changes.
+   * Only runs after the initial load to avoid overwriting saved data on mount.
+   */
   useEffect(() => {
     if (cartLoaded) {
       localStorage.setItem("manis-cart", JSON.stringify(cart))
     }
   }, [cart, cartLoaded])
 
-  // Cart functions
+  // Cart mutation functions passed through CartContext
   const addToCart = (food: FoodItem) => setCart(prev => [...prev, food])
   const removeFromCart = (index: number) => setCart(prev => prev.filter((_, i) => i !== index))
   const clearCart = () => setCart([])
   const isInCart = (name: string) => cart.some(f => f.name === name)
 
-  // Category toggle function - multi-select
+  /**
+   * toggleCategory
+   *
+   * Handles category filter selection with multi-select logic:
+   * - Clicking "All" (index 0) clears all selections
+   * - Clicking any other category toggles it in/out of the selection array
+   *
+   * @param index - The index of the clicked category in the categories array
+   */
   const toggleCategory = (index: number) => {
     if (index === 0) {
-      // "All" clicked - clear all selections
       setSelectedCats([])
     } else {
       setSelectedCats(prev => {
         if (prev.includes(index)) {
-          // Remove if already selected
           return prev.filter(i => i !== index)
         } else {
-          // Add to selection
           return [...prev, index]
         }
       })
     }
   }
 
-  // Clear all filters (categories + sort) and close filter panel
+  /**
+   * clearAllFilters
+   *
+   * Resets all active filters:
+   * - Clears category selections (back to "All")
+   * - Resets and deactivates the sort configuration
+   * - Closes the sort filter panel
+   */
   const clearAllFilters = () => {
     setSelectedCats([])
     setSortActive(false)
     setSortOrder("asc")
     setSortBy("sugar")
-    setSortOpen(false) // Close the filter panel
+    setSortOpen(false)
   }
 
-  // Open sort popup
+  /**
+   * openSortPopup
+   *
+   * Opens the sort configuration panel, pre-populating temporary
+   * sort state with the currently applied sort values.
+   */
   const openSortPopup = () => {
     setTempSortOrder(sortOrder)
     setTempSortBy(sortBy)
     setSortOpen(true)
   }
 
-  // Confirm sort
+  /**
+   * confirmSort
+   *
+   * Applies the temporary sort settings as the active sort configuration
+   * and closes the sort panel.
+   */
   const confirmSort = () => {
     setSortOrder(tempSortOrder)
     setSortBy(tempSortBy)
@@ -1192,14 +1438,23 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     setSortOpen(false)
   }
 
-  // Clear sort
+  /**
+   * clearSort
+   *
+   * Deactivates the active sort and resets it to the default state
+   * (ascending by sugar). Does not close the sort panel.
+   */
   const clearSort = () => {
     setSortActive(false)
     setSortOrder("asc")
     setSortBy("sugar")
   }
 
-  // Persist state
+  /**
+   * Restore filter state from sessionStorage on mount.
+   * Allows category and search state to persist across soft navigations
+   * (e.g., navigating away and back without a full reload).
+   */
   useEffect(() => {
     const savedCats = sessionStorage.getItem("food-selectedCats")
     const savedSearch = sessionStorage.getItem("food-search")
@@ -1208,12 +1463,20 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     if (savedSearch) setSearch(savedSearch)
   }, [])
 
+  // Persist filter state to sessionStorage whenever it changes
   useEffect(() => {
     sessionStorage.setItem("food-selectedCats", JSON.stringify(selectedCats))
     sessionStorage.setItem("food-search", search)
   }, [selectedCats, search, cart])
 
-  // Randomize initial foods on first load
+  /**
+   * shuffledFoods
+   *
+   * On initial render, randomises the order of food items within two groups:
+   * Malaysian foods are shuffled first and shown before other categories.
+   * This ensures variety in the displayed order without full randomisation.
+   * Memoised so it only runs once per component mount.
+   */
   const shuffledFoods = useMemo(() => {
     const malaysian = initialFoods.filter(f => f.category === "Malaysian")
     const others = initialFoods.filter(f => f.category !== "Malaysian")
@@ -1230,8 +1493,15 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     return [...shuffle(malaysian), ...shuffle(others)]
   }, [])
 
+  /**
+   * filtered
+   *
+   * Derives the list of food items to display by applying:
+   * 1. Category filter (multi-select; empty = show all)
+   * 2. Search query filter (case-insensitive name match)
+   * 3. Sort (by selected nutrient, ascending or descending), only if active
+   */
   const filtered = shuffledFoods.filter((f) => {
-    // If no categories selected (or "All"), show all
     const foodCategories = f.category.split(",").map(c => c.trim())
     const catMatch = selectedCats.length === 0 || selectedCats.some(i => foodCategories.includes(categories.en[i]))
     const searchMatch = !search || f.name.toLowerCase().includes(search.toLowerCase())
@@ -1252,16 +1522,27 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     return sortOrder === "asc" ? aVal - bVal : bVal - aVal
   })
 
-  // Pagination
+  // Pagination: total pages and the slice of foods for the current page
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
   const paginatedFoods = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 whenever any filter or sort changes
   useEffect(() => {
     setCurrentPage(1)
   }, [selectedCats, search, sortActive, sortBy, sortOrder])
 
-  // Generate page numbers to display
+  /**
+   * getPageNumbers
+   *
+   * Generates the list of page numbers (and ellipsis placeholders) to render
+   * in the pagination control. Uses a sliding window approach:
+   * - Shows all pages if there are 7 or fewer
+   * - Shows leading pages + ellipsis + last page if near the start
+   * - Shows first page + ellipsis + trailing pages if near the end
+   * - Otherwise shows first + ellipsis + current ± 1 + ellipsis + last
+   *
+   * @returns An array of page numbers (numbers) and ellipsis markers (strings)
+   */
   const getPageNumbers = () => {
     const pages: (number | string)[] = []
     if (totalPages <= 7) {
@@ -1289,13 +1570,13 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   return (
     <CartContext.Provider value={{ cart, addToCart, removeFromCart, clearCart, isInCart }}>
       <div className="max-w-7xl mx-auto px-4 py-10 md:py-14 pb-24 space-y-10">
-        {/* Header */}
+        {/* Page header */}
         <div className="text-center">
           <h1 className="text-2xl md:text-5xl font-extrabold mb-4 text-balance">{t.title}</h1>
           <p className="text-lg md:text-xl text-muted-foreground">{t.subtitle}</p>
         </div>
 
-        {/* GI Info Modal */}
+        {/* GI Info Modal — explains glycemic index to the user */}
         {giInfoOpen && (
           <div className="fixed top-0 left-0 right-0 bottom-0 w-full h-full min-h-screen bg-foreground/80 z-[100] flex items-center justify-center p-4" onClick={() => setGiInfoOpen(false)}>
             <div className="bg-card rounded-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -1309,6 +1590,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                 <p className="text-base text-foreground mb-4 leading-relaxed">{t.gi_popup_description}</p>
                 <h4 className="text-lg font-bold text-foreground mb-2">{t.gi_popup_why_important}</h4>
                 <p className="text-base text-foreground mb-6 leading-relaxed">{t.gi_popup_importance}</p>
+                {/* GI level colour legend */}
                 <div className="space-y-2 mb-6">
                   <div className="flex items-center justify-between gap-3 bg-[#B5E0F1] border border-[#1a5276] px-4 py-3 rounded-xl">
                     <div className={`flex ${t.gi_low_value ? "items-start" : "items-center"} gap-2`}>
@@ -1364,7 +1646,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           </div>
         )}
 
-        {/* Sodium Info Modal */}
+        {/* Sodium Info Modal — explains sodium and its health impact */}
         {sodiumInfoOpen && (
           <div className="fixed top-0 left-0 right-0 bottom-0 w-full h-full min-h-screen bg-foreground/80 z-[100] flex items-center justify-center p-4" onClick={() => setSodiumInfoOpen(false)}>
             <div className="bg-card rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -1378,6 +1660,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                 <p className="text-base text-foreground mb-4 leading-relaxed">{t.sodium_popup_description}</p>
                 <h4 className="text-lg font-bold text-foreground mb-2">{t.sodium_popup_why_important}</h4>
                 <p className="text-base text-foreground mb-6 leading-relaxed">{t.sodium_popup_importance}</p>
+                {/* Sodium level colour legend */}
                 <div className="space-y-2 mb-6">
                   <div className="flex items-center justify-between gap-3 bg-[#B5E0F1] border border-[#1a5276] px-4 py-3 rounded-xl">
                     <div className={`flex ${t.sodium_low_value ? "items-start" : "items-center"} gap-2`}>
@@ -1433,7 +1716,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           </div>
         )}
 
-        {/* Fixed View Plan Button - hidden when any popup is open */}
+        {/* Fixed "View Plan" button — hidden when any modal or panel is open to avoid overlap */}
         {!cartOpen && !giInfoOpen && !sodiumInfoOpen && (
           <button
             onClick={() => setCartOpen(true)}
@@ -1441,6 +1724,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           >
             <ShoppingCart className="w-5 h-5 md:w-6 md:h-6" />
             <span className="text-base md:text-lg">{t.view_cart}</span>
+            {/* Item count badge — shown only when cart is not empty */}
             {cart.length > 0 && (
               <span className="bg-white text-primary text-sm md:text-base font-bold w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center">
                 {cart.length}
@@ -1449,7 +1733,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           </button>
         )}
 
-        {/* Floating Back to Search button - shows when scrolling, hides when static button is visible */}
+        {/* Floating "Back to Search" button — appears when scrolled far down but not near the bottom */}
         {showFloatingButton && !cartOpen && (
           <button
             onClick={() => {
@@ -1463,9 +1747,9 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           </button>
         )}
 
-        {/* Reference Guides - collapsible */}
+        {/* Collapsible nutrition guide with colour legends for sugar, fat, sodium, and GI */}
         <div className="-mx-4 sm:-mx-6 bg-background border-b border-border">
-          {/* Toggle button */}
+          {/* Toggle button to expand/collapse the guide */}
           <button
             onClick={() => setGuideOpen(v => !v)}
             className="w-full flex items-center justify-between px-4 sm:px-6 py-3 text-left hover:bg-muted/50 transition-colors"
@@ -1475,6 +1759,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                 <Info className="w-6 h-6 shrink-0" />
                 {t.nutrition_guide}
               </span>
+              {/* Subtitle shown only when guide is collapsed */}
               {!guideOpen && (
                 <span className="text-base text-muted-foreground pl-8">
                   {t.nutrition_guide_description}
@@ -1487,13 +1772,12 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
             }
           </button>
 
-          {/* Collapsible content */}
+          {/* Expanded guide content */}
           {guideOpen && (
             <div className="px-2 sm:px-6 pb-3 space-y-3 md:space-y-2">
-              {/* Reference Guides */}
               <div className="-mx-4 sm:-mx-6 px-2 sm:px-6 py-2 bg-background border-b border-border">
                 <div className="space-y-3 md:space-y-2">
-                  {/* Sugar Guide row */}
+                  {/* Sugar colour guide */}
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sugar_guide_title}:</span>
                     <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
@@ -1512,7 +1796,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                     </div>
                   </div>
 
-                  {/* Fat Guide */}
+                  {/* Fat colour guide */}
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.fat_guide_title}:</span>
                     <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
@@ -1531,7 +1815,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                     </div>
                   </div>
 
-                  {/* Sodium Guide */}
+                  {/* Sodium colour guide with info button */}
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-nowrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sodium_guide_title}:</span>
                     <div className="flex w-full gap-1 md:flex-nowrap md:gap-3 md:w-auto md:items-center">
@@ -1547,6 +1831,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                         <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
                         <span className="text-xs md:text-base">≥601mg</span>
                       </span>
+                      {/* Sodium info button — desktop only */}
                       <button
                         onClick={() => setSodiumInfoOpen(true)}
                         className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-base font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer whitespace-nowrap"
@@ -1555,6 +1840,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                         {t.sodium_short_explanation}
                       </button>
                     </div>
+                    {/* Sodium info button — mobile only */}
                     <button
                       onClick={() => setSodiumInfoOpen(true)}
                       className="w-full md:hidden justify-center inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
@@ -1563,7 +1849,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                       {t.sodium_short_explanation}
                     </button>
                   </div>
-                  {/* GI Guide */}
+                  {/* GI colour guide with info button */}
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.gi_legend_title}:</span>
                     <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
@@ -1580,6 +1866,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                         <span className="text-xs md:text-base">≥70</span>
                       </span>
                     </div>
+                    {/* GI info button */}
                     <button
                       onClick={() => setGiInfoOpen(true)}
                       className="w-full md:w-auto justify-center md:justify-start inline-flex items-center gap-1.5 px-3 md:px-4 py-2 md:py-2 rounded-full text-sm md:text-base font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
@@ -1588,7 +1875,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                       {t.gi_short_explanation}
                     </button>
                   </div>
-                  {/* Daily Sugar Limit */}
+                  {/* Daily sugar limit reference */}
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.daily_sugar_title}</span>
                     <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
@@ -1609,7 +1896,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
         </div>
 
         <div className="space-y-4">
-          {/* Search */}
+          {/* Search input field */}
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-muted-foreground" />
             <input
@@ -1620,6 +1907,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-14 pr-14 py-4 text-lg rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
             />
+            {/* Clear search button — shown only when there is a search query */}
             {search && (
               <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 hover:bg-muted rounded-xl">
                 <X className="w-6 h-6" />
@@ -1627,9 +1915,10 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
             )}
           </div>
 
-          {/* Category Filter row */}
+          {/* Category filter buttons — 3-column grid on mobile, wrapping row on desktop */}
           <div className="grid grid-cols-3 gap-2 md:flex md:flex-wrap md:gap-3 md:overflow-x-auto md:pb-2 md:items-center">
             {cats.map((cat, i) => {
+              // "All" button (i=0) is active when no categories are selected
               const isActive = i === 0 ? selectedCats.length === 0 : selectedCats.includes(i)
               return (
                 <button
@@ -1646,9 +1935,9 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
             })}
           </div>
 
-          {/* Filter row - funnel button and sort options */}
+          {/* Sort/filter row: funnel toggle button + inline sort options */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Filter Button - toggle on click */}
+            {/* Filter funnel button — toggles the sort panel open/closed */}
             <button
               onClick={() => setSortOpen(!sortOpen)}
               className={`px-3 py-2.5 rounded-xl border-2 transition-all active:scale-95 shrink-0 ${sortOpen
@@ -1660,19 +1949,19 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
               <Filter className="w-6 h-6" />
             </button>
 
-            {/* Show active sort badge next to funnel when panel is closed */}
+            {/* Active sort badge — shown next to the funnel when the panel is closed and a sort is applied */}
             {sortActive && !sortOpen && (
               <span className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-muted text-foreground font-semibold text-base border-2 border-border">
                 {t[`nutrition_${sortBy}` as keyof typeof t]} · {sortOrder === "asc" ? t.ascending : t.descending}
               </span>
             )}
 
-            {/* Sort options - shown when sortOpen is true */}
+            {/* Sort options panel — shown when the funnel is toggled open */}
             {sortOpen && (
               <>
-                {/* Desktop: inline layout */}
+                {/* Desktop: sort options displayed inline in a single row */}
                 <div className="hidden md:contents">
-                  {/* Group 1: Order Selection - Blue background */}
+                  {/* Sort direction: Ascending */}
                   <button
                     onClick={() => setTempSortOrder("asc")}
                     className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-base font-bold transition-all border whitespace-nowrap shrink-0 active:scale-95 ${tempSortOrder === "asc"
@@ -1683,6 +1972,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                     <ChevronUp className="w-5 h-5" />
                     {t.ascending}
                   </button>
+                  {/* Sort direction: Descending */}
                   <button
                     onClick={() => setTempSortOrder("desc")}
                     className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-base font-bold transition-all border whitespace-nowrap shrink-0 active:scale-95 ${tempSortOrder === "desc"
@@ -1696,7 +1986,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
 
                   <div className="w-px h-8 bg-border shrink-0" />
 
-                  {/* Group 2: Metric Selection - Sage background */}
+                  {/* Nutrient sort key buttons */}
                   {(["sugar", "cal", "gi", "fat", "sodium"] as const).map((key) => (
                     <button
                       key={key}
@@ -1712,7 +2002,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
 
                   <div className="w-px h-8 bg-border shrink-0" />
 
-                  {/* Group 3: Confirm Button - Primary teal */}
+                  {/* Confirm sort button */}
                   <button
                     onClick={confirmSort}
                     className="px-5 py-2.5 rounded-xl text-base font-bold bg-primary text-primary-foreground border border-primary hover:bg-primary/90 active:scale-95 transition-all whitespace-nowrap shrink-0"
@@ -1720,7 +2010,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                     {t.confirm}
                   </button>
 
-                  {/* Cancel Button - Neutral */}
+                  {/* Cancel / close sort panel button */}
                   <button
                     onClick={() => setSortOpen(false)}
                     className="p-2.5 rounded-xl border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary hover:bg-primary/5 transition-all active:scale-95 shrink-0"
@@ -1729,9 +2019,9 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                   </button>
                 </div>
 
-                {/* Mobile: 3 row layout with dividers */}
+                {/* Mobile: sort options displayed as a 3-row stacked layout */}
                 <div className="md:hidden w-full space-y-2">
-                  {/* Row 1: Ascending / Descending */}
+                  {/* Row 1: Sort direction */}
                   <div className="flex gap-2">
                     <button
                       onClick={() => setTempSortOrder("asc")}
@@ -1755,10 +2045,9 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                     </button>
                   </div>
 
-                  {/* Divider */}
                   <div className="h-px bg-border" />
 
-                  {/* Row 2: Sugar / Cal / GI / Fat / Sodium - grid with equal sizing */}
+                  {/* Row 2: Nutrient sort key (3-column grid) */}
                   <div className="grid grid-cols-3 gap-2">
                     {(["sugar", "cal", "gi", "fat", "sodium"] as const).map((key) => (
                       <button
@@ -1774,10 +2063,9 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                     ))}
                   </div>
 
-                  {/* Divider */}
                   <div className="h-px bg-border" />
 
-                  {/* Row 3: Confirm / Cancel */}
+                  {/* Row 3: Confirm and cancel buttons */}
                   <div className="flex gap-2">
                     <button
                       onClick={confirmSort}
@@ -1797,7 +2085,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
             )}
           </div>
 
-          {/* Clear Filters button - full width, shown when any filter is active */}
+          {/* "Clear Filters" button — shown only when multiple categories or a sort is active */}
           {(selectedCats.length > 1 || sortActive) && (
             <button
               onClick={clearAllFilters}
@@ -1808,13 +2096,13 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
             </button>
           )}
 
-          {/* Hint */}
+          {/* Usage hint banner */}
           <div className="bg-[#B5E0F1] border border-[#1a5276]/30 rounded-2xl px-5 py-4 flex items-start gap-3">
             <Info className="w-6 h-6 text-[#1a5276] shrink-0 mt-0.5" />
             <p className="text-lg font-semibold text-[#1a5276] leading-relaxed">{t.click_hint}</p>
           </div>
 
-          {/* Food Grid - max 3 columns */}
+          {/* Food grid — empty state or paginated food cards */}
           {filtered.length === 0 ? (
             <div className="bg-muted rounded-2xl p-8 text-center">
               <div className="w-16 h-16 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
@@ -1831,10 +2119,10 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           )}
         </div>
 
-        {/* Pagination */}
+        {/* Pagination controls */}
         {filtered.length > 0 && (
           <div className="flex flex-col items-center gap-4 md:gap-6 pb-4">
-            {/* Static Back to Search button - shows when near bottom */}
+            {/* Static "Back to Search" button near the bottom of the page (replaces floating button) */}
             {isNearBottom && !cartOpen && (
               <button
                 onClick={() => {
@@ -1847,6 +2135,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                 {t.back_to_search}
               </button>
             )}
+            {/* Page navigation: previous button, numbered pages, next button */}
             <div className="flex items-center gap-2 sm:gap-3 md:gap-4">
               <button
                 onClick={() => {
@@ -1859,6 +2148,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                 <span className="whitespace-nowrap">{t.pagination_previous}</span>
               </button>
 
+              {/* Numbered page buttons with ellipsis for large page counts */}
               {getPageNumbers().map((page, idx) => (
                 typeof page === "number" ? (
                   <button
@@ -1890,19 +2180,29 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
               </button>
             </div>
 
+            {/* Result count summary (e.g., "Showing 1-15 of 42 results") */}
             <p className="text-base md:text-lg text-muted-foreground">
               {t.pagination_showing} {(currentPage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)} {t.pagination_of} {filtered.length} {t.pagination_results}
             </p>
           </div>
         )}
 
-        {/* Cart Panel */}
+        {/* Daily intake sliding panel */}
         <DailyIntakePanel t={t} isOpen={cartOpen} onClose={() => setCartOpen(false)} />
       </div>
     </CartContext.Provider>
   )
 }
 
+/**
+ * FoodClient (default export)
+ *
+ * The top-level exported component for the food search page.
+ * Wraps FoodClientInner in PageLayout, which provides the active
+ * language code and any shared layout structure (header, footer, etc.).
+ *
+ * @param initialFoods - The server-loaded list of all available food items
+ */
 export default function FoodClient({ initialFoods }: { initialFoods: FoodItem[] }) {
   return (
     <PageLayout>
