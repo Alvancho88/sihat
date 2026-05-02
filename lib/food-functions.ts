@@ -1,5 +1,5 @@
 export type FoodItem = {
-  name: string
+  name: { en: string; ms: string; zh: string }
   category: string
   image: string
   calories: string
@@ -10,6 +10,23 @@ export type FoodItem = {
   portion: string
   risk: "low" | "medium" | "high"
   tip: { en: string; ms: string; zh: string }
+}
+
+
+ //Returns the localised food name for the given language,
+ // falling back to English if the translation is empty.
+
+export function getFoodName(food: FoodItem, lang: "en" | "ms" | "zh"): string {
+  return food.name[lang] || food.name.en
+}
+
+
+// Translates a canonical English category string to the target language
+// using the categories lookup table. Falls back to the English value.
+export function getLocalizedCategory(category: string, lang: "en" | "ms" | "zh"): string {
+  const idx = categories.en.indexOf(category)
+  if (idx === -1) return category
+  return categories[lang][idx] ?? category
 }
 
 // Get level helpers
@@ -54,5 +71,5 @@ export const dailyLimits = {
 export const categories = {
   en: ["All", "Malaysian", "Chinese", "Indian", "Western", "Japanese", "Korean", "Desserts", "Drinks", "Fruits"],
   ms: ["Semua", "Malaysia", "Cina", "India", "Barat", "Jepun", "Korea", "Pencuci", "Minuman", "Buah"],
-  zh: ["全部", "马来菜", "中餐", "印度菜", "西餐", "日式", "韩式", "甜点", "饮料", "水果"],
+  zh: ["全部", "马来西亚餐", "中餐", "印度餐", "西餐", "日式", "韩式", "甜点", "饮料", "水果"],
 }
