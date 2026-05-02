@@ -1,4 +1,11 @@
-import { getAllFoodData, type FoodDataRow } from "@/lib/queries" // adjust path if needed
+/**
+ * page.tsx
+ *
+ * Server component for the Food Search page.
+ * Fetches all food data from the database, transforms it into
+ * the FoodItem[] format, and passes it to the client component.
+ */
+import { getAllFoodData, type FoodDataRow } from "@/lib/queries"
 import FoodClient from "./food-client"
 import { FoodItem } from "@/lib/food-functions"
 
@@ -66,6 +73,12 @@ function transformFoodRows(rows: FoodDataRow[]): FoodItem[] {
   return Array.from(byId.values())
 }
 
+/**
+ * FoodPage
+ *
+ * Next.js server page component. Fetches food rows from the database
+ * and renders the FoodClient with the transformed data.
+ */
 export default async function FoodPage() {
   const rows  = await getAllFoodData()
   const foods = transformFoodRows(rows)
