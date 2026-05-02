@@ -1,3 +1,5 @@
+// Component for the interactive body map that shows how the Three Highs affect different organs, 
+// with hotspots and a details panel.
 "use client"
 
 import { useState } from "react"
@@ -6,6 +8,7 @@ import { AlertCircle, X } from "lucide-react"
 
 export type SectionBase = { label: string; bg: string; color: string; dot: string }
 
+// Data structure for each organ's information, including symptoms, dangers, tips, and optional images.
 export type BodyMapEntry = {
   organ: string
   title: string
@@ -16,6 +19,7 @@ export type BodyMapEntry = {
   image?: { src: string; caption: string }
 }
 
+// Overall data structure for the body map, containing entries for each organ and the main title/label.
 export type BodyMapData = {
   brain: BodyMapEntry
   eyes: BodyMapEntry
@@ -281,6 +285,7 @@ export default function BodyMap({ lang }: BodyMapProps) {
   const [activeId, setActiveId] = useState<BodyMapId | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
+  // When a hotspot is clicked, set it as active. On mobile, also open the drawer to show details.
   function handleHotspot(id: BodyMapId) {
     setActiveId(id)
     if (window.innerWidth < 768) setDrawerOpen(true)
@@ -339,7 +344,7 @@ export default function BodyMap({ lang }: BodyMapProps) {
           <p className="text-lg leading-relaxed text-muted-foreground">{d.danger.text}</p>
         </div>
 
-        {/* Tip Section (Reusing the highlighted "Watch" box style) */}
+        {/* Tip Section */}
         <div className="rounded-xl p-3 mt-1" style={{ backgroundColor: "var(--muted)" }}>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xl">💡</span>
@@ -350,14 +355,13 @@ export default function BodyMap({ lang }: BodyMapProps) {
           <p className="text-lg leading-relaxed">{d.tip.text}</p>
         </div>
 
+        {/* Optional image with caption */}
         {d.image && (
           <div className="mt-4 border rounded-xl overflow-hidden bg-white">
             <div className="relative w-full h-80 sm:h-100 bg-slate-50">
               <img
                 src={d.image.src}
                 alt={d.image.caption}
-                // "object-contain" ensures the whole diagram is visible
-                // "p-2" adds a small buffer so the image doesn't touch the borders
                 className="w-full h-full object-contain p-2"
               />
             </div>
