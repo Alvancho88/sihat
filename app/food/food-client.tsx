@@ -25,7 +25,7 @@ import { useState, useEffect, createContext, useContext, useRef, useMemo } from 
 
 import Image from "next/image"
 import { Search, X, TrendingDown, TrendingUp, Minus, Info, User, ShoppingCart, Trash2, Plus, Check, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from "lucide-react"
-import { categories, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel, dailyLimits, type FoodItem } from "@/lib/food-functions"
+import { categories, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel, dailyLimits, getFoodName, getLocalizedCategory, type FoodItem } from "@/lib/food-functions"
 
 // Supported language codes for the page
 type LangCode = "en" | "ms" | "zh"
@@ -477,9 +477,9 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
   }
 
   // Check if this food item is already in the daily intake cart
-  const inCart = isInCart(food.name)
+  const inCart = isInCart(food.name.en)
   // Find the index of this food in the cart (used for removal)
-  const cartIndex = cart.findIndex(f => f.name === food.name)
+  const cartIndex = cart.findIndex(f => f.name.en === food.name.en)
 
   /**
    * translateCategory
@@ -503,6 +503,8 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
   }
 
   // Compute colour-coded risk levels for each nutrient
+  const displayName = getFoodName(food, lang)
+  const displayCategory = getLocalizedCategory(food.category, lang)
   const sugarLevel = getSugarLevel(food.sugar)
   const giLevel = getGILevel(food.gi)
   const fatLevel = getFatLevel(food.fat)
@@ -516,14 +518,14 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
         className="bg-card rounded-2xl border-2 border-border overflow-hidden hover:border-primary hover:shadow-lg transition-all group cursor-pointer">
         {/* Food image */}
         <div className="relative h-40 sm:h-40 w-full">
-          <Image src={food.image} alt={food.name} fill className="object-cover group-hover:scale-105 transition-transform" />
+          <Image src={food.image} alt={displayName} fill className="object-cover group-hover:scale-105 transition-transform" />
         </div>
 
         {/* Card content: name, add button, nutrition pills */}
         <div className="p-4">
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="text-left flex-1 min-w-0">
-              <h3 className="text-xl font-bold group-hover:text-primary transition-colors leading-tight">{food.name}</h3>
+              <h3 className="text-xl font-bold group-hover:text-primary transition-colors leading-tight">{displayName}</h3>
             </div>
             {/* Add to / Remove from daily intake cart button */}
             <button
@@ -593,16 +595,15 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
           <div className="bg-card rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
             {/* Modal food image */}
             <div className="relative h-48 sm:h-56 w-full">
-              <Image src={food.image} alt={food.name} fill className="object-cover" />
+              <Image src={food.image} alt={displayName} fill className="object-cover" />
             </div>
             <div className="p-6">
               {/* Food name, portion, and category header */}
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-2xl font-bold text-foreground">{food.name}</h3>
+                  <h3 className="text-2xl font-bold text-foreground">{displayName}</h3>
                   <p className="text-base text-muted-foreground">{t.portion}: {translatePortion(food.portion)}</p>
-                  {/* Display translated category — splits comma-separated values and translates each */}
-                  <p className="text-base text-muted-foreground font-medium">{translateCategory(food.category)}</p>
+                  <p className="text-base text-muted-foreground font-medium">{displayCategory}</p>
                 </div>
                 <button
                   onClick={() => setOpen(false)}
@@ -727,7 +728,7 @@ function FoodCard({ food, t, lang }: { food: FoodItem; t: typeof pageContent.en;
  * @param isOpen - Whether the panel is visible
  * @param onClose - Callback to close the panel
  */
-function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; isOpen: boolean; onClose: () => void }) {
+function DailyIntakePanel({ t, isOpen, onClose, lang }: { t: typeof pageContent.en; isOpen: boolean; onClose: () => void, lang: LangCode }) {
   const { cart, removeFromCart, clearCart } = useCart()
 
   // Load saved gender preference from localStorage, defaulting to "male"
@@ -752,11 +753,11 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
 
   // Sum all nutrient values across cart items to get daily totals
   const totals = cart.reduce((acc, food) => ({
-    sugar: acc.sugar + parseFloat(food.sugar.replace(/[^0-9.]/g, '')),
-    calories: acc.calories + parseFloat(food.calories.replace(/[^0-9.]/g, '')),
-    fat: acc.fat + parseFloat(food.fat.replace(/[^0-9.]/g, '')),
-    sodium: acc.sodium + parseFloat(food.sodium.replace(/[^0-9.]/g, '')),
-    gi: acc.gi + parseFloat(food.gi.replace(/[^0-9.]/g, '')),
+    sugar: Math.round((acc.sugar + parseFloat(food.sugar.replace(/[^0-9.]/g, ''))) * 10) / 10,
+    calories: Math.round((acc.calories + parseFloat(food.calories.replace(/[^0-9.]/g, ''))) * 10) / 10,
+    fat: Math.round((acc.fat + parseFloat(food.fat.replace(/[^0-9.]/g, ''))) * 10) / 10,
+    sodium: Math.round((acc.sodium + parseFloat(food.sodium.replace(/[^0-9.]/g, ''))) * 10) / 10,
+    gi: Math.round((acc.gi + parseFloat(food.gi.replace(/[^0-9.]/g, ''))) * 10) / 10,
   }), { sugar: 0, calories: 0, fat: 0, sodium: 0, gi: 0 })
 
   // Set daily limits based on selected gender
@@ -770,10 +771,10 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
 
   // Calculate how much each nutrient exceeds the daily limit (0 if within limit)
   const excess = {
-    sugar: totals.sugar > limits.sugar ? totals.sugar - limits.sugar : 0,
-    fat: totals.fat > limits.fat ? totals.fat - limits.fat : 0,
-    sodium: totals.sodium > limits.sodium ? totals.sodium - limits.sodium : 0,
-    cal: totals.calories > limits.cal ? totals.calories - limits.cal : 0,
+    sugar: totals.sugar > limits.sugar ? Math.round((totals.sugar - limits.sugar) * 10) / 10 : 0,
+    fat: totals.fat > limits.fat ? Math.round((totals.fat - limits.fat) * 10) / 10 : 0,
+    sodium: totals.sodium > limits.sodium ? Math.round(totals.sodium - limits.sodium) : 0,
+    cal: totals.calories > limits.cal ? Math.round(totals.calories - limits.cal): 0,
   }
 
   // Colour palette for each nutrient's progress bar
@@ -1061,10 +1062,10 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                       <div key={originalIndex} className="flex items-center gap-2 bg-muted rounded-xl p-2">
                         {/* Food thumbnail */}
                         <div className="relative w-16 h-16 rounded-lg overflow-hidden shrink-0 border border-border">
-                          <Image src={food.image} alt={food.name} fill className="object-cover" />
+                          <Image src={food.image} alt={getFoodName(food, lang)} fill className="object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-sm line-clamp-2">{food.name}</h4>
+                          <h4 className="font-bold text-sm line-clamp-2">{getFoodName(food, lang)}</h4>
                           {/* Nutrition tag pills for each food item */}
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#B5E0F1] text-[#1a5276] border border-[#1a5276]">
@@ -1219,11 +1220,11 @@ function DailyIntakePanel({ t, isOpen, onClose }: { t: typeof pageContent.en; is
                         <div key={originalIndex} className="flex items-start gap-3 bg-muted rounded-xl p-3">
                           {/* Food thumbnail */}
                           <div className="relative w-14 h-14 rounded-lg overflow-hidden shrink-0 border border-border">
-                            <Image src={food.image} alt={food.name} fill className="object-cover" />
+                            <Image src={food.image} alt={getFoodName(food, lang)} fill className="object-cover" />
                           </div>
                           <div className="flex-1 min-w-0">
                             {/* Food name */}
-                            <h4 className="font-bold text-base mb-2 leading-tight">{food.name}</h4>
+                            <h4 className="font-bold text-base mb-2 leading-tight">{getFoodName(food, lang)}</h4>
                             {/* Nutrient pills row: label above, coloured value pill below */}
                             {(() => {
                               const nutrients = [
@@ -1394,7 +1395,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   const addToCart = (food: FoodItem) => setCart(prev => [...prev, food])
   const removeFromCart = (index: number) => setCart(prev => prev.filter((_, i) => i !== index))
   const clearCart = () => setCart([])
-  const isInCart = (name: string) => cart.some(f => f.name === name)
+  const isInCart = (name: string) => cart.some(f => f.name.en === name)
 
   /**
    * toggleCategory
@@ -1526,7 +1527,11 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   const filtered = shuffledFoods.filter((f) => {
     const foodCategories = f.category.split(",").map(c => c.trim())
     const catMatch = selectedCats.length === 0 || selectedCats.some(i => foodCategories.includes(categories.en[i]))
-    const searchMatch = !search || f.name.toLowerCase().includes(search.toLowerCase())
+    const searchMatch = !search || (
+      f.name.en.toLowerCase().includes(search.toLowerCase()) ||
+      f.name.ms.toLowerCase().includes(search.toLowerCase()) ||
+      f.name.zh.includes(search)
+    )
     return catMatch && searchMatch
   }).sort((a, b) => {
     if (!sortActive) return 0
@@ -1770,7 +1775,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
         )}
 
         {/* Collapsible nutrition guide with colour legends for sugar, fat, sodium, and GI */}
-        <div className="-mx-4 sm:-mx-6 bg-background border-b border-border">
+        <div className="bg-background rounded-2xl overflow-hidden">
           {/* Toggle button to expand/collapse the guide */}
           <button
             onClick={() => setGuideOpen(v => !v)}
@@ -1796,8 +1801,8 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
 
           {/* Expanded guide content */}
           {guideOpen && (
-            <div className="px-2 sm:px-6 pb-3 space-y-3 md:space-y-2">
-              <div className="-mx-4 sm:-mx-6 px-2 sm:px-6 py-2 bg-background border-b border-border">
+            <div className="px-4 sm:px-6 pb-4 space-y-3 md:space-y-2">
+              <div className="py-2 bg-background">
                 <div className="space-y-3 md:space-y-2">
                   {/* Sugar colour guide */}
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
@@ -1838,7 +1843,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                   </div>
 
                   {/* Sodium colour guide with info button */}
-                  <div className="flex flex-col gap-1.5 md:flex-row md:flex-nowrap md:items-center md:gap-3 text-sm md:text-base">
+                  <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sodium_guide_title}:</span>
                     <div className="flex w-full gap-1 md:flex-nowrap md:gap-3 md:w-auto md:items-center">
                       <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
@@ -1853,19 +1858,11 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                         <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
                         <span className="text-xs md:text-base">≥601mg</span>
                       </span>
-                      {/* Sodium info button — desktop only */}
-                      <button
-                        onClick={() => setSodiumInfoOpen(true)}
-                        className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-base font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        <Info className="w-5 h-5" />
-                        {t.sodium_short_explanation}
-                      </button>
                     </div>
-                    {/* Sodium info button — mobile only */}
+                    {/* GI info button */}
                     <button
                       onClick={() => setSodiumInfoOpen(true)}
-                      className="w-full md:hidden justify-center inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 md:px-4 py-2 rounded-full text-sm md:text-base font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer whitespace-nowrap"
                     >
                       <Info className="w-4 h-4" />
                       {t.sodium_short_explanation}
@@ -2210,7 +2207,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
         )}
 
         {/* Daily intake sliding panel */}
-        <DailyIntakePanel t={t} isOpen={cartOpen} onClose={() => setCartOpen(false)} />
+        <DailyIntakePanel t={t} isOpen={cartOpen} onClose={() => setCartOpen(false)} lang={lang} />
       </div>
     </CartContext.Provider>
   )

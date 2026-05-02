@@ -43,7 +43,7 @@ function transformFoodRows(rows: FoodDataRow[]): FoodItem[] {
       }
 
       byId.set(row.food_id, {
-        name:     "", // filled below from "en" translation
+        name:     { en: "", ms: "", zh: "" }, // filled below from "en" translation
         category: row.food_type     ?? "",
         image:    row.image_url     ?? "",
         portion:  row.serving_size  ?? "",
@@ -63,10 +63,7 @@ function transformFoodRows(rows: FoodDataRow[]): FoodItem[] {
     const lang = row.language as "en" | "ms" | "zh" | null
     if (lang === "en" || lang === "ms" || lang === "zh") {
       item.tip[lang] = row.health_tip ?? ""
-      // Use the English food_name as the display name
-      if (lang === "en") {
-        item.name = row.food_name ?? ""
-      }
+      item.name[lang] = row.food_name ?? ""
     }
   }
 

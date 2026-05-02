@@ -1,9 +1,13 @@
+// Component for choropleth map of Malaysia with state-level diabetes data, 
+// plus hypertension and hyperlipidemia stats in the tooltip and state details panel. 
+// Uses react-simple-maps for rendering the map and handling zoom/pan.
 "use client"
 
 import { useState, useEffect, useRef } from "react"
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from "react-simple-maps"
 import { AlertCircle, X } from "lucide-react"
 
+// Data types
 export interface StateMapData {
   patients: number  
   diabetes: number 
@@ -33,17 +37,19 @@ export interface ChoroplethMapProps {
   }
 }
 
+// GeoJSON URL for Malaysia map
 const MALAYSIA_GEO_URL = "/data/malaysia.geojson"
 
 const getStateName = (geoName: string): string => geoName
 
-// Colour thresholds based on prevalence % (replaces old getColorByPatients)
+// Colour thresholds based on prevalence %
 const getColorByPrevalence = (prevalence: number): string => {
   if (prevalence > 14) return "#1a3a6b"
   if (prevalence > 7) return "#4a7fc1"
   return "#c9dff5"
 }
 
+// Risk level thresholds based on prevalence
 const getRisk = (prevalence: number): "high" | "medium" | "low" => {
   if (prevalence > 14) return "high"
   if (prevalence > 7) return "medium"
@@ -70,6 +76,7 @@ const stateNameTranslations: Record<string, { en: string; ms: string; zh: string
   "WP Putrajaya": { en: "Putrajaya", ms: "WP Putrajaya", zh: "布城" },
 };
 
+// Translates geo names to the appropriate language for display in tooltips and state details.
 const getStateNameTranslated = (geoName: string, lang: "en" | "ms" | "zh"): string => {
   const state = stateNameTranslations[geoName]
   return state ? state[lang] : geoName
@@ -179,6 +186,7 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
 
   const baseScale = Math.max(containerWidth * 4, 2000)
 
+  // Handle container resizing to adjust map scale and position
   useEffect(() => {
     const observer = new ResizeObserver(entries => {
       for (const entry of entries) {
@@ -191,6 +199,7 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
     return () => observer.disconnect()
   }, [])
 
+  // Preload map data to show loading state and catch errors
   useEffect(() => {
     fetch(MALAYSIA_GEO_URL)
       .then(res => {
@@ -215,33 +224,40 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
     }
   }, [selectedState]);
 
+  // Get the data for the currently selected year, or an empty object if not available
   const stateData = dataByYear[selectedYear] ?? {}
 
+  // Handle clicking on a state: toggle selection if it has data, or do nothing if no data
   const handleStateClick = (geo: any) => {
     const name = getStateName(geo.properties.name)
     if (stateData[name]) setSelectedState(prev => (prev === name ? null : name))
   }
 
+  // Calculate highest and lowest diabetes rates among states for the selected year
   const stateEntries = Object.entries(stateData)
   const highestState = stateEntries.length ? stateEntries.reduce((a, b) => a[1].diabetes > b[1].diabetes ? a : b) : null
   const lowestState  = stateEntries.length ? stateEntries.reduce((a, b) => a[1].diabetes < b[1].diabetes ? a : b) : null
 
+  // Labels for the state details panel, translated by language
   const labels = ({
     en: { diabetes: "Diabetes", hypertension: "Hypertension", hyperlipidemia: "Hyperlipidemia", patients: "Total Patients", risk: "Prevalence Level" },
     ms: { diabetes: "Diabetes", hypertension: "Hipertensi", hyperlipidemia: "Hiperlipidemia", patients: "Jumlah Pesakit", risk: "Tahap Prevalens" },
     zh: { diabetes: "糖尿病", hypertension: "高血压", hyperlipidemia: "高胆固醇", patients: "总患者数", risk: "患病率等级" },
   } as const)[lang as "en" | "ms" | "zh"] ?? { diabetes: "Diabetes", hypertension: "Hypertension", hyperlipidemia: "Hyperlipidemia", patients: "Total Patients", risk: "Prevalence Level" }
 
+  // Risk level labels, translated by language
   const riskLabels = ({
     en: { high: "High",   medium: "Medium",    low: "Low" },
     ms: { high: "Tinggi", medium: "Sederhana", low: "Rendah" },
     zh: { high: "高",     medium: "中等",       low: "低" },
   } as const)[lang as "en" | "ms" | "zh"] ?? { high: "High", medium: "Medium", low: "Low" }
 
+  // "Tap for details" text in tooltip, translated by language
   const tapForMore = lang === "ms" ? "Ketik untuk butiran"
     : lang === "zh" ? "点击查看详情"
     : "Tap for details"
 
+  // "What you can do" header in state details panel, translated by language
   const whatYouCanDo = lang === "ms" ? "Apa yang boleh anda lakukan"
     : lang === "zh" ? "您可以做什么"
     : "What you can do"
@@ -305,6 +321,7 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
         className="relative w-full h-[350px] md:aspect-[16/9] min-h-[200px] bg-[#edf0f5] rounded-xl overflow-hidden"
         onMouseLeave={() => setTooltip(null)}
       >
+        {/* Zoom and reset buttons */}
         <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
           {[
             { label: "+", action: () => setZoom(z => Math.min(z + 0.2, 8)) },
@@ -343,6 +360,7 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
           </div>
         )}
 
+        {/* Map rendering with react-simple-maps. */}
         {!mapError && (
           <ComposableMap
             projection="geoMercator"
@@ -378,6 +396,7 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
                           hover: { fill: "#f59e0b", outline: "none", cursor: "pointer" },
                           pressed: { fill: "#d97706", outline: "none" },
                         }}
+                        // Show tooltip on hover, positioned relative to the map container
                         onMouseEnter={(evt) => {
                           if (data) {
                             const rect = mapContainerRef.current?.getBoundingClientRect()

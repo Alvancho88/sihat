@@ -1,7 +1,11 @@
+// This component is used in the insights section of the statistics page. 
+// It displays three cards with information about the relationship between diabetes, blood pressure, and cholesterol. 
+// The content is localized in English, Malay, and Chinese.
 "use client"
 
 import { Heart, Activity, Smile } from "lucide-react"
 
+// The text content for each language
 const content = {
   en: {
     eyebrow: "Did you know",
@@ -92,6 +96,7 @@ export function ThreeHighsInsights({ lang }: { lang: "en" | "ms" | "zh" }) {
   const t = content[lang]
   return (
     <section>
+      {/* Eyebrow + heading */ }
       <p className="text-base font-semibold uppercase tracking-widest text-muted-foreground mb-1">
         {t.eyebrow}
       </p>
@@ -99,6 +104,7 @@ export function ThreeHighsInsights({ lang }: { lang: "en" | "ms" | "zh" }) {
         {t.heading}
       </h2>
 
+      {/* Cards grid */ }
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {t.cards.map((card, i) => {
           const Icon = ICONS[i]

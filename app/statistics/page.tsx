@@ -1,3 +1,6 @@
+// The main page component for the "Statistics" section, which fetches all necessary data on the server side and 
+// then renders the OverviewClient component with that data. 
+
 import OverviewClient from "./statistics-client";
 import { getAllMetabolicDataGrouped, getNationalTrend, getEthnicityData } from "@/lib/queries";
 
