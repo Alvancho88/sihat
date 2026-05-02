@@ -24,14 +24,9 @@ export function getFoodName(food: FoodItem, lang: "en" | "ms" | "zh"): string {
 // Translates a canonical English category string to the target language
 // using the categories lookup table. Falls back to the English value.
 export function getLocalizedCategory(category: string, lang: "en" | "ms" | "zh"): string {
-  return category
-    .split(",")
-    .map(c => {
-      const trimmed = c.trim()
-      const idx = categories.en.indexOf(trimmed)
-      return idx !== -1 ? categories[lang][idx] ?? trimmed : trimmed
-    })
-    .join(", ")
+  const idx = categories.en.indexOf(category)
+  if (idx === -1) return category
+  return categories[lang][idx] ?? category
 }
 
 // Get level helpers

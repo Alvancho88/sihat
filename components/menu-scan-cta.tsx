@@ -1,8 +1,12 @@
+// Component for the "Scan a menu" call-to-action card that appears in the menu and recommendation pages. 
+// It has three variants: "statistics", "learn", and "default". Each variant has different text content, but they all share the same layout and styling. 
+// The component also supports three languages: English (en), Malay (ms), and Chinese (zh).
 "use client"
 
 import Link from "next/link"
 import { ClipboardList } from "lucide-react"
 
+// The text content for each variant and language
 const variants = {
   statistics: {
     en: {
@@ -97,17 +101,27 @@ export function MenuScanCTA({ lang, variant = "default" }: MenuScanCTAProps) {
           <p className="text-base text-muted-foreground leading-snug hidden sm:block">{t.body}</p>
         </div>
 
+        {/* Button: hidden on mobile, visible on sm+ */}
         <Link
           href="/recommendation"
-          className="shrink-0 inline-flex items-center justify-center rounded-full px-5 py-2.5 text-base font-semibold transition-colors"
+          className="shrink-0 hidden sm:inline-flex items-center justify-center rounded-full px-5 py-2.5 text-base font-semibold transition-colors"
           style={{ backgroundColor: "#1d759e", color: "#E1F5EE" }}
         >
           {t.cta}
         </Link>
       </div>
 
-      {/* Body text on mobile sits below the row */}
-      <p className="text-base text-muted-foreground leading-snug mt-3 sm:hidden">{t.body}</p>
+      {/* Body text + button stacked on mobile */}
+      <div className="mt-3 sm:hidden">
+        <p className="text-base text-muted-foreground leading-snug mb-3">{t.body}</p>
+        <Link
+          href="/recommendation"
+          className="inline-flex items-center justify-center rounded-full px-5 py-2.5 text-base font-semibold transition-colors"
+          style={{ backgroundColor: "#1d759e", color: "#E1F5EE" }}
+        >
+          {t.cta}
+        </Link>
+      </div>
     </div>
   )
 }
