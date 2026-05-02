@@ -1,3 +1,5 @@
+// Client-side component for displaying statistics about three highs in Malaysia.
+// It also supports three languages: English (en), Malay (ms), and Chinese (zh).
 "use client"
 
 import { PageLayout } from "@/components/page-layout"
@@ -9,7 +11,7 @@ import { MenuScanCTA } from "@/components/menu-scan-cta"
 import Image from "next/image"
 import { ThreeHighsInsights } from "@/components/three-highs-insights"
 
-
+// ─── Data types and content ───────────────────────────────────────────────
 export interface NationalTrendRow {
   trend_id: number
   year: number
@@ -210,8 +212,6 @@ const content = {
 // ─── Ethnicity explanation data ────────────────────────────────────────────
 // Each entry has: why (context), actions (what to do), and highlight (which
 // of the three highs is most notable for this group).
-// Real data: Malay 16.2/29.6/34.6 | Chinese 15.1/30.9/33.6 | Indian 26.4/29.7/33.8
-//            Bumi Sabah 9.3/29.2/30.4 | Bumi Sarawak 17.2/41.1/38.7 | Others 10.2/17.1/24.4
 
 interface EthnicityExplanation {
   highlight: { label: { en: string; ms: string; zh: string }; value: string; color: string }
@@ -412,6 +412,7 @@ interface StatCardProps {
   colors: { accent: string; iconBg: string; valueCss: string }
 }
 
+// A card component for displaying a summary statistic with an icon or image, styled according to the provided colors.
 function StatCard({ value, label, icon: Icon, image, colors }: StatCardProps) {
   return (
     <div
@@ -423,6 +424,7 @@ function StatCard({ value, label, icon: Icon, image, colors }: StatCardProps) {
         className="shrink-0 flex items-center justify-center rounded-full w-16 h-16"
         style={{ backgroundColor: colors.iconBg }}
       >
+        {/* If an image URL is provided, show the image. Otherwise, if an icon component is provided, render the icon.*/}
         {image ? (
           <div className="relative w-16 h-12">
             <Image src={image} alt={label} fill className="object-contain" />
@@ -448,6 +450,7 @@ function StatCard({ value, label, icon: Icon, image, colors }: StatCardProps) {
   )
 }
 
+// ─── Trends chart and tooltip ────────────────────────────────────────────
 function TrendTooltip({
   active,
   payload,
@@ -491,6 +494,7 @@ function TrendTooltip({
   )
 }
 
+// A line chart component showing trends in diabetes, hypertension, and hyperlipidemia over time, with a custom tooltip and legend.
 function TrendsChart({ t, nationalTrend }: { t: typeof content.en; nationalTrend: NationalTrendRow[] }) {
   const chartData = [...nationalTrend]
     .sort((a, b) => a.year - b.year)
@@ -541,6 +545,7 @@ function TrendsChart({ t, nationalTrend }: { t: typeof content.en; nationalTrend
               paddingLeft: "40px"
             }}
           />
+          {/* Diabetes Line */}
           <Line
             yAxisId="prevalence"
             type="monotone"
@@ -550,6 +555,7 @@ function TrendsChart({ t, nationalTrend }: { t: typeof content.en; nationalTrend
             dot={{ fill: "#4a7fc1", r: 5 }}
             activeDot={{ r: 8 }}
           />
+          {/* Hypertension Line */}
           <Line
             yAxisId="prevalence"
             type="monotone"
@@ -559,6 +565,7 @@ function TrendsChart({ t, nationalTrend }: { t: typeof content.en; nationalTrend
             dot={{ fill: "#e07b4a", r: 5 }}
             activeDot={{ r: 8 }}
           />
+          {/* Hyperlipidemia Line */}
           <Line
             yAxisId="prevalence"
             type="monotone"
@@ -577,8 +584,10 @@ function TrendsChart({ t, nationalTrend }: { t: typeof content.en; nationalTrend
   )
 }
 
+// Colors for each ethnic group in the bar chart, chosen to be visually distinct and colorblind-friendly.
 const ETHNICITY_COLORS = ["#56b4e9", "#e07b4a", "#0072b1", "#f03333", "#cc79a7", "#e6da3e"]
 
+// A custom bar shape that applies both a solid color and an optional pattern overlay, with opacity adjustments based on selection state.
 const CustomBarShape = (props: any) => {
   const { x, y, width, height, fill, patternId, payload, selected } = props;
 
@@ -592,10 +601,10 @@ const CustomBarShape = (props: any) => {
 
   return (
     <g>
-      {/* 1. Draw the Solid Color Bar */}
+      {/* Draw the Solid Color Bar */}
       <rect x={x} y={y} width={width} height={height} fill={fill} fillOpacity={opacity} rx={6} ry={6} />
       
-      {/* 2. Draw the Pattern ON TOP (if a patternId is provided) */}
+      {/* Draw the Pattern on top (if a patternId is provided) */}
       {patternId && (
         <rect x={x} y={y} width={width} height={height} fill={`url(#${patternId})`} fillOpacity={opacity} rx={6} ry={6} style={{ cursor: "pointer" }}/>
       )}
@@ -603,6 +612,7 @@ const CustomBarShape = (props: any) => {
   );
 };
 
+// A custom legend component that maps the bar to translated labels and includes visual indicators for the patterns used in the bars.
 const CustomLegend = ({ payload, t }: { payload?: any[], t: typeof content.en }) => {
   if (!payload) return null
   return (
@@ -634,6 +644,7 @@ const CustomLegend = ({ payload, t }: { payload?: any[], t: typeof content.en })
   )
 }
 
+// A custom hook to determine if the screen width is below a certain breakpoint, used for responsive design adjustments in the bar chart.
 function useIsMobile(breakpoint = 768) {
     const [isMobile, setIsMobile] = useState(false)
     useEffect(() => {
@@ -645,6 +656,7 @@ function useIsMobile(breakpoint = 768) {
     return isMobile
   }
 
+// A bar chart component that displays three highs prevalence of each ethnic group
 function EthnicityBarChart({t, ethnicityData,}: {t: typeof content.en; ethnicityData: EthnicityRow[]}) {
   const chartData = ethnicityData.map((row) => ({
     rawEthnicity: row.ethnicity,
@@ -659,6 +671,7 @@ function EthnicityBarChart({t, ethnicityData,}: {t: typeof content.en; ethnicity
   const [selectedEntry, setSelectedEntry] = useState<EthnicityExplanation | null>(null)
   const explanationRef = useRef<HTMLDivElement>(null)
 
+  // Determine language code based on the title translation, defaulting to English if it doesn't match known translations
   const langCode = t.ethnicity_title === "Health in Our Communities" ? "en"
     : t.ethnicity_title === "Kesihatan dalam Komuniti Kita" ? "ms"
     : "zh"
@@ -667,6 +680,7 @@ function EthnicityBarChart({t, ethnicityData,}: {t: typeof content.en; ethnicity
     : langCode === "zh" ? "您可以做什么"
     : "What you can do"
   
+  // When a bar is clicked, toggle selection and update the explanation text based on the selected
   function handleBarClick(data: { rawEthnicity: string; ethnicity: string; diabetes: number, hypertension: number, hyperlipidemia: number }) {
     // If clicking the same bar, deselect it
     if (selected?.rawEthnicity === data.rawEthnicity) {

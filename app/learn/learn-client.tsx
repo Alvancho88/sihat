@@ -1,3 +1,6 @@
+// Client-side component for the "Learn" section, showing information about three highs, interactive body map, and myths vs facts. 
+// This is a separate page from the main statistics page, focused more on actionable insights and education rather than raw data. 
+// It also supports three languages: English (en), Malay (ms), and Chinese (zh).
 "use client"
 
 import { PageLayout } from "@/components/page-layout"
@@ -8,6 +11,7 @@ import Image from "next/image"
 import { MenuScanCTA } from "@/components/menu-scan-cta"
 import BodyMap from "@/components/body-map"
 
+// The content for the education sections and myths vs facts, stored in a structured object for easy access based on language and section. This allows us to easily add more languages or sections in the future without changing the component logic. 
 const content = {
   en: {
     page_title: "The Three Highs: Starting With Diabetes",
@@ -818,6 +822,7 @@ function ImgOrPlaceholder({ src, alt, className }: { src: string; alt: string; c
   )
 }
 
+// Reusable card component for education sections
 function EduCard({ section, learnMoreLabel, showLessLabel, clickCardLabel, open, setOpen, activeTileIndices, setActiveTileIndices }: { 
   section: typeof content.en.edu_sections[0]; learnMoreLabel: string; showLessLabel: string; clickCardLabel: string;
   open: boolean; setOpen: (v: boolean | ((prev: boolean) => boolean)) => void; activeTileIndices: Set<number>; setActiveTileIndices: (v: Set<number>) => void; }) {
@@ -1049,6 +1054,7 @@ function EduCard({ section, learnMoreLabel, showLessLabel, clickCardLabel, open,
   )
 }
 
+// Reusable card component for myths vs facts — simple accordion style
 function MythCard({ item }: { item: { myth: string; fact: string } }) {
   const [open, setOpen] = useState(false)
 
@@ -1113,6 +1119,7 @@ export default function LearnClient() {
   const [activeTileIndices, setActiveTileIndices] = useState<Set<number>>(new Set())
   const [showAll, setShowAll] = useState(false)
 
+  // When switching education sections, reset the learn more and active tiles states
   function switchCard(idx: number) {
     setActiveEduIndex(idx)
     setLearnMoreOpen(false)
@@ -1210,6 +1217,7 @@ export default function LearnClient() {
                 ))}
               </div>
 
+              {/* Show toggle button if there are more than 5 myths */}
               {t.myths.length > 5 && (
                 <button
                   onClick={() => setShowAll(o => !o)}
@@ -1224,7 +1232,7 @@ export default function LearnClient() {
               )}
             </div>
 
-            {/* ── Menu scan CTA ── */}
+            {/* Menu scan CTA */}
             <div className="mt-14">
               <MenuScanCTA lang={lang} variant="learn"/>
             </div>
