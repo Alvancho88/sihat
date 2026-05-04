@@ -417,18 +417,44 @@ export default function BodyMap({ lang }: BodyMapProps) {
                   className="relative block"
                   aria-label={t.data[id].organ}
                 >
+                  {/* Ping animation — only when not selected */}
+                  {activeId !== id && (
+                    <span
+                      className="absolute inset-0 rounded-full animate-ping"
+                      style={{ backgroundColor: color, animationDuration: "2s", opacity: 0.3 }}
+                    />
+                  )}
+                  {/* Outer glow ring — only when selected */}
+                  {activeId === id && (
+                    <span
+                      className="absolute rounded-full"
+                      style={{
+                        inset: "-6px",
+                        backgroundColor: color,
+                        opacity: 0.25,
+                        borderRadius: "9999px",
+                      }}
+                    />
+                  )}
                   <span
-                    className="absolute inset-0 rounded-full animate-ping"
-                    style={{ backgroundColor: color, animationDuration: "2s", opacity: 0.3 }}
-                  />
-                  <span
-                    className="relative flex w-6 h-6 rounded-full border-2 border-white items-center justify-center transition-transform duration-150 group-hover:scale-125"
+                    className="relative flex rounded-full border-2 border-white items-center justify-center transition-all duration-200 group-hover:scale-125"
                     style={{
                       backgroundColor: color,
-                      boxShadow: activeId === id ? `0 0 0 3px ${color}40` : "0 1px 4px rgba(0,0,0,0.2)",
+                      width: activeId === id ? "24px" : "24px",
+                      height: activeId === id ? "24px" : "24px",
+                      boxShadow: activeId === id
+                        ? `0 0 0 3px white, 0 0 0 5px ${color}, 0 4px 12px ${color}80`
+                        : "0 1px 4px rgba(0,0,0,0.2)",
+                      transform: activeId === id ? "scale(1.2)" : undefined,
                     }}
                   >
-                    <span className="w-2 h-2 rounded-full bg-white" />
+                    <span
+                      className="rounded-full bg-white transition-all duration-200"
+                      style={{
+                        width: activeId === id ? "10px" : "8px",
+                        height: activeId === id ? "10px" : "8px",
+                      }}
+                    />
                   </span>
                 </button>
               </div>
