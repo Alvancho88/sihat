@@ -179,8 +179,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
 
-    const primaryKey = process.env.GROQ_API_KEY;
-    const backupKey = process.env.GROQ_API_KEY_2;
+    const primaryKey = process.env.GROQ_API_KEY_3;
+    const backupKey = process.env.GROQ_API_KEY_4;
 
     if (!primaryKey && !backupKey) {
     throw new Error("No GEMINI API keys configured");
