@@ -150,7 +150,7 @@ type FoodMatchResult =
 function parseCartCommand(message: string, foods: FoodItem[], lang: "en" | "ms" | "zh"): { action: string; food?: FoodItem; suggestions?: FoodItem[]; query?: string } | null {
   const lowerMsg = message.toLowerCase();
   const labels = {
-    en: { add: ["add", "put", "include"], remove: ["remove", "delete"], clear: ["clear", "empty"], view: ["what is in my food plan", "show my plan", "my food plan"] },
+    en: { add: ["add", "put", "include", "insert"], remove: ["remove", "delete"], clear: ["clear", "empty"], view: ["what is in my food plan", "show my plan", "my food plan"] },
     ms: { add: ["tambah", "masukkan"], remove: ["buang", "padam"], clear: ["kosongkan", "clear"], view: ["apa dalam pelan makanan saya", "tunjuk pelan saya"] },
     zh: { add: ["添加", "加入", "放"], remove: ["删除", "移除"], clear: ["清空"], view: ["我的食物计划有什么"] },
   };
@@ -187,37 +187,40 @@ function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem
       added: "added to your daily plan.",
       removed: "removed from your plan.",
       cleared: "Your food plan has been cleared.",
-      notFound: "Sorry, I couldn't find that food in our database.",
-      unavailable: "is not available in the food database.",
-      choose: "Please choose a food:",
+      notFound: "Sorry, I could not find that food in our list.",
+      unavailablePrefix: "Sorry,",
+      unavailableSuffix: "is not available in the food list.",
+      choose: "Here are some similar foods you can try:",
       canAdd: "You can add:",
       alreadyIn: "Already in your plan.",
       notIn: "Not in your plan.",
-      thisFood: "This food",
+      thisFood: "That food",
     },
     ms: {
       added: "Ditambah ke pelan harian anda.",
       removed: "Dibuang dari pelan anda.",
       cleared: "Pelan makanan anda telah dikosongkan.",
-      notFound: "Maaf, saya tidak dapat cari makanan itu dalam pangkalan data kami.",
-      unavailable: "tidak tersedia dalam pangkalan data makanan.",
-      choose: "Sila pilih makanan:",
+      notFound: "Maaf, makanan itu tidak ada dalam senarai kami.",
+      unavailablePrefix: "Maaf,",
+      unavailableSuffix: "tidak ada dalam senarai makanan.",
+      choose: "Cuba pilih daripada makanan yang serupa:",
       canAdd: "Anda boleh tambah:",
       alreadyIn: "Sudah ada dalam pelan anda.",
       notIn: "Tidak ada dalam pelan anda.",
-      thisFood: "Makanan ini",
+      thisFood: "Makanan itu",
     },
     zh: {
       added: "已添加到您的每日计划。",
       removed: "已从您的计划中移除。",
       cleared: "您的食物计划已清空。",
-      notFound: "抱歉，我在数据库中找不到该食物。",
-      unavailable: "不在食物数据库中。",
-      choose: "请选择一个食物：",
+      notFound: "抱歉，我们的食物列表中没有这个食物。",
+      unavailablePrefix: "抱歉，",
+      unavailableSuffix: "不在食物列表中。",
+      choose: "以下是一些相似的食物，您可以试试：",
       canAdd: "您可以添加：",
       alreadyIn: "已经在您的计划中。",
       notIn: "不在您的计划中。",
-      thisFood: "这个食物",
+      thisFood: "该食物",
     },
   };
 
@@ -238,9 +241,8 @@ function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem
 
   if (command.suggestions?.length) {
     const unavailableFoodName = formatUnavailableFoodName(command.query, lang) || l.thisFood;
-    const prompt = command.suggestions.length === 1 ? l.canAdd : l.choose;
     return {
-      reply: `${unavailableFoodName} ${l.unavailable}\n\n${prompt}`,
+      reply: `${l.unavailablePrefix} ${unavailableFoodName} ${l.unavailableSuffix}\n\n${l.choose}`,
       suggestions: command.suggestions,
       unavailableFoodName,
     };
@@ -249,16 +251,24 @@ function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem
   if (!command.food) {
     const unavailableFoodName = formatUnavailableFoodName(command.query, lang) || l.thisFood;
     return {
-      reply: command.action === "add" ? `${unavailableFoodName} ${l.unavailable}` : l.notFound,
+      reply: command.action === "add"
+        ? `${l.unavailablePrefix} ${unavailableFoodName} ${l.unavailableSuffix}`
+        : l.notFound,
       unavailableFoodName: command.action === "add" ? unavailableFoodName : undefined,
     };
   }
 
   if (command.action === "add") {
+    const foodName = command.food.name[lang] || command.food.name.en;
     if (cart.some(f => f.name.en === command.food!.name.en)) {
-      return { reply: l.alreadyIn };
+      const alreadyInMessages = {
+        en: `${foodName} is already in your daily plan.`,
+        ms: `${foodName} sudah ada dalam pelan harian anda.`,
+        zh: `${foodName} 已经在您的每日计划中了。`,
+      };
+      return { reply: alreadyInMessages[lang] };
     }
-    return { reply: `${command.food.name[lang] || command.food.name.en} ${l.added}`, action: { type: "add", food: command.food } };
+    return { reply: `${foodName} ${l.added}`, action: { type: "add", food: command.food } };
   }
 
   if (command.action === "remove") {
@@ -273,19 +283,22 @@ function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem
 }
 
 function formatFoodSuggestions(foods: FoodItem[], lang: "en" | "ms" | "zh", query?: string): ChatResponse {
-  const labels = {
-    en: "Please choose a food:",
-    ms: "Sila pilih makanan:",
-    zh: "请选择一个食物：",
+  const choose = {
+    en: "Here are some similar foods you can try:",
+    ms: "Cuba pilih daripada makanan yang serupa:",
+    zh: "以下是一些相似的食物，您可以试试：",
   };
-  const unavailable = {
-    en: "is not available in the food database.",
-    ms: "tidak tersedia dalam pangkalan data makanan.",
-    zh: "不在食物数据库中。",
+  const unavailablePrefix = { en: "Sorry,", ms: "Maaf,", zh: "抱歉，" };
+  const unavailableSuffix = {
+    en: "is not available in the food list.",
+    ms: "tidak ada dalam senarai makanan.",
+    zh: "不在食物列表中。",
   };
   const unavailableFoodName = formatUnavailableFoodName(query, lang);
   return {
-    reply: unavailableFoodName ? `${unavailableFoodName} ${unavailable[lang]}\n\n${labels[lang]}` : labels[lang],
+    reply: unavailableFoodName
+      ? `${unavailablePrefix[lang]} ${unavailableFoodName} ${unavailableSuffix[lang]}\n\n${choose[lang]}`
+      : choose[lang],
     suggestions: foods,
     unavailableFoodName: unavailableFoodName || undefined,
   };
@@ -520,54 +533,174 @@ function getFoodNames(food: FoodItem): string[] {
   return [food.name.en, food.name.ms, food.name.zh].filter(Boolean);
 }
 
+/**
+ * Extracts the food name from a natural-language cart command.
+ *
+ * Strategy:
+ *   1. Find the action verb (add / remove / …) inside the message.
+ *   2. Take the text AFTER the verb, strip trailing cart-noise → that is normally the food.
+ *   3. If nothing useful is left after the verb (food was stated before it, e.g.
+ *      "birthday cake, add to cart"), take the text BEFORE the verb and strip
+ *      any leading conversational preamble.
+ *   4. Last resort: strip both ends of the full message.
+ *
+ * This positional approach avoids the need for an exhaustive blocklist —
+ * phrases like "help me", "kindly", "can you please" are automatically ignored
+ * because they appear before the verb and we anchor extraction on the verb position.
+ */
 function stripCartIntent(message: string, action: "add" | "remove", lang: "en" | "ms" | "zh"): string {
-  let normalized = normalizeFoodText(message);
-  const commandWords = {
-    en: action === "add" ? ["add", "put", "include"] : ["remove", "delete"],
-    ms: action === "add" ? ["tambah", "masukkan"] : ["buang", "padam"],
-    zh: action === "add" ? ["添加", "加入", "放"] : ["删除", "移除"],
+  const normalized = normalizeFoodText(message);
+  if (!normalized) return "";
+
+  const verbsByAction: Record<string, Record<string, string[]>> = {
+    en: { add: ["add", "put", "insert", "include"], remove: ["remove", "delete"] },
+    ms: { add: ["tambah", "masukkan"], remove: ["buang", "padam"] },
+    zh: { add: ["添加", "加入", "放"], remove: ["删除", "移除"] },
   };
+  const verbs = verbsByAction[lang]?.[action] ?? [];
 
-  for (const word of commandWords[lang]) {
-    normalized = removeNormalizedPhrase(normalized, word);
-  }
-
-  const fillerPhrases = [
-    "please",
-    "pls",
-    "can you",
-    "could you",
-    "to my daily plan",
-    "to daily plan",
-    "to my food plan",
-    "from my daily plan",
-    "from daily plan",
-    "from my food plan",
-    "my daily plan",
-    "daily plan",
-    "my food plan",
-    "food plan",
-    "ke pelan harian saya",
-    "daripada pelan harian saya",
-    "pelan harian saya",
-    "pelan harian",
-    "tolong",
-    "sila",
-    "加入我的每日计划",
-    "从我的每日计划",
-    "我的每日计划",
-    "每日计划",
-    "请",
-    "到",
-    "进",
-    "从",
+  const trailingFillers = [
+    "into my food cart", "into food cart", "into the food cart", "into my cart", "into the cart",
+    "into my daily plan", "into daily plan", "into the daily plan", "into my food plan", "into food plan",
+    "to my food cart", "to food cart", "to the food cart", "to my cart", "to the cart",
+    "to my daily plan", "to daily plan", "to the daily plan", "to my food plan",
+    "from my daily plan", "from daily plan", "from my food plan",
+    "my daily plan", "my food plan", "my cart",
+    "food plan", "daily plan", "food cart",
+    "into cart", "to cart", "from cart",
+    "into", "to", "the", "cart",
+    "ke pelan harian saya", "daripada pelan harian saya", "pelan harian saya",
+    "ke troli makanan saya", "ke troli saya", "dalam troli saya",
+    "pelan harian", "troli",
+    "加入我的每日计划", "从我的每日计划", "我的每日计划", "每日计划",
+    "加入我的购物车", "加入购物车", "放入购物车", "购物车", "到",
   ];
 
-  for (const phrase of fillerPhrases) {
-    normalized = removeNormalizedPhrase(normalized, phrase);
+  const leadingFillers = [
+    "can you please", "could you please",
+    "i would like to", "i would like",
+    "i d like to", "i d like",
+    "i want to", "i want",
+    "can you", "could you",
+    "how about", "what about",
+    "please", "pls", "help me", "kindly",
+    "boleh tolong", "boleh tak", "boleh",
+    "tolong", "sila",
+    "请帮我", "帮我", "请",
+  ];
+
+  const stopwordsByLang: Record<"en" | "ms" | "zh", Set<string>> = {
+    en: new Set([
+      "add", "remove", "put", "insert", "include",
+      "help", "me", "please", "pls", "can", "you", "i", "want",
+      "into", "to", "the", "my", "in", "on", "from",
+      "cart", "food", "daily", "plan",
+    ]),
+    ms: new Set(["tambah", "masukkan", "buang", "padam", "tolong", "sila", "ke", "dalam", "daripada", "troli", "pelan", "harian"]),
+    zh: new Set(["请", "帮我", "添加", "加入", "放", "删除", "移除", "到", "购物车", "每日计划"]),
+  };
+
+  function stripTrailing(text: string): string {
+    let s = text.trim();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const filler of trailingFillers) {
+        const nf = normalizeFoodText(filler);
+        if (!nf) continue;
+        if (hasCjk(nf)) {
+          if (s.endsWith(nf)) {
+            s = s.slice(0, s.length - nf.length).trim();
+            changed = true;
+          }
+        } else {
+          const next = s.replace(new RegExp(`(?:^|\\s)${escapeRegExp(nf)}$`, "u"), "").trim();
+          if (next !== s) {
+            s = next;
+            changed = true;
+          }
+        }
+      }
+    }
+    return s;
   }
 
-  return normalized.trim().replace(/\s+/g, " ");
+  function stripLeading(text: string): string {
+    let s = text.trim();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const filler of leadingFillers) {
+        const nf = normalizeFoodText(filler);
+        if (!nf) continue;
+        if (hasCjk(nf)) {
+          if (s.startsWith(nf)) {
+            s = s.slice(nf.length).trim();
+            changed = true;
+          }
+        } else {
+          const next = s.replace(new RegExp(`^${escapeRegExp(nf)}(?=\\s|$)`, "u"), "").trim();
+          if (next !== s) {
+            s = next;
+            changed = true;
+          }
+        }
+      }
+    }
+    return s;
+  }
+
+  function dropStopwords(candidate: string): string {
+    if (!candidate) return "";
+    if (lang === "zh" || hasCjk(candidate)) return candidate;
+    const stopwords = stopwordsByLang[lang];
+    return candidate
+      .split(" ")
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0 && !stopwords.has(token))
+      .join(" ")
+      .trim();
+  }
+
+  function cleanCandidate(text: string): string {
+    const compact = dropStopwords(stripLeading(stripTrailing(text)));
+    return compact.replace(/\s+/g, " ").trim();
+  }
+
+  // Find earliest action verb occurrence in the message.
+  let verbStart = -1;
+  let verbEnd = -1;
+  for (const verb of verbs) {
+    const nv = normalizeFoodText(verb);
+    if (!nv) continue;
+    if (hasCjk(nv)) {
+      const idx = normalized.indexOf(nv);
+      if (idx !== -1 && (verbStart === -1 || idx < verbStart)) {
+        verbStart = idx;
+        verbEnd = idx + nv.length;
+      }
+    } else {
+      const re = new RegExp(`(^|\\s)(${escapeRegExp(nv)})(?=\\s|$)`, "u");
+      const m = re.exec(normalized);
+      if (m) {
+        const idx = m.index + m[1].length;
+        if (verbStart === -1 || idx < verbStart) {
+          verbStart = idx;
+          verbEnd = idx + nv.length;
+        }
+      }
+    }
+  }
+
+  if (verbEnd !== -1) {
+    const afterVerb = cleanCandidate(normalized.slice(verbEnd).trim());
+    if (afterVerb.length >= 2) return afterVerb;
+
+    const beforeVerb = cleanCandidate(normalized.slice(0, verbStart).trim());
+    if (beforeVerb.length >= 2) return beforeVerb;
+  }
+
+  return cleanCandidate(normalized);
 }
 
 function stripFoodQuestionIntent(message: string): string {
@@ -681,14 +814,20 @@ function hasPartialFoodRelationship(normalizedQuery: string, normalizedName: str
   const nameTokens = normalizedName.split(" ").filter(Boolean);
 
   if (!hasCjk(normalizedQuery) && !hasCjk(normalizedName)) {
-    return hasContiguousTokens(queryTokens, nameTokens) || hasContiguousTokens(nameTokens, queryTokens);
+    // SAFE direction only: the food name in the DB must CONTAIN the query tokens.
+    // This prevents short DB names (e.g. "apple") from matching longer queries
+    // (e.g. "apple juice") — which would be a dangerous false positive.
+    // Require at least 2 query tokens so single-word queries never fuzzy-expand.
+    if (queryTokens.length < 2) return false;
+    return hasContiguousTokens(nameTokens, queryTokens);
   }
 
   const compactQuery = normalizedQuery.replace(/\s+/g, "");
   const compactName = normalizedName.replace(/\s+/g, "");
   if (compactQuery === compactName) return false;
 
-  return compactQuery.indexOf(compactName) !== -1 || compactName.indexOf(compactQuery) !== -1;
+  // CJK: only match when the DB food name contains the query — same safe direction.
+  return compactName.indexOf(compactQuery) !== -1;
 }
 
 function matchFoodQuery(query: string, foods: FoodItem[]): FoodMatchResult {
@@ -710,7 +849,7 @@ function matchFoodQuery(query: string, foods: FoodItem[]): FoodMatchResult {
     .map((entry) => entry.food));
 
   if (exactMatches.length === 1) return { status: "matched", food: exactMatches[0] };
-  if (exactMatches.length > 1) return { status: "ambiguous", foods: exactMatches.slice(0, 5) };
+  if (exactMatches.length > 1) return { status: "ambiguous", foods: exactMatches.slice(0, 3) };
 
   const partialMatches = uniqueFoods(entries
     .filter((entry) => {
@@ -721,7 +860,7 @@ function matchFoodQuery(query: string, foods: FoodItem[]): FoodMatchResult {
     .map((entry) => entry.food));
 
   if (partialMatches.length > 0) {
-    return { status: "ambiguous", foods: partialMatches.slice(0, 5) };
+    return { status: "ambiguous", foods: partialMatches.slice(0, 3) };
   }
 
   const fuzzyMatches = entries
@@ -743,7 +882,7 @@ function matchFoodQuery(query: string, foods: FoodItem[]): FoodMatchResult {
     .map((match) => match.food));
 
   if (closeMatches.length > 0) {
-    return { status: "ambiguous", foods: closeMatches.slice(0, 5) };
+    return { status: "ambiguous", foods: closeMatches.slice(0, 3) };
   }
 
   return { status: "none" };

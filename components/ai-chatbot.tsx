@@ -85,7 +85,7 @@ const t = {
     noScan: "No food scan found. Try scanning a menu first for personalised advice!",
     thinking: "Thinking...",
     errorRetry: "Something went wrong. Please try again.",
-    stillUnavailable: "That food is still not available in the database.",
+    stillUnavailable: "Sorry, that food is not in our food list.",
     ariaOpen: "Open health assistant",
     ariaClose: "Close health assistant",
     suggestedQ: ["Is my food safe for diabetes?", "What should I avoid eating?", "Explain the Three Highs"],
@@ -102,7 +102,7 @@ const t = {
     noScan: "Tiada imbasan makanan ditemui. Cuba imbas menu dahulu untuk nasihat peribadi!",
     thinking: "Sedang berfikir...",
     errorRetry: "Ada masalah. Sila cuba lagi.",
-    stillUnavailable: "Makanan itu masih belum tersedia dalam pangkalan data.",
+    stillUnavailable: "Maaf, makanan itu tidak ada dalam senarai makanan kami.",
     ariaOpen: "Buka pembantu kesihatan",
     ariaClose: "Tutup pembantu kesihatan",
     suggestedQ: ["Adakah makanan saya selamat untuk diabetes?", "Apa yang perlu saya elakkan?", "Terangkan Tiga Tinggi"],
@@ -119,7 +119,7 @@ const t = {
     noScan: "未找到食物扫描记录。请先扫描菜单以获取个性化建议！",
     thinking: "思考中...",
     errorRetry: "出现错误，请重试。",
-    stillUnavailable: "这个食物仍然不在数据库中。",
+    stillUnavailable: "抱歉，这个食物不在我们的食物列表中。",
     ariaOpen: "打开健康助手",
     ariaClose: "关闭健康助手",
     suggestedQ: ["我的食物对糖尿病安全吗？", "我应该避免什么食物？", "解释三高"],
@@ -286,17 +286,28 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
   const addSuggestedFood = useCallback(
     (food: CartFoodItem) => {
-      if (!isInCart(food.name.en)) {
+      const foodName = getCartFoodName(food, lang);
+      const alreadyAdded = isInCart(food.name.en);
+
+      if (!alreadyAdded) {
         addToCart(food);
       }
 
+      const confirmText = {
+        en: alreadyAdded
+          ? `${foodName} is already in your daily plan.`
+          : `${foodName} added to your daily plan.`,
+        ms: alreadyAdded
+          ? `${foodName} sudah ada dalam pelan harian anda.`
+          : `${foodName} ditambah ke pelan harian anda.`,
+        zh: alreadyAdded
+          ? `${foodName} 已经在您的每日计划中了。`
+          : `${foodName} 已添加到您的每日计划。`,
+      };
+
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content: `${getCartFoodName(food, lang)} added to your daily plan.`,
-          id: uid(),
-        },
+        { role: "assistant", content: confirmText[lang], id: uid() },
       ]);
       lastUnavailableRequestRef.current = null;
     },
@@ -359,7 +370,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         const reply = data.reply || tx.errorRetry;
 
         if (data.action?.type === "add" && data.action.food) {
-          addToCart(data.action.food);
+          // Guard against stale cart snapshot: don't add if already present
+          if (!isInCart(data.action.food.name.en)) {
+            addToCart(data.action.food);
+          }
         } else if (data.action?.type === "remove" && data.action.food) {
           const cartIndex = cart.findIndex((food) => food.name.en === data.action?.food?.name.en);
           if (cartIndex !== -1) {
@@ -407,8 +421,13 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       {/* ── Floating Button ── */}
       <button
         onClick={() => setIsOpen((v) => !v)}
-        className="fixed bottom-6 right-6 w-16 h-16 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        style={{ background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)", border: "2px solid #047a57", zIndex: 40 }}
+        className="fixed right-6 w-16 h-16 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        style={{
+          background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)",
+          border: "2px solid #047a57",
+          bottom: "calc(1.5rem + env(safe-area-inset-bottom))",
+          zIndex: 9999,
+        }}
         aria-label={isOpen ? tx.ariaClose : tx.ariaOpen}
         aria-expanded={isOpen}
       >
@@ -424,13 +443,23 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         <>
           {/* 透明背景 — 點擊關閉 */}
           <div
-            className="fixed inset-0 transition-opacity duration-200"
-            style={{ zIndex: 30 }}
+            // Start overlay BELOW the sticky navbar so users can still switch language / navigate
+            // while the chatbot popup is open.
+            className="fixed left-0 right-0 bottom-0 top-16 md:top-20 transition-opacity duration-200"
+            style={{ zIndex: 9998 }}
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="fixed bottom-24 right-4 flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white transition-opacity duration-200"
-            style={{ width: "min(96vw, 520px)", height: "min(calc(100vh - 8rem), 720px)", border: "2px solid #0a7a74", zIndex: 40 }}
+            className="fixed right-4 flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white transition-opacity duration-200"
+            style={{
+              width: "min(96vw, 520px)",
+              // Keep the top edge away from the sticky navbar area
+              // (navbar height is ~4rem on mobile and ~5rem on md+).
+              height: "min(calc(100vh - 12rem), 720px)",
+              border: "2px solid #0a7a74",
+              zIndex: 9999,
+              bottom: "calc(6rem + env(safe-area-inset-bottom))",
+            }}
             role="dialog"
             aria-label={tx.title}
           >
