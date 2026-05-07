@@ -21,11 +21,13 @@
 "use client"
 
 import { PageLayout } from "@/components/page-layout"
-import { useState, useEffect, createContext, useContext, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
+import { useCart } from "@/components/cart-context"
+import { buildDailyIntakeSummary, type Gender } from "@/lib/daily-intake-summary"
 
 import Image from "next/image"
 import { Search, X, TrendingDown, TrendingUp, Minus, Info, User, ShoppingCart, Trash2, Plus, Check, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from "lucide-react"
-import { categories, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel, dailyLimits, getFoodName, getLocalizedCategory, type FoodItem } from "@/lib/food-functions"
+import { categories, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel, getFoodName, getLocalizedCategory, type FoodItem } from "@/lib/food-functions"
 
 // Supported language codes for the page
 type LangCode = "en" | "ms" | "zh"
@@ -359,39 +361,6 @@ const pageContent = {
     show_less: "收起",
     back_to_search: "返回搜索",
   },
-}
-
-/**
- * CartContextType
- *
- * Defines the shape of the cart context shared across components.
- * - cart: list of food items currently in the daily intake plan
- * - addToCart: adds a food item to the cart
- * - removeFromCart: removes a food item at a specific index
- * - clearCart: removes all items from the cart
- * - isInCart: checks whether a food item (by name) is already in the cart
- */
-type CartContextType = {
-  cart: FoodItem[]
-  addToCart: (food: FoodItem) => void
-  removeFromCart: (index: number) => void
-  clearCart: () => void
-  isInCart: (name: string) => boolean
-}
-
-// React context for sharing cart state between FoodCard, DailyIntakePanel, and FoodClientInner
-const CartContext = createContext<CartContextType | null>(null)
-
-/**
- * useCart
- *
- * Custom hook that retrieves the CartContext value.
- * Throws an error if used outside of a CartContext.Provider.
- */
-function useCart() {
-  const context = useContext(CartContext)
-  if (!context) throw new Error("useCart must be used within CartProvider")
-  return context
 }
 
 /**
@@ -732,7 +701,7 @@ function DailyIntakePanel({ t, isOpen, onClose, lang }: { t: typeof pageContent.
   const { cart, removeFromCart, clearCart } = useCart()
 
   // Load saved gender preference from localStorage, defaulting to "male"
-  const [gender, setGender] = useState<"male" | "female">(() => {
+  const [gender, setGender] = useState<Gender>(() => {
     if (typeof window === "undefined") return "male"
     const saved = localStorage.getItem("manis-gender")
     return saved === "female" ? "female" : "male"
@@ -746,36 +715,12 @@ function DailyIntakePanel({ t, isOpen, onClose, lang }: { t: typeof pageContent.
    *
    * @param newGender - The newly selected gender ("male" or "female")
    */
-  const handleGenderChange = (newGender: "male" | "female") => {
+  const handleGenderChange = (newGender: Gender) => {
     setGender(newGender)
     localStorage.setItem("manis-gender", newGender)
   }
 
-  // Sum all nutrient values across cart items to get daily totals
-  const totals = cart.reduce((acc, food) => ({
-    sugar: Math.round((acc.sugar + parseFloat(food.sugar.replace(/[^0-9.]/g, ''))) * 10) / 10,
-    calories: Math.round((acc.calories + parseFloat(food.calories.replace(/[^0-9.]/g, ''))) * 10) / 10,
-    fat: Math.round((acc.fat + parseFloat(food.fat.replace(/[^0-9.]/g, ''))) * 10) / 10,
-    sodium: Math.round((acc.sodium + parseFloat(food.sodium.replace(/[^0-9.]/g, ''))) * 10) / 10,
-    gi: Math.round((acc.gi + parseFloat(food.gi.replace(/[^0-9.]/g, ''))) * 10) / 10,
-  }), { sugar: 0, calories: 0, fat: 0, sodium: 0, gi: 0 })
-
-  // Set daily limits based on selected gender
-  const limits = {
-    sugar: gender === "male" ? dailyLimits.sugar.men : dailyLimits.sugar.women,
-    fat: gender === "male" ? dailyLimits.fat.men : dailyLimits.fat.women,
-    sodium: gender === "male" ? dailyLimits.sodium.men : dailyLimits.sodium.women,
-    cal: gender === "male" ? dailyLimits.cal.men : dailyLimits.cal.women,
-    gi: dailyLimits.gi.men,
-  }
-
-  // Calculate how much each nutrient exceeds the daily limit (0 if within limit)
-  const excess = {
-    sugar: totals.sugar > limits.sugar ? Math.round((totals.sugar - limits.sugar) * 10) / 10 : 0,
-    fat: totals.fat > limits.fat ? Math.round((totals.fat - limits.fat) * 10) / 10 : 0,
-    sodium: totals.sodium > limits.sodium ? Math.round(totals.sodium - limits.sodium) : 0,
-    cal: totals.calories > limits.cal ? Math.round(totals.calories - limits.cal): 0,
-  }
+  const { totals, limits, excess } = buildDailyIntakeSummary(cart, gender)
 
   // Colour palette for each nutrient's progress bar
   const barColors: Record<string, string> = {
@@ -1302,10 +1247,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   const [search, setSearch] = useState("")
   // Selected category indices (empty = All)
   const [selectedCats, setSelectedCats] = useState<number[]>([])
-  // Daily intake cart items
-  const [cart, setCart] = useState<FoodItem[]>([])
-  // Whether cart has been loaded from localStorage (prevents premature saves)
-  const [cartLoaded, setCartLoaded] = useState(false)
+  const { cart } = useCart()
   // Whether the daily intake panel is open
   const [cartOpen, setCartOpen] = useState(false)
   // Whether the GI info modal is open
@@ -1361,41 +1303,6 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     handleScroll()
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
-
-  /**
-   * Load the cart from localStorage on initial mount.
-   * Sets cartLoaded to true after loading to allow subsequent saves.
-   */
-  useEffect(() => {
-    const savedCart = localStorage.getItem("manis-cart")
-    if (savedCart) {
-      try {
-        const parsed = JSON.parse(savedCart)
-        if (Array.isArray(parsed)) {
-          setCart(parsed)
-        }
-      } catch {
-        // Silently ignore corrupted localStorage data
-      }
-    }
-    setCartLoaded(true)
-  }, [])
-
-  /**
-   * Persist the cart to localStorage whenever it changes.
-   * Only runs after the initial load to avoid overwriting saved data on mount.
-   */
-  useEffect(() => {
-    if (cartLoaded) {
-      localStorage.setItem("manis-cart", JSON.stringify(cart))
-    }
-  }, [cart, cartLoaded])
-
-  // Cart mutation functions passed through CartContext
-  const addToCart = (food: FoodItem) => setCart(prev => [...prev, food])
-  const removeFromCart = (index: number) => setCart(prev => prev.filter((_, i) => i !== index))
-  const clearCart = () => setCart([])
-  const isInCart = (name: string) => cart.some(f => f.name.en === name)
 
   /**
    * toggleCategory
@@ -1595,8 +1502,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   }
 
   return (
-    <CartContext.Provider value={{ cart, addToCart, removeFromCart, clearCart, isInCart }}>
-      <div className="max-w-7xl mx-auto px-4 py-10 md:py-14 pb-24 space-y-10">
+    <div className="max-w-7xl mx-auto px-4 py-10 md:py-14 pb-24 space-y-10">
         {/* Page header */}
         <div className="text-center">
           <h1 className="text-2xl md:text-5xl font-extrabold mb-4 text-balance">{t.title}</h1>
@@ -2208,8 +2114,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
 
         {/* Daily intake sliding panel */}
         <DailyIntakePanel t={t} isOpen={cartOpen} onClose={() => setCartOpen(false)} lang={lang} />
-      </div>
-    </CartContext.Provider>
+    </div>
   )
 }
 
