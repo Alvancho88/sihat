@@ -9,8 +9,12 @@
 // - Safety: disclaimer on every message, no medical diagnosis
 // - Fallback handling for API errors
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, X, Send, Loader2, ChevronDown } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
+import { usePathname } from "next/navigation";
+import { Bot, X, Send, Loader2, ChevronDown, Plus, Check } from "lucide-react";
+import { useCart } from "@/components/cart-context";
+import { buildDailyIntakeSummary, type Gender, type DailyIntakeSummary } from "@/lib/daily-intake-summary";
+import type { FoodItem as CartFoodItem } from "@/lib/food-functions";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +24,8 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   id: string;
+  kind?: "system";
+  suggestions?: CartFoodItem[];
 }
 
 // Shape of what /api/predict stores — mirrors the API response
@@ -41,6 +47,30 @@ interface FoodItem {
   best_reason?: string;
 }
 
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface ChatResponse {
+  reply?: string;
+  action?: {
+    type: "add" | "remove" | "clear";
+    food?: CartFoodItem;
+  };
+  suggestions?: CartFoodItem[];
+  unavailableFoodName?: string;
+}
+
+type ChatRequestBody = {
+  message: string;
+  history: ChatMessage[];
+  language: LangCode;
+  scanContext: ScanContext | null;
+  cart: CartFoodItem[];
+  intakeSummary: DailyIntakeSummary;
+}
+
 // ─── TRANSLATIONS ─────────────────────────────────────────────────────────────
 
 const t = {
@@ -55,9 +85,11 @@ const t = {
     noScan: "No food scan found. Try scanning a menu first for personalised advice!",
     thinking: "Thinking...",
     errorRetry: "Something went wrong. Please try again.",
+    stillUnavailable: "That food is still not available in the database.",
     ariaOpen: "Open health assistant",
     ariaClose: "Close health assistant",
     suggestedQ: ["Is my food safe for diabetes?", "What should I avoid eating?", "Explain the Three Highs"],
+    languageSwitched: "From now on, I will reply in English.",
   },
   ms: {
     title: "Pembantu SIHAT",
@@ -70,9 +102,11 @@ const t = {
     noScan: "Tiada imbasan makanan ditemui. Cuba imbas menu dahulu untuk nasihat peribadi!",
     thinking: "Sedang berfikir...",
     errorRetry: "Ada masalah. Sila cuba lagi.",
+    stillUnavailable: "Makanan itu masih belum tersedia dalam pangkalan data.",
     ariaOpen: "Buka pembantu kesihatan",
     ariaClose: "Tutup pembantu kesihatan",
     suggestedQ: ["Adakah makanan saya selamat untuk diabetes?", "Apa yang perlu saya elakkan?", "Terangkan Tiga Tinggi"],
+    languageSwitched: "Mulai sekarang, saya akan menjawab dalam Bahasa Malaysia.",
   },
   zh: {
     title: "SIHAT 健康助手",
@@ -85,9 +119,11 @@ const t = {
     noScan: "未找到食物扫描记录。请先扫描菜单以获取个性化建议！",
     thinking: "思考中...",
     errorRetry: "出现错误，请重试。",
+    stillUnavailable: "这个食物仍然不在数据库中。",
     ariaOpen: "打开健康助手",
     ariaClose: "关闭健康助手",
     suggestedQ: ["我的食物对糖尿病安全吗？", "我应该避免什么食物？", "解释三高"],
+    languageSwitched: "从现在开始，我将使用简体中文回答。",
   },
 } as const;
 
@@ -106,8 +142,34 @@ function readScanContext(): ScanContext | null {
 }
 
 /** Generates a simple unique ID for messages */
+const STORAGE_KEY = "sihat_assistant_messages";
+
 function uid(): string {
   return Math.random().toString(36).slice(2, 9);
+}
+
+function readMessageHistory(): Message[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as Message[];
+  } catch {
+    return null;
+  }
+}
+
+function readGenderPreference(): Gender {
+  if (typeof window === "undefined") return "male";
+  return localStorage.getItem("manis-gender") === "female" ? "female" : "male";
+}
+
+function normalizeRepeatKey(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function getCartFoodName(food: CartFoodItem, lang: LangCode): string {
+  return food.name[lang] || food.name.en;
 }
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
@@ -121,7 +183,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [scanContext, setScanContext] = useState<ScanContext | null>(null);
   const [hasInitialised, setHasInitialised] = useState(false);
+  const { cart, addToCart, removeFromCart, clearCart, isInCart } = useCart();
 
+  const pathname = usePathname();
+  const lastRequestedLangRef = useRef<LangCode>(lang);
+  const lastUnavailableRequestRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -133,6 +199,32 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Ensure chat reopens at the latest message before rendering
+  useLayoutEffect(() => {
+    if (!isOpen || messages.length === 0) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+  }, [isOpen, messages.length]);
+
+  // Close chatbot on route change while preserving session history
+  useEffect(() => {
+    if (!isOpen) return;
+    setIsOpen(false);
+  }, [pathname]);
+
+  // Restore chat history for the current browser session
+  useEffect(() => {
+    const storedMessages = readMessageHistory();
+    if (storedMessages?.length) {
+      setMessages(storedMessages);
+      setHasInitialised(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+  }, [messages]);
 
   // Initialise chatbot when first opened
   useEffect(() => {
@@ -173,36 +265,60 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     }
   }, [isOpen]);
 
-  // Re-read scan context when chat opens (user may have just scanned)
+  // Add a minimal in-chat language switch indicator when language changes
   useEffect(() => {
-    if (isOpen) {
-      const ctx = readScanContext();
-      setScanContext(ctx);
-    }
-  }, [isOpen]);
+    if (!isOpen || !hasInitialised) return;
+    if (lastRequestedLangRef.current === lang) return;
 
-  // 當語言改變時更新 welcome message（第一條訊息）
-  useEffect(() => {
-    if (messages.length === 0) return;
-    setMessages(prev => {
-      const newFirst = { ...prev[0], content: tx.welcome };
-      return [newFirst, ...prev.slice(1)];
-    });
-  }, [lang]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (hasInitialised) {
-      setMessages([]);
-      setHasInitialised(false);
-    }
-  }, [lang]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        kind: "system",
+        content: tx.languageSwitched,
+        id: uid(),
+      },
+    ]);
+    lastRequestedLangRef.current = lang;
+  }, [lang, isOpen, hasInitialised, tx]);
 
   // ─── SEND MESSAGE ───────────────────────────────────────────────────────────
+
+  const addSuggestedFood = useCallback(
+    (food: CartFoodItem) => {
+      if (!isInCart(food.name.en)) {
+        addToCart(food);
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `${getCartFoodName(food, lang)} added to your daily plan.`,
+          id: uid(),
+        },
+      ]);
+      lastUnavailableRequestRef.current = null;
+    },
+    [addToCart, isInCart, lang]
+  );
 
   const sendMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || isLoading) return;
+      const repeatKey = normalizeRepeatKey(trimmed);
+
+      if (lastUnavailableRequestRef.current === repeatKey) {
+        const userMsg: Message = { role: "user", content: trimmed, id: uid() };
+        setMessages((prev) => [
+          ...prev,
+          userMsg,
+          { role: "assistant", content: tx.stillUnavailable, id: uid() },
+        ]);
+        setInput("");
+        return;
+      }
 
       const userMsg: Message = { role: "user", content: trimmed, id: uid() };
       const newMessages = [...messages, userMsg];
@@ -210,25 +326,58 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       setInput("");
       setIsLoading(true);
 
+      const historyMessages: ChatMessage[] = newMessages.slice(-6).map(({ role, content }) => ({ role, content }));
+      if (lang !== lastRequestedLangRef.current) {
+        const languageGuards: Record<LangCode, string> = {
+          en: "The user switched language to English. Answer future messages in English.",
+          ms: "The user switched language to Bahasa Malaysia. Answer future messages in Bahasa Malaysia.",
+          zh: "The user switched language to Simplified Chinese. Answer future messages in Simplified Chinese.",
+        };
+        historyMessages.unshift({ role: "assistant", content: languageGuards[lang] });
+        lastRequestedLangRef.current = lang;
+      }
+
       try {
+        const gender = readGenderPreference();
+        const intakeSummary = buildDailyIntakeSummary(cart, gender, lang);
+        const requestBody: ChatRequestBody = {
+          message: trimmed,
+          history: historyMessages,
+          language: lang,
+          scanContext: scanContext ?? null,
+          cart,
+          intakeSummary,
+        };
+
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: trimmed,
-            // Send only content for API (exclude id field)
-            history: newMessages.slice(-6).map(({ role, content }) => ({ role, content })),
-            language: lang,
-            scanContext: scanContext ?? null,
-          }),
+          body: JSON.stringify(requestBody),
         });
 
-        const data = await res.json();
+        const data = (await res.json()) as ChatResponse;
         const reply = data.reply || tx.errorRetry;
+
+        if (data.action?.type === "add" && data.action.food) {
+          addToCart(data.action.food);
+        } else if (data.action?.type === "remove" && data.action.food) {
+          const cartIndex = cart.findIndex((food) => food.name.en === data.action?.food?.name.en);
+          if (cartIndex !== -1) {
+            removeFromCart(cartIndex);
+          }
+        } else if (data.action?.type === "clear") {
+          clearCart();
+        }
+
+        if (data.suggestions?.length || data.unavailableFoodName) {
+          lastUnavailableRequestRef.current = repeatKey;
+        } else {
+          lastUnavailableRequestRef.current = null;
+        }
 
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: reply, id: uid() },
+          { role: "assistant", content: reply, suggestions: data.suggestions, id: uid() },
         ]);
       } catch {
         setMessages((prev) => [
@@ -240,7 +389,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         setTimeout(() => inputRef.current?.focus(), 100);
       }
     },
-    [isLoading, messages, lang, scanContext, tx]
+    [addToCart, cart, clearCart, isLoading, lang, messages, removeFromCart, scanContext, tx]
   );
 
   // Handle Enter key (Shift+Enter for newline)
@@ -258,8 +407,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       {/* ── Floating Button ── */}
       <button
         onClick={() => setIsOpen((v) => !v)}
-        className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 text-white"
-        style={{ background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)", border: "2px solid #047a57" }}
+        className="fixed bottom-6 right-6 w-16 h-16 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        style={{ background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)", border: "2px solid #047a57", zIndex: 40 }}
         aria-label={isOpen ? tx.ariaClose : tx.ariaOpen}
         aria-expanded={isOpen}
       >
@@ -275,15 +424,16 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         <>
           {/* 透明背景 — 點擊關閉 */}
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 transition-opacity duration-200"
+            style={{ zIndex: 30 }}
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="fixed bottom-24 right-4 z-50 flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white"
-          style={{ width: "min(96vw, 520px)", height: "min(85vh, 720px)", border: "2px solid #0a7a74" }}
-          role="dialog"
-          aria-label={tx.title}
-        >
+            className="fixed bottom-24 right-4 flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white transition-opacity duration-200"
+            style={{ width: "min(96vw, 520px)", height: "min(calc(100vh - 8rem), 720px)", border: "2px solid #0a7a74", zIndex: 40 }}
+            role="dialog"
+            aria-label={tx.title}
+          >
           {/* ── Header — teal green to stand out from the dark blue site ── */}
           <div className="flex items-center justify-between px-5 py-4 text-white shrink-0" style={{ background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)" }}>
             <div className="flex items-center gap-3">
@@ -310,7 +460,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           </div>
 
           {/* ── Messages ── */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50">
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50" aria-live="polite" aria-atomic="false">
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -321,19 +471,52 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                     <Bot className="w-5 h-5 text-white" />
                   </div>
                 )}
-                <div
-                  className={`max-w-[82%] px-4 py-3 rounded-2xl leading-relaxed whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "text-white rounded-tr-sm"
-                      : "bg-white text-gray-800 border border-gray-200 rounded-tl-sm shadow-sm"
-                  }`}
-                  style={{
-                    fontSize: "17px",
-                    lineHeight: "1.65",
-                    ...(msg.role === "user" ? { background: "linear-gradient(135deg, #0a7a74, #047a57)" } : {}),
-                  }}
-                >
-                  {msg.content}
+                <div className="max-w-[82%]">
+                  <div
+                    className={`px-4 py-3 rounded-2xl leading-relaxed whitespace-pre-wrap ${
+                      msg.role === "user"
+                        ? "text-white rounded-tr-sm"
+                        : msg.kind === "system"
+                        ? "bg-gray-100 text-gray-700 border border-gray-200 rounded-tl-sm shadow-none italic"
+                        : "bg-white text-gray-800 border border-gray-200 rounded-tl-sm shadow-sm"
+                    }`}
+                    style={{
+                      fontSize: msg.kind === "system" ? "15px" : "18px",
+                      lineHeight: msg.kind === "system" ? "1.6" : "1.75",
+                      ...(msg.role === "user" ? { background: "linear-gradient(135deg, #0a7a74, #047a57)" } : {}),
+                    }}
+                  >
+                    {msg.content}
+                  </div>
+                  {msg.role === "assistant" && msg.suggestions?.length ? (
+                    <div className="mt-2 flex flex-col gap-2">
+                      {msg.suggestions.map((food) => {
+                        const foodName = getCartFoodName(food, lang);
+                        const alreadyAdded = isInCart(food.name.en);
+                        return (
+                          <button
+                            key={food.name.en}
+                            type="button"
+                            onClick={() => addSuggestedFood(food)}
+                            disabled={alreadyAdded}
+                            className="w-full min-h-12 rounded-xl border-2 px-4 py-3 text-left font-bold shadow-sm transition-colors disabled:cursor-default disabled:opacity-75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                            style={{
+                              borderColor: alreadyAdded ? "#047a57" : "#0a7a74",
+                              background: alreadyAdded ? "#ecfdf5" : "white",
+                              color: "#064e3b",
+                              fontSize: "18px",
+                              lineHeight: "1.35",
+                            }}
+                          >
+                            <span className="flex items-center gap-2">
+                              {alreadyAdded ? <Check className="h-5 w-5 shrink-0" /> : <Plus className="h-5 w-5 shrink-0" />}
+                              <span>{alreadyAdded ? foodName : `+ ${foodName}`}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -384,10 +567,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={tx.placeholder}
-                rows={1}
+                rows={2}
                 disabled={isLoading}
-                className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 text-gray-800 placeholder-gray-400 bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors max-h-28 overflow-y-auto"
-                style={{ fontSize: "17px", lineHeight: "1.5", outline: "none" }}
+                className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 text-gray-800 placeholder-gray-400 bg-gray-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors max-h-28 overflow-y-auto"
+                style={{ fontSize: "18px", lineHeight: "1.75", outline: "none" }}
                 onFocus={(e) => { e.target.style.borderColor = "#0a7a74"; e.target.style.boxShadow = "0 0 0 3px rgba(15,95,90,0.15)"; }}
                 onBlur={(e) => { e.target.style.borderColor = "#d1d5db"; e.target.style.boxShadow = "none"; }}
                 aria-label={tx.placeholder}
@@ -395,7 +578,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
               <button
                 onClick={() => sendMessage(input)}
                 disabled={isLoading || !input.trim()}
-                className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200 disabled:cursor-not-allowed"
+                className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 style={{
                   background: input.trim() && !isLoading ? "linear-gradient(135deg, #0a7a74, #047a57)" : "#e5e7eb",
                   color: input.trim() && !isLoading ? "white" : "#9ca3af",
