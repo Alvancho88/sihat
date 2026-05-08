@@ -11,6 +11,8 @@ import { type FoodItem, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel }
 
 export const maxDuration = 30;
 
+type LangCode = "en" | "ms" | "zh";
+
 interface ChatResponse {
   reply: string;
   action?: {
@@ -39,7 +41,7 @@ interface ChatMessage {
 interface ChatRequest {
   message: string;
   history: ChatMessage[];
-  language?: "en" | "ms" | "zh";
+  language?: LangCode;
   scanContext?: {
     "Appetizer"?: { ranking: ScanFoodItem[] };
     "Main Dish"?: { ranking: ScanFoodItem[] };
@@ -58,7 +60,7 @@ interface GeminiContent {
 
 // ─── NUTRITION RESPONSE BUILDERS ──────────────────────────────────────────────
 
-function buildNutritionSection(food: FoodItem, lang: "en" | "ms" | "zh"): string {
+function buildNutritionSection(food: FoodItem, lang: LangCode): string {
   const labels = {
     en: {
       title: "Nutrition for",
@@ -147,7 +149,7 @@ type FoodMatchResult =
   | { status: "ambiguous"; foods: FoodItem[] }
   | { status: "none" }
 
-function parseCartCommand(message: string, foods: FoodItem[], lang: "en" | "ms" | "zh"): { action: string; food?: FoodItem; suggestions?: FoodItem[]; query?: string } | null {
+function parseCartCommand(message: string, foods: FoodItem[], lang: LangCode): { action: string; food?: FoodItem; suggestions?: FoodItem[]; query?: string } | null {
   const lowerMsg = message.toLowerCase();
   const labels = {
     en: { add: ["add", "put", "include", "insert"], remove: ["remove", "delete"], clear: ["clear", "empty"], view: ["what is in my food plan", "show my plan", "my food plan"] },
@@ -181,7 +183,7 @@ function parseCartCommand(message: string, foods: FoodItem[], lang: "en" | "ms" 
   return null;
 }
 
-function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem; suggestions?: FoodItem[]; query?: string }, lang: "en" | "ms" | "zh"): ChatResponse {
+function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem; suggestions?: FoodItem[]; query?: string }, lang: LangCode): ChatResponse {
   const labels = {
     en: {
       added: "added to your daily plan.",
@@ -282,7 +284,7 @@ function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem
   return { reply: "Sorry, I didn't understand that." };
 }
 
-function formatFoodSuggestions(foods: FoodItem[], lang: "en" | "ms" | "zh", query?: string): ChatResponse {
+function formatFoodSuggestions(foods: FoodItem[], lang: LangCode, query?: string): ChatResponse {
   const choose = {
     en: "Here are some similar foods you can try:",
     ms: "Cuba pilih daripada makanan yang serupa:",
@@ -304,7 +306,7 @@ function formatFoodSuggestions(foods: FoodItem[], lang: "en" | "ms" | "zh", quer
   };
 }
 
-function isDailyIntakeQuestion(message: string, lang: "en" | "ms" | "zh"): boolean {
+function isDailyIntakeQuestion(message: string, lang: LangCode): boolean {
   const lowerMsg = message.toLowerCase();
   const phrases = {
     en: [
@@ -343,7 +345,7 @@ function isDailyIntakeQuestion(message: string, lang: "en" | "ms" | "zh"): boole
   return phrases[lang].some((phrase) => lowerMsg.includes(phrase));
 }
 
-function formatDailyIntakeSummary(summary: DailyIntakeSummary, lang: "en" | "ms" | "zh"): string {
+function formatDailyIntakeSummary(summary: DailyIntakeSummary, lang: LangCode): string {
   const labels = {
     en: {
       empty: "Your daily plan is empty. Add foods from the food list first, then I can check your intake.",
@@ -528,6 +530,35 @@ function uniqueFoods(foods: FoodItem[]): FoodItem[] {
   });
 }
 
+function toLangCode(value: string | undefined): LangCode {
+  return value === "ms" || value === "zh" ? value : "en";
+}
+
+function detectUserMessageLanguage(message: string): LangCode | null {
+  const normalized = normalizeFoodText(message);
+  if (!normalized) return null;
+
+  if (/[\u3400-\u9fff]/u.test(message)) return "zh";
+
+  const malayMarkers = [
+    "apa", "adakah", "bagaimana", "boleh", "makanan", "pilih", "daripada",
+    "diimbas", "tekanan darah", "tinggi", "gula darah", "pemakanan", "hadkan",
+    "kurangkan", "saya", "hari ini", "tiga tinggi",
+  ];
+  const englishMarkers = [
+    "what", "which", "how", "is this", "can i", "should i", "food", "choose",
+    "scanned menu", "daily food plan", "today", "diabetes", "blood pressure",
+    "high cholesterol", "three highs", "limit", "avoid", "suitable",
+  ];
+
+  const hasMalay = malayMarkers.some((marker) => normalized.includes(marker));
+  const hasEnglish = englishMarkers.some((marker) => normalized.includes(marker));
+
+  if (hasMalay && !hasEnglish) return "ms";
+  if (hasEnglish && !hasMalay) return "en";
+  return null;
+}
+
 function getFoodNames(food: FoodItem): string[];
 function getFoodNames(food: FoodItem): string[] {
   return [food.name.en, food.name.ms, food.name.zh].filter(Boolean);
@@ -548,7 +579,7 @@ function getFoodNames(food: FoodItem): string[] {
  * phrases like "help me", "kindly", "can you please" are automatically ignored
  * because they appear before the verb and we anchor extraction on the verb position.
  */
-function stripCartIntent(message: string, action: "add" | "remove", lang: "en" | "ms" | "zh"): string {
+function stripCartIntent(message: string, action: "add" | "remove", lang: LangCode): string {
   const normalized = normalizeFoodText(message);
   if (!normalized) return "";
 
@@ -589,7 +620,7 @@ function stripCartIntent(message: string, action: "add" | "remove", lang: "en" |
     "请帮我", "帮我", "请",
   ];
 
-  const stopwordsByLang: Record<"en" | "ms" | "zh", Set<string>> = {
+  const stopwordsByLang: Record<LangCode, Set<string>> = {
     en: new Set([
       "add", "remove", "put", "insert", "include",
       "help", "me", "please", "pls", "can", "you", "i", "want",
@@ -739,7 +770,7 @@ function stripFoodQuestionIntent(message: string): string {
   return normalized.trim().replace(/\s+/g, " ");
 }
 
-function formatUnavailableFoodName(query: string | undefined, lang: "en" | "ms" | "zh"): string {
+function formatUnavailableFoodName(query: string | undefined, lang: LangCode): string {
   const normalized = normalizeFoodText(query ?? "");
   if (!normalized) return "";
   if (lang === "zh" || hasCjk(normalized)) return normalized.replace(/\s+/g, "");
@@ -891,23 +922,16 @@ function matchFoodQuery(query: string, foods: FoodItem[]): FoodMatchResult {
 // ─── SYSTEM PROMPT BUILDER ────────────────────────────────────────────────────
 
 function buildSystemPrompt(
-  language: string,
+  language: LangCode,
   scanContext: ChatRequest["scanContext"]
 ): string {
-  const langInstructions: Record<string, string> = {
-    en: "You must respond entirely in English.",
-    ms: "Anda mesti menjawab sepenuhnya dalam Bahasa Malaysia.",
-    zh: "你必须完全使用简体中文回答。",
+  const langInstructions: Record<LangCode, string> = {
+    en: "Respond entirely in English.",
+    ms: "Jawab sepenuhnya dalam Bahasa Malaysia.",
+    zh: "请完全使用简体中文回答。",
   };
 
-  const disclaimers: Record<string, string> = {
-    en: "⚕️ This is general guidance only — please consult your doctor for personal medical advice.",
-    ms: "⚕️ Ini adalah panduan umum sahaja — sila rujuk doktor anda untuk nasihat perubatan peribadi.",
-    zh: "⚕️ 以上仅为一般性建议——如需个人医疗建议，请咨询您的医生。",
-  };
-
-  const langInstruction = langInstructions[language] ?? langInstructions["en"];
-  const disclaimer = disclaimers[language] ?? disclaimers["en"];
+  const langInstruction = langInstructions[language];
 
   // Build food context from sessionStorage scan results
   let foodContext = "";
@@ -939,7 +963,7 @@ Recommend Low-risk items. For High-risk items, suggest practical modifications.
     }
   }
 
-  return `You are Siti, a friendly Malaysian health buddy specialising in diabetes, hypertension, and hyperlipidaemia (the "Three Highs") for elderly Malaysian users.
+  return `You are Siti, a friendly SIHAT health assistant specialising in diabetes, hypertension, and hyperlipidaemia (the "Three Highs") for elderly Malaysian users.
 
 ${langInstruction}
 
@@ -975,16 +999,14 @@ STRICT RULES (NEVER break these):
 2. Do NOT suggest specific drug dosages or medical procedures.
 3. STRICTLY limit responses to 2-3 sentences maximum. Under 50 words only.
 4. Do NOT include any disclaimer in your response. The disclaimer is shown separately in the UI.
-5. If the user asks about topics UNRELATED to diabetes, high blood pressure, high cholesterol, food nutrition, or the SIHAT website features, politely redirect them using warm Manglish. Say something like: "Alamak, that one I cannot help lah! 😊 I only know about diabetes, Three Highs, and Malaysian food choices. For other things, please ask your doctor! Anything about your food or health I can help ah?"
+5. If the user asks about topics UNRELATED to diabetes, high blood pressure, high cholesterol, food nutrition, or the SIHAT website features, politely redirect them in one short, respectful sentence.
 6. NEVER answer questions about: politics, entertainment, technology, recipes unrelated to health, financial advice, or any topic outside health and nutrition.
 
 TONE & PERSONALITY:
-- You are like a friendly Malaysian neighbour who happens to know a lot about health.
-- Use light Manglish naturally — mix in words like "lah", "ah", "wah", "kan", "boleh", "jangan risau", "no worries one", "can try one".
-- Example: "Wah, nasi lemak got quite high sugar lah! Can still eat, but maybe ask for less sambal ah."
-- Example: "Jangan risau! This one still okay one, just eat less portion lah."
-- BUT when explaining medical facts (e.g. what diabetes is, how GI works), switch to clear and simple English — no slang for the actual health information.
-- Never force slang — use it naturally at the start or end of sentences.
+- Friendly, warm, clear, respectful, and suitable for elderly healthcare users.
+- Sound professional but approachable.
+- Avoid slang and repeated casual fillers such as "lah", "ah", "alamak", and "jangan risau".
+- Use simple words and avoid technical wording when possible.
 - Always warm, encouraging, never scary.
 `;
 }
@@ -1035,35 +1057,37 @@ async function callGeminiChat(
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  let requestLang = "en";
+  let requestLang: LangCode = "en";
 
   try {
     const body: ChatRequest = await req.json();
     const { message, history = [], language = "en", scanContext = null, cart = [], intakeSummary } = body;
-    requestLang = language ?? "en";
+    const selectedLang = toLangCode(language);
+    requestLang = selectedLang;
 
     if (!message?.trim()) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
+    requestLang = detectUserMessageLanguage(message) ?? selectedLang;
 
     // Fetch food data for lookup
     const rows = await getAllFoodData();
     const foods = transformFoodRows(rows);
 
     // Check for cart command
-    const command = parseCartCommand(message, foods, requestLang as "en" | "ms" | "zh");
+    const command = parseCartCommand(message, foods, requestLang);
     if (command) {
       if (command.action === "view") {
-        const summary = intakeSummary ?? buildDailyIntakeSummary(cart, "male", requestLang as "en" | "ms" | "zh");
-        return NextResponse.json({ reply: formatDailyIntakeSummary(summary, requestLang as "en" | "ms" | "zh") });
+        const summary = intakeSummary ?? buildDailyIntakeSummary(cart, "male", requestLang);
+        return NextResponse.json({ reply: formatDailyIntakeSummary(summary, requestLang) });
       }
-      const result = updateCart(cart, command, requestLang as "en" | "ms" | "zh");
+      const result = updateCart(cart, command, requestLang);
       return NextResponse.json(result);
     }
 
-    if (isDailyIntakeQuestion(message, requestLang as "en" | "ms" | "zh")) {
-      const summary = intakeSummary ?? buildDailyIntakeSummary(cart, "male", requestLang as "en" | "ms" | "zh");
-      return NextResponse.json({ reply: formatDailyIntakeSummary(summary, requestLang as "en" | "ms" | "zh") });
+    if (isDailyIntakeQuestion(message, requestLang)) {
+      const summary = intakeSummary ?? buildDailyIntakeSummary(cart, "male", requestLang);
+      return NextResponse.json({ reply: formatDailyIntakeSummary(summary, requestLang) });
     }
 
     // Check for food mention in user message
@@ -1081,10 +1105,9 @@ export async function POST(req: NextRequest) {
 
     if (foodMention.status === "matched") {
       // Exact response from dataset: nutrition + health tip
-      const lang = requestLang as "en" | "ms" | "zh";
-      reply = buildNutritionSection(foodMention.food, lang);
+      reply = buildNutritionSection(foodMention.food, requestLang);
     } else if (foodMention.status === "ambiguous") {
-      return NextResponse.json(formatFoodSuggestions(foodMention.foods, requestLang as "en" | "ms" | "zh", foodQuestionQuery));
+      return NextResponse.json(formatFoodSuggestions(foodMention.foods, requestLang, foodQuestionQuery));
     } else {
       // Normal AI conversation flow
       const systemPrompt = buildSystemPrompt(requestLang, scanContext);
