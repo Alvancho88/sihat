@@ -11,7 +11,7 @@
 
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { usePathname } from "next/navigation";
-import { Bot, X, Send, Loader2, ChevronDown, Plus, Check } from "lucide-react";
+import { Bot, X, Send, Loader2, ChevronDown, Plus, Check, Mic } from "lucide-react";
 import { useCart } from "@/components/cart-context";
 import { buildDailyIntakeSummary, type Gender, type DailyIntakeSummary } from "@/lib/daily-intake-summary";
 import type { FoodItem as CartFoodItem } from "@/lib/food-functions";
@@ -19,6 +19,43 @@ import type { FoodItem as CartFoodItem } from "@/lib/food-functions";
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
 type LangCode = "en" | "ms" | "zh";
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+interface BrowserSpeechRecognitionResult {
+  isFinal: boolean;
+  [index: number]: { transcript: string };
+}
+
+interface BrowserSpeechRecognitionEvent {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: BrowserSpeechRecognitionResult;
+  };
+}
+
+interface BrowserSpeechRecognitionErrorEvent {
+  error: string;
+}
+
+interface BrowserSpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+type SpeechRecognitionWindow = Window &
+  typeof globalThis & {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  };
 
 interface Message {
   role: "user" | "assistant";
@@ -79,8 +116,11 @@ const t = {
     subtitle: "Ask me about diabetes & diet",
     placeholder: "Ask about diabetes, food choices...",
     send: "Send",
+    voiceStart: "Start voice input",
+    voiceStop: "Stop listening",
+    listening: "Listening...",
     welcome:
-      "Hello! 👋 I'm Siti, your SIHAT health buddy!\n\nI can help you with:\n• Is this food okay for my diabetes?\n• What foods should I avoid?\n• What are the Three Highs?\n\nJust type your question below lah! 😊",
+      "Hello! I'm Siti, your SIHAT health assistant. Ask me about food choices, diabetes, or the Three Highs.",
     scanFound: "💡 I can see you've scanned a menu! Ask me about your food choices and I'll give you personalised advice.",
     noScan: "No food scan found. Try scanning a menu first for personalised advice!",
     thinking: "Thinking...",
@@ -88,7 +128,13 @@ const t = {
     stillUnavailable: "Sorry, that food is not in our food list.",
     ariaOpen: "Open health assistant",
     ariaClose: "Close health assistant",
-    suggestedQ: ["Is my food safe for diabetes?", "What should I avoid eating?", "Explain the Three Highs"],
+    suggestedQ: [
+      "Is this food suitable for diabetes?",
+      "What should I choose from my scanned menu?",
+      "How is my daily food plan today?",
+      "What foods should I limit for high blood pressure?",
+      "What are the Three Highs?",
+    ],
     languageSwitched: "From now on, I will reply in English.",
   },
   ms: {
@@ -96,8 +142,11 @@ const t = {
     subtitle: "Tanya saya tentang diabetes & pemakanan",
     placeholder: "Tanya tentang diabetes, pilihan makanan...",
     send: "Hantar",
+    voiceStart: "Mulakan input suara",
+    voiceStop: "Berhenti mendengar",
+    listening: "Sedang mendengar...",
     welcome:
-      "Helo! 👋 Saya Siti, kawan kesihatan SIHAT anda!\n\nSaya boleh bantu anda dengan:\n• Adakah makanan ini selamat untuk diabetes saya?\n• Makanan apa yang perlu saya elakkan?\n• Apa itu Tiga Tinggi?\n\nTaip soalan anda di bawah ya! 😊",
+      "Helo! Saya Siti, pembantu kesihatan SIHAT anda. Tanya saya tentang pilihan makanan, diabetes, atau Tiga Tinggi.",
     scanFound: "💡 Saya nampak anda telah mengimbas menu! Tanya saya tentang pilihan makanan anda untuk nasihat peribadi.",
     noScan: "Tiada imbasan makanan ditemui. Cuba imbas menu dahulu untuk nasihat peribadi!",
     thinking: "Sedang berfikir...",
@@ -105,7 +154,13 @@ const t = {
     stillUnavailable: "Maaf, makanan itu tidak ada dalam senarai makanan kami.",
     ariaOpen: "Buka pembantu kesihatan",
     ariaClose: "Tutup pembantu kesihatan",
-    suggestedQ: ["Adakah makanan saya selamat untuk diabetes?", "Apa yang perlu saya elakkan?", "Terangkan Tiga Tinggi"],
+    suggestedQ: [
+      "Adakah makanan ini sesuai untuk diabetes?",
+      "Apa yang patut saya pilih daripada menu yang diimbas?",
+      "Bagaimana pelan makanan harian saya hari ini?",
+      "Makanan apa yang perlu saya hadkan untuk tekanan darah tinggi?",
+      "Apa itu Tiga Tinggi?",
+    ],
     languageSwitched: "Mulai sekarang, saya akan menjawab dalam Bahasa Malaysia.",
   },
   zh: {
@@ -113,8 +168,11 @@ const t = {
     subtitle: "询问关于糖尿病和饮食的问题",
     placeholder: "询问关于糖尿病、食物选择...",
     send: "发送",
+    voiceStart: "开始语音输入",
+    voiceStop: "停止聆听",
+    listening: "正在聆听...",
     welcome:
-      "你好！👋 我是Siti，您的SIHAT健康小助手！\n\n我可以帮您解答：\n• 这个食物对我的糖尿病安全吗？\n• 我应该避免哪些食物？\n• 什么是三高？\n\n请直接在下方输入您的问题吧！😊",
+      "您好！我是 Siti，您的 SIHAT 健康助手。您可以询问食物选择、糖尿病或三高相关问题。",
     scanFound: "💡 我看到您已扫描了菜单！向我询问您的食物选择，我将为您提供个性化建议。",
     noScan: "未找到食物扫描记录。请先扫描菜单以获取个性化建议！",
     thinking: "思考中...",
@@ -122,7 +180,13 @@ const t = {
     stillUnavailable: "抱歉，这个食物不在我们的食物列表中。",
     ariaOpen: "打开健康助手",
     ariaClose: "关闭健康助手",
-    suggestedQ: ["我的食物对糖尿病安全吗？", "我应该避免什么食物？", "解释三高"],
+    suggestedQ: [
+      "这个食物适合糖尿病吗？",
+      "我应该从扫描的菜单中选择什么？",
+      "我今天的每日饮食计划怎么样？",
+      "高血压应该限制哪些食物？",
+      "什么是三高？",
+    ],
     languageSwitched: "从现在开始，我将使用简体中文回答。",
   },
 } as const;
@@ -143,6 +207,7 @@ function readScanContext(): ScanContext | null {
 
 /** Generates a simple unique ID for messages */
 const STORAGE_KEY = "sihat_assistant_messages";
+const SUGGESTIONS_KEY = "sihat_assistant_suggested_questions";
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 9);
@@ -172,6 +237,38 @@ function getCartFoodName(food: CartFoodItem, lang: LangCode): string {
   return food.name[lang] || food.name.en;
 }
 
+function getSpeechRecognitionLanguage(lang: LangCode): string {
+  if (lang === "ms") return "ms-MY";
+  if (lang === "zh") return "zh-CN";
+  return "en-US";
+}
+
+function getSessionSuggestedQuestions(lang: LangCode): readonly string[] {
+  const questions: readonly string[] = t[lang].suggestedQ;
+  if (typeof window === "undefined") return questions.slice(0, 3);
+
+  const key = `${SUGGESTIONS_KEY}_${lang}`;
+  try {
+    const stored = sessionStorage.getItem(key);
+    if (stored) {
+      const parsed = JSON.parse(stored) as string[];
+      const valid = parsed.filter((question) => questions.includes(question));
+      if (valid.length === 3) return valid;
+    }
+
+    const shuffled = [...questions];
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const selected = shuffled.slice(0, 3);
+    sessionStorage.setItem(key, JSON.stringify(selected));
+    return selected;
+  } catch {
+    return questions.slice(0, 3);
+  }
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function AIChatbot({ lang }: { lang: LangCode }) {
@@ -183,6 +280,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [scanContext, setScanContext] = useState<ScanContext | null>(null);
   const [hasInitialised, setHasInitialised] = useState(false);
+  const [suggestedQuestions, setSuggestedQuestions] = useState<readonly string[]>(() => t[lang].suggestedQ.slice(0, 3));
+  const [supportsVoiceInput, setSupportsVoiceInput] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const { cart, addToCart, removeFromCart, clearCart, isInCart } = useCart();
 
   const pathname = usePathname();
@@ -190,6 +290,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const lastUnavailableRequestRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
@@ -225,6 +326,21 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     if (typeof window === "undefined") return;
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
   }, [messages]);
+
+  useEffect(() => {
+    setSuggestedQuestions(getSessionSuggestedQuestions(lang));
+  }, [lang]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const speechWindow = window as SpeechRecognitionWindow;
+    setSupportsVoiceInput(Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition));
+
+    return () => {
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    };
+  }, []);
 
   // Initialise chatbot when first opened
   useEffect(() => {
@@ -414,6 +530,66 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     }
   };
 
+  const toggleVoiceInput = useCallback(() => {
+    if (typeof window === "undefined" || isLoading) return;
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      inputRef.current?.focus();
+      return;
+    }
+
+    const speechWindow = window as SpeechRecognitionWindow;
+    const Recognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setSupportsVoiceInput(false);
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.lang = getSpeechRecognitionLanguage(lang);
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event) => {
+      const transcriptParts: string[] = [];
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        if (event.results[i]?.isFinal) {
+          transcriptParts.push(event.results[i][0]?.transcript.trim() ?? "");
+        }
+      }
+
+      const transcript = transcriptParts.filter(Boolean).join(" ");
+      if (transcript) {
+        setInput((current) => {
+          const separator = current.trim() ? " " : "";
+          return `${current.trimEnd()}${separator}${transcript}`;
+        });
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+      inputRef.current?.focus();
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      inputRef.current?.focus();
+    };
+
+    recognitionRef.current = recognition;
+    setIsListening(true);
+
+    try {
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      inputRef.current?.focus();
+    }
+  }, [isListening, isLoading, lang]);
+
   // ─── RENDER ─────────────────────────────────────────────────────────────────
 
   return (
@@ -450,38 +626,35 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="fixed right-4 flex flex-col rounded-2xl overflow-hidden shadow-2xl bg-white transition-opacity duration-200"
+            className="fixed inset-x-4 sm:inset-x-auto sm:right-5 sm:w-[400px] md:w-[420px] flex flex-col rounded-xl overflow-hidden shadow-xl bg-white transition-opacity duration-200"
             style={{
-              width: "min(96vw, 520px)",
-              // Keep the top edge away from the sticky navbar area
-              // (navbar height is ~4rem on mobile and ~5rem on md+).
-              height: "min(calc(100vh - 12rem), 720px)",
-              border: "2px solid #0a7a74",
+              top: "calc(4.5rem + env(safe-area-inset-top))",
+              bottom: "calc(5.25rem + env(safe-area-inset-bottom))",
+              border: "1.5px solid #0a7a74",
               zIndex: 9999,
-              bottom: "calc(6rem + env(safe-area-inset-bottom))",
             }}
             role="dialog"
             aria-label={tx.title}
           >
           {/* ── Header — teal green to stand out from the dark blue site ── */}
-          <div className="flex items-center justify-between px-5 py-4 text-white shrink-0" style={{ background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)" }}>
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                <Bot className="w-6 h-6 text-white" />
+          <div className="flex items-center justify-between gap-2 px-4 py-3 text-white shrink-0" style={{ background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)" }}>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                <Bot className="w-5 h-5 text-white" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="font-bold text-base leading-tight">{tx.title}</p>
-                <p className="text-sm text-white/80 leading-tight">{tx.subtitle}</p>
+                <p className="text-sm text-white/80 leading-tight truncate">{tx.subtitle}</p>
               </div>
             </div>
             {scanContext && (
-              <span className="text-xs bg-white/20 text-white font-semibold px-2.5 py-1 rounded-full mr-2">
+              <span className="hidden sm:inline-flex text-xs bg-white/20 text-white font-semibold px-2.5 py-1 rounded-full">
                 {lang === "zh" ? "已扫描菜单" : lang === "ms" ? "Menu diimbas" : "Menu scanned"}
               </span>
             )}
             <button
               onClick={() => setIsOpen(false)}
-              className="p-1.5 rounded-full hover:bg-white/20 transition-colors"
+              className="min-h-11 min-w-11 shrink-0 p-2 rounded-full hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               aria-label={tx.ariaClose}
             >
               <X className="w-6 h-6" />
@@ -569,7 +742,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           {/* ── Suggested Questions ── */}
           {messages.length <= 2 && !isLoading && !input.trim() && (
             <div className="px-4 py-3 flex flex-col gap-2 bg-gray-50 border-t border-gray-100 shrink-0">
-              {tx.suggestedQ.map((q) => (
+              {suggestedQuestions.map((q) => (
                 <button
                   key={q}
                   onClick={() => sendMessage(q)}
@@ -598,12 +771,29 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                 placeholder={tx.placeholder}
                 rows={2}
                 disabled={isLoading}
-                className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 text-gray-800 placeholder-gray-400 bg-gray-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors max-h-28 overflow-y-auto"
-                style={{ fontSize: "18px", lineHeight: "1.75", outline: "none" }}
+                className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-2 text-gray-800 placeholder-gray-400 bg-gray-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors max-h-24 overflow-y-auto"
+                style={{ fontSize: "18px", lineHeight: "1.45", outline: "none" }}
                 onFocus={(e) => { e.target.style.borderColor = "#0a7a74"; e.target.style.boxShadow = "0 0 0 3px rgba(15,95,90,0.15)"; }}
                 onBlur={(e) => { e.target.style.borderColor = "#d1d5db"; e.target.style.boxShadow = "none"; }}
                 aria-label={tx.placeholder}
               />
+              {supportsVoiceInput && (
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  disabled={isLoading}
+                  className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0 transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  style={{
+                    borderColor: isListening ? "#0a7a74" : "#d1d5db",
+                    background: isListening ? "#ecfdf5" : "#f9fafb",
+                    color: "#0a7a74",
+                  }}
+                  aria-label={isListening ? tx.voiceStop : tx.voiceStart}
+                  aria-pressed={isListening}
+                >
+                  <Mic className="w-5 h-5" />
+                </button>
+              )}
               <button
                 onClick={() => sendMessage(input)}
                 disabled={isLoading || !input.trim()}
@@ -617,6 +807,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                 <Send className="w-5 h-5" />
               </button>
             </div>
+            {isListening && (
+              <p className="mt-2 font-medium" style={{ fontSize: "14px", color: "#0a7a74" }}>
+                {tx.listening}
+              </p>
+            )}
           </div>
 
           {/* ── Fixed Disclaimer Bar ── */}
