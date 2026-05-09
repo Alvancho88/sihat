@@ -85,14 +85,90 @@ function deduplicateItems(items: string[]): string[] {
   return Array.from(seen.values());
 }
 
-// ─── OCR PROCESSING WITH GROQ (Llama-4-Scout) ───────────────────────────
+// ─── OCR PROCESSING WITH OPENROUTER (Gemma 4 31B) ───────────────────────
+/**
+ * OCR processing using Gemma 4 31B via Google AI Studio.
+ * Extracts menu items from an image using vision-language capabilities.
+ */
+// ─── OCR PROCESSING WITH OPENROUTER (Gemma 4 31B) ───────────────────────
+async function executeGemma4OcrRequest(apiKey: string, base64: string, mimeType: string) {
+  if (!apiKey) throw new Error("Google AI Studio API key is undefined or empty");
 
-async function executeGroqOcrRequest(apiKey: string, base64: string, mimeType: string) {
+  let cleanMime = mimeType.toLowerCase().trim();
+  if (cleanMime === "image/jpg") cleanMime = "image/jpeg";
+
+  const modelName = "gemma-4-31b-it";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              text: `You are a menu analysis engine. Check if the image is food image or menu image.
+
+A. If the image is a food image:
+DETECTION STRATEGY (Adaptive):
+1. Return Food name you detected
+2. IGNORE The Food Ingredients (Return ["Satay"] not ["Satay", "Peanut Sauce", "Ketupat", "Cucumber", "Red  Onion"])
+
+B. If the image is a menu image:
+DETECTION STRATEGY (Adaptive):
+1. IF PRICES EXIST: Use prices or codes (A1, RM10) as anchors to identify valid items.
+2. IF NO PRICES EXIST: Identify items based on list structure (columns, bullets, or photos).
+3. HIERARCHY RULE: IGNORE large category headers (e.g., "NASI GORENG"). Only extract specific sub-items.
+4. DECORATION RULE: Ignore generic background illustrations.
+
+Formatting:
+- Return ONLY valid JSON: {"items": ["Item 1", "Item 2"]}`
+            },
+            {
+              inlineData: {
+                mimeType: cleanMime,
+                data: base64.replace(/^data:image\/\w+;base64,/, ""),
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            items: { type: "array", items: { type: "string" } }
+          },
+          required: ["items"]
+        }
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    console.error("[predict] Google AI Studio error:", JSON.stringify(errorData, null, 2));
+    throw new Error(errorData?.error?.message || `Google OCR error ${res.status}`);
+  }
+
+  return await res.json();
+}
+
+// ─── OCR BACKUP: Llama-4-Scout via Groq ──────────────────────────────────
+async function executeLlama4ScoutOcrRequest(groqApiKey: string, base64: string, mimeType: string) {
+  if (!groqApiKey) throw new Error("Groq API key is undefined or empty");
+
+  let cleanMime = mimeType.toLowerCase().trim();
+  if (cleanMime === "image/jpg") cleanMime = "image/jpeg";
+
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${groqApiKey}`,
     },
     body: JSON.stringify({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -102,65 +178,100 @@ async function executeGroqOcrRequest(apiKey: string, base64: string, mimeType: s
           content: [
             {
               type: "text",
-              text: `You are a menu analysis engine. Extract every unique food and drink item.
+              text: `You are a menu analysis engine. Check if the image is food image or menu image.
 
+A. If the image is a food image:
+DETECTION STRATEGY (Adaptive):
+1. Return Food name you detected
+2. IGNORE The Food Ingredients (Return ["Satay"] not ["Satay", "Peanut Sauce", "Ketupat", "Cucumber", "Red  Onion"])
+
+B. If the image is a menu image:
 DETECTION STRATEGY (Adaptive):
 1. IF PRICES EXIST: Use prices or codes (A1, RM10) as anchors to identify valid items.
-2. IF NO PRICES EXIST: Identify items based on list structure. Look for:
-   - Items aligned in a vertical column.
-   - Text preceded by bullet points, icons, or checkboxes.
-   - Text positioned directly below or next to a food photo.
-3. HIERARCHY RULE: Identify and IGNORE large category headers (e.g., "NASI GORENG", "DRINKS"). Only extract the specific sub-items listed under them.
-4. DECORATION RULE: Ignore generic background illustrations that are not part of the structured list.
+2. IF NO PRICES EXIST: Identify items based on list structure (columns, bullets, or photos).
+3. HIERARCHY RULE: IGNORE large category headers (e.g., "NASI GORENG"). Only extract specific sub-items.
+4. DECORATION RULE: Ignore generic background illustrations.
 
 Formatting:
 - Return ONLY valid JSON: {"items": ["Item 1", "Item 2"]}`,
             },
             {
               type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${base64}` },
+              image_url: {
+                url: `data:${cleanMime};base64,${base64.replace(/^data:image\/\w+;base64,/, "")}`,
+              },
             },
           ],
         },
       ],
-      response_format: { type: "json_object" },
       temperature: 0.1,
+      response_format: { type: "json_object" },
     }),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error((errorData as any)?.error?.message || `Groq OCR error ${res.status}`);
+    console.error("[predict] Groq Llama-4-Scout OCR error:", JSON.stringify(errorData, null, 2));
+    throw new Error(errorData?.error?.message || `Groq OCR error ${res.status}`);
   }
+
   return await res.json();
 }
 
 async function processSingleImage(arrayBuffer: ArrayBuffer, mimeType: string): Promise<string[]> {
   const base64 = Buffer.from(arrayBuffer).toString("base64");
 
-  const primaryKey = process.env.GROQ_API_KEY;
-  const backupKey = process.env.GROQ_API_KEY_2;
+  const primaryKey = process.env.GOOGLE_API_KEY;
+  const backupKey = process.env.GOOGLE_API_KEY_2;
+  const groqKey = process.env.GROQ_API_KEY;
 
-  if (!primaryKey && !backupKey) return [];
+  if (!primaryKey && !backupKey && !groqKey) return [];
 
-  const tryWithKey = async (apiKey: string) => {
-    const ocrResult = await executeGroqOcrRequest(apiKey, base64, mimeType);
+  const tryWithGoogleKey = async (apiKey: string) => {
+    const ocrResult = await executeGemma4OcrRequest(apiKey, base64, mimeType);
+    const rawContent = ocrResult?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const parsed = parseItemsFromOcrContent(rawContent);
+    return deduplicateItems(parsed);
+  };
+
+  const tryWithLlama4Scout = async () => {
+    if (!groqKey) throw new Error("Groq API key missing for OCR backup");
+    const ocrResult = await executeLlama4ScoutOcrRequest(groqKey, base64, mimeType);
     const rawContent = ocrResult?.choices?.[0]?.message?.content ?? "";
     const parsed = parseItemsFromOcrContent(rawContent);
     return deduplicateItems(parsed);
   };
 
-  try {
-    if (!primaryKey) throw new Error("Primary OCR key missing");
-    return await tryWithKey(primaryKey);
-  } catch (err) {
-    console.warn("[predict] ⚠️ OCR primary key failed, trying backup...", err);
+  // 1. Try Google primary key (Gemma 4 31B)
+  if (primaryKey) {
     try {
-      if (!backupKey) return [];
-      return await tryWithKey(backupKey);
-    } catch {
-      return [];
+      const result = await tryWithGoogleKey(primaryKey);
+      console.log("[predict] ✅ OCR succeeded (Google primary key, Gemma 4 31B)");
+      return result;
+    } catch (err) {
+      console.warn("[predict] ⚠️ OCR primary Google key failed:", (err as any)?.message ?? err);
     }
+  }
+
+  // 2. Try Google backup key (Gemma 4 31B)
+  if (backupKey) {
+    try {
+      const result = await tryWithGoogleKey(backupKey);
+      console.log("[predict] ✅ OCR succeeded (Google backup key, Gemma 4 31B)");
+      return result;
+    } catch (err) {
+      console.warn("[predict] ⚠️ OCR backup Google key failed:", (err as any)?.message ?? err);
+    }
+  }
+
+  // 3. Last resort: Llama-4-Scout via Groq
+  try {
+    const result = await tryWithLlama4Scout();
+    console.log("[predict] ✅ OCR succeeded (Groq backup, Llama-4-Scout 17B)");
+    return result;
+  } catch (err) {
+    console.error("[predict] ❌ All OCR attempts failed:", (err as any)?.message ?? err);
+    return [];
   }
 }
 
