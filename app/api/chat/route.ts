@@ -12,6 +12,7 @@ import { type FoodItem, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel }
 export const maxDuration = 30;
 
 type LangCode = "en" | "ms" | "zh";
+type ScanCategory = "Main Dish" | "Appetizer" | "Dessert" | "Drinks";
 
 interface ChatResponse {
   reply: string;
@@ -21,6 +22,7 @@ interface ChatResponse {
   };
   suggestions?: FoodItem[];
   unavailableFoodName?: string;
+  quickReplies?: string[];
 }
 
 interface ScanFoodItem {
@@ -28,9 +30,11 @@ interface ScanFoodItem {
   sugar: number;   // sugar in grams
   salt: number;    // sodium in mg
   fat: number;     // saturated fat in grams
+  calories?: number;
+  gi?: number;
   risk: "Low" | "Medium" | "High";
-  tip?: string;
-  best_reason?: string;
+  tip?: string | Partial<Record<LangCode, string>>;
+  best_reason?: string | Partial<Record<LangCode, string>>;
 }
 
 interface ChatMessage {
@@ -919,6 +923,330 @@ function matchFoodQuery(query: string, foods: FoodItem[]): FoodMatchResult {
   return { status: "none" };
 }
 
+function hasAnalysedFoods(scanContext: ChatRequest["scanContext"]): boolean {
+  if (!scanContext) return false;
+  return (["Main Dish", "Appetizer", "Dessert", "Drinks"] as const).some(
+    (category) => Boolean(scanContext[category]?.ranking?.length)
+  );
+}
+
+function isBestChoiceQuestion(message: string): boolean {
+  const normalized = normalizeFoodText(message);
+  if (!normalized) return false;
+  if (/最好|最佳|推荐|建議|建议|选择|選擇/u.test(message)) return true;
+  const phrases = [
+    "best choice",
+    "best food choice",
+    "best food",
+    "best in my menu",
+    "best choice in my menu",
+    "best food choice in my menu",
+    "which food should i choose",
+    "what should i choose",
+    "what do you recommend",
+    "recommend",
+    "healthiest choice",
+    "pilihan terbaik",
+    "apa yang patut saya pilih",
+    "cadangkan",
+    "makanan terbaik",
+  ];
+  return phrases.some((phrase) => normalized.includes(normalizeFoodText(phrase)));
+}
+
+function detectScanCategory(message: string): ScanCategory | null {
+  const normalized = normalizeFoodText(message);
+  const compact = normalized.replace(/\s+/g, "");
+  const categoryAliases: Array<{ category: ScanCategory; aliases: string[] }> = [
+    { category: "Main Dish", aliases: ["main dish", "main", "meal", "hidangan utama", "主食", "主菜"] },
+    { category: "Appetizer", aliases: ["appetizer", "starter", "side", "pembuka selera", "前菜", "开胃菜"] },
+    { category: "Dessert", aliases: ["dessert", "desserts", "pencuci mulut", "甜点", "甜品"] },
+    { category: "Drinks", aliases: ["drink", "drinks", "beverage", "minuman", "饮料", "喝"] },
+  ];
+
+  for (const { category, aliases } of categoryAliases) {
+    for (const alias of aliases) {
+      const normalizedAlias = normalizeFoodText(alias);
+      if (!normalizedAlias) continue;
+      if (hasCjk(normalizedAlias)) {
+        if (compact.includes(normalizedAlias.replace(/\s+/g, ""))) return category;
+      } else if (normalized === normalizedAlias || normalized.includes(normalizedAlias)) {
+        return category;
+      }
+    }
+  }
+  return null;
+}
+
+function isCategorySelectionMessage(message: string, category: ScanCategory | null): boolean {
+  if (!category) return false;
+  const normalized = normalizeFoodText(message);
+  const compact = normalized.replace(/\s+/g, "");
+  const allowed: Record<ScanCategory, string[]> = {
+    "Main Dish": ["main dish", "main", "hidangan utama", "主食", "主菜"],
+    Appetizer: ["appetizer", "starter", "pembuka selera", "前菜", "开胃菜"],
+    Dessert: ["dessert", "desserts", "pencuci mulut", "甜点", "甜品"],
+    Drinks: ["drink", "drinks", "minuman", "饮料"],
+  };
+  return allowed[category].some((alias) => {
+    const normalizedAlias = normalizeFoodText(alias);
+    return hasCjk(normalizedAlias)
+      ? compact === normalizedAlias.replace(/\s+/g, "")
+      : normalized === normalizedAlias;
+  });
+}
+
+function findBestChoiceCategory(message: string): ScanCategory | null {
+  const normalized = normalizeFoodText(message);
+  const compact = normalized.replace(/\s+/g, "");
+  if (!normalized) return null;
+
+  const categoryAliases: Array<{ category: ScanCategory; aliases: string[] }> = [
+    { category: "Main Dish", aliases: ["main dish", "main", "meal", "hidangan utama", "主食", "主菜"] },
+    { category: "Appetizer", aliases: ["appetizer", "starter", "side", "pembuka selera", "前菜", "开胃菜"] },
+    { category: "Dessert", aliases: ["dessert", "desserts", "pencuci mulut", "甜点", "甜品"] },
+    { category: "Drinks", aliases: ["drink", "drinks", "beverage", "minuman", "饮料"] },
+  ];
+
+  for (const { category, aliases } of categoryAliases) {
+    for (const alias of aliases) {
+      const normalizedAlias = normalizeFoodText(alias);
+      if (hasCjk(normalizedAlias)) {
+        if (compact.includes(normalizedAlias.replace(/\s+/g, ""))) return category;
+      } else if (normalized.includes(normalizedAlias)) {
+        return category;
+      }
+    }
+  }
+  return null;
+}
+
+function getLocalizedScanCategory(category: ScanCategory, lang: LangCode): string {
+  const labels: Record<ScanCategory, Record<LangCode, string>> = {
+    "Main Dish": { en: "Main Dish", ms: "Hidangan Utama", zh: "主食" },
+    Appetizer: { en: "Appetizer", ms: "Pembuka Selera", zh: "前菜" },
+    Dessert: { en: "Dessert", ms: "Pencuci Mulut", zh: "甜点" },
+    Drinks: { en: "Drink", ms: "Minuman", zh: "饮料" },
+  };
+  return labels[category][lang];
+}
+
+function getScanCategoryButtons(lang: LangCode): string[] {
+  return (["Main Dish", "Appetizer", "Dessert", "Drinks"] as const).map((category) =>
+    getLocalizedScanCategory(category, lang)
+  );
+}
+
+function noAnalysedFoodReply(lang: LangCode): string {
+  return {
+    en: "No food has been analysed yet.",
+    ms: "Belum ada makanan yang dianalisis.",
+    zh: "目前还没有分析食物。",
+  }[lang];
+}
+
+function askCategoryReply(lang: LangCode): ChatResponse {
+  const text = {
+    en: "Which category would you like me to check?",
+    ms: "Kategori mana yang anda mahu saya semak?",
+    zh: "您想查看哪个类别？",
+  }[lang];
+  return { reply: text, quickReplies: getScanCategoryButtons(lang) };
+}
+
+function selectLocalizedText(value: ScanFoodItem["tip"] | ScanFoodItem["best_reason"], lang: LangCode): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  return value[lang] || value.en || "";
+}
+
+function exactDatasetFoodMatch(foodName: string, foods: FoodItem[]): FoodItem | null {
+  const rawName = foodName.trim().toLowerCase();
+  if (!rawName) return null;
+
+  const rawMatches = uniqueFoods(foods.filter((food) =>
+    getFoodNames(food).some((name) => name.trim().toLowerCase() === rawName)
+  ));
+  if (rawMatches.length === 1) return rawMatches[0];
+  if (rawMatches.length > 1) return null;
+
+  const normalizedName = normalizeFoodText(foodName);
+  const normalizedMatches = uniqueFoods(foods.filter((food) =>
+    getFoodNames(food).some((name) => normalizeFoodText(name) === normalizedName)
+  ));
+  return normalizedMatches.length === 1 ? normalizedMatches[0] : null;
+}
+
+function parseNutrientNumber(value: string | number | undefined): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const cleaned = value.replace(/[^\d.]/g, "");
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function nutritionWarningLine(kind: "sugar" | "sodium" | "fat" | "gi", value: number | null, lang: LangCode): string {
+  if (value === null) return "";
+  const isHigh =
+    (kind === "sugar" && value > 15) ||
+    (kind === "sodium" && value > 600) ||
+    (kind === "fat" && value > 7) ||
+    (kind === "gi" && value >= 70);
+  if (!isHigh) return "";
+
+  const labels: Record<LangCode, Record<"sugar" | "sodium" | "fat" | "gi", string>> = {
+    en: { sugar: "High Sugar", sodium: "High Salt/Sodium", fat: "High Fat", gi: "High GI" },
+    ms: { sugar: "Gula Tinggi", sodium: "Garam/Natrium Tinggi", fat: "Lemak Tinggi", gi: "IG Tinggi" },
+    zh: { sugar: "糖分高", sodium: "盐/钠高", fat: "脂肪高", gi: "GI 高" },
+  };
+
+  return `!HIGH_NUTRITION! ${labels[lang][kind]}`;
+}
+
+function formatMaybeValue(value: string | number | undefined, fallback: string): string {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value);
+}
+
+function compactBlankLines(value: string): string {
+  return value
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .join("\n");
+}
+
+function riskScore(risk: unknown): number {
+  const normalized = normaliseRisk(risk);
+  if (normalized === "Low") return 1;
+  if (normalized === "High") return 3;
+  return 2;
+}
+
+function getBestScanFood(
+  scanContext: NonNullable<ChatRequest["scanContext"]>,
+  category: ScanCategory | null
+): ScanFoodItem | null {
+  if (category) return scanContext[category]?.ranking?.[0] ?? null;
+
+  const allItems = (["Main Dish", "Appetizer", "Dessert", "Drinks"] as const)
+    .flatMap((scanCategory) => scanContext[scanCategory]?.ranking ?? []);
+
+  return allItems.sort((a, b) => {
+    const riskDiff = riskScore(a.risk) - riskScore(b.risk);
+    if (riskDiff !== 0) return riskDiff;
+    if (a.salt !== b.salt) return a.salt - b.salt;
+    if (a.sugar !== b.sugar) return a.sugar - b.sugar;
+    return a.fat - b.fat;
+  })[0] ?? null;
+}
+
+function buildBestChoiceResponse(
+  category: ScanCategory | null,
+  scanContext: NonNullable<ChatRequest["scanContext"]>,
+  foods: FoodItem[],
+  lang: LangCode
+): ChatResponse {
+  const best = getBestScanFood(scanContext, category);
+  if (!best) {
+    return {
+      reply: {
+        en: category ? `No analysed food found for ${getLocalizedScanCategory(category, lang)} yet.` : "No food has been analysed yet.",
+        ms: category ? `Belum ada makanan dianalisis untuk ${getLocalizedScanCategory(category, lang)}.` : "Belum ada makanan yang dianalisis.",
+        zh: category ? `目前没有${getLocalizedScanCategory(category, lang)}的分析结果。` : "目前还没有分析食物。",
+      }[lang],
+    };
+  }
+
+  const datasetFood = exactDatasetFoodMatch(best.f, foods);
+  const foodName = datasetFood?.name[lang] || datasetFood?.name.en || best.f;
+  const unavailable = { en: "Not available", ms: "Tiada data", zh: "暂无数据" }[lang];
+  const reason = selectLocalizedText(best.best_reason, lang) || unavailable;
+
+  const sugar = datasetFood ? datasetFood.sugar : `${best.sugar}g`;
+  const calories = datasetFood ? datasetFood.calories : best.calories !== undefined ? `${best.calories}kcal` : unavailable;
+  const gi = datasetFood ? datasetFood.gi : best.gi !== undefined ? String(best.gi) : unavailable;
+  const fat = datasetFood ? datasetFood.fat : `${best.fat}g`;
+  const sodium = datasetFood ? datasetFood.sodium : `${best.salt}mg`;
+  const tip = datasetFood ? (datasetFood.tip[lang] || datasetFood.tip.en) : selectLocalizedText(best.tip, lang);
+
+  const sugarNum = parseNutrientNumber(sugar);
+  const giNum = parseNutrientNumber(gi);
+  const fatNum = parseNutrientNumber(fat);
+  const sodiumNum = parseNutrientNumber(sodium);
+
+  const labels = {
+    en: {
+      best: "Best Choice",
+      why: "Why we pick this as the Best Choice",
+      nutrition: "Nutrition",
+      sugar: "Sugar",
+      cal: "Cal",
+      gi: "GI",
+      fat: "Fat",
+      sodium: "Salt/Sodium",
+      tip: "Three Highs Health Tip",
+      risk: "Risk",
+    },
+    ms: {
+      best: "Pilihan Terbaik",
+      why: "Mengapa kami pilih ini sebagai Pilihan Terbaik",
+      nutrition: "Nutrisi",
+      sugar: "Gula",
+      cal: "Kalori",
+      gi: "IG",
+      fat: "Lemak",
+      sodium: "Garam/Natrium",
+      tip: "Petua Kesihatan Tiga Tinggi",
+      risk: "Risiko",
+    },
+    zh: {
+      best: "最佳选择",
+      why: "为什么选择它作为最佳选择",
+      nutrition: "营养",
+      sugar: "糖",
+      cal: "卡路里",
+      gi: "GI",
+      fat: "脂肪",
+      sodium: "盐/钠",
+      tip: "三高健康提示",
+      risk: "风险",
+    },
+  }[lang];
+
+  return {
+    reply: compactBlankLines(`${labels.best}:
+${foodName}
+
+${labels.why}:
+${reason}
+
+${labels.nutrition}:
+${nutritionWarningLine("sugar", sugarNum, lang)}
+${labels.sugar}: ${sugar}
+${labels.cal}: ${formatMaybeValue(calories, unavailable)}
+${nutritionWarningLine("gi", giNum, lang)}
+${labels.gi}: ${formatMaybeValue(gi, unavailable)}
+${nutritionWarningLine("sodium", sodiumNum, lang)}
+${labels.sodium}: ${sodium}
+${nutritionWarningLine("fat", fatNum, lang)}
+${labels.fat}: ${fat}
+
+${labels.tip}:
+${tip || unavailable}
+
+${labels.risk}:
+${normaliseRisk(best.risk)}`),
+  };
+}
+
+function normaliseRisk(raw: unknown): "Low" | "Medium" | "High" {
+  const s = String(raw ?? "").toLowerCase().trim().replace(/\s+risk$/, "");
+  if (s === "low") return "Low";
+  if (s === "high") return "High";
+  return "Medium";
+}
+
 // ─── SYSTEM PROMPT BUILDER ────────────────────────────────────────────────────
 
 function buildSystemPrompt(
@@ -943,8 +1271,10 @@ function buildSystemPrompt(
       const catData = scanContext[cat];
       if (catData?.ranking?.length) {
         for (const item of catData.ranking) {
+          const caloriesText = typeof item.calories === "number" ? `, Calories: ${item.calories}kcal` : "";
+          const giText = typeof item.gi === "number" ? `, GI: ${item.gi}` : "";
           allItems.push(
-            `- ${item.f} (Risk: ${item.risk}, Sugar: ${item.sugar}g, Sodium: ${item.salt}mg, Fat: ${item.fat}g)`
+            `- ${item.f} (Risk: ${item.risk}, Sugar: ${item.sugar}g, Sodium: ${item.salt}mg, Fat: ${item.fat}g${caloriesText}${giText})`
           );
         }
       }
@@ -1088,6 +1418,23 @@ export async function POST(req: NextRequest) {
     if (isDailyIntakeQuestion(message, requestLang)) {
       const summary = intakeSummary ?? buildDailyIntakeSummary(cart, "male", requestLang);
       return NextResponse.json({ reply: formatDailyIntakeSummary(summary, requestLang) });
+    }
+
+    const bestChoiceQuestion = isBestChoiceQuestion(message);
+    const selectedCategory = detectScanCategory(message);
+    const scanCategory = bestChoiceQuestion ? findBestChoiceCategory(message) : selectedCategory;
+    const categorySelection = isCategorySelectionMessage(message, selectedCategory);
+    if (bestChoiceQuestion || categorySelection) {
+      if (!hasAnalysedFoods(scanContext)) {
+        return NextResponse.json({ reply: noAnalysedFoodReply(requestLang) });
+      }
+      const analysedScanContext = scanContext!;
+
+      if (!scanCategory && categorySelection) {
+        return NextResponse.json(askCategoryReply(requestLang));
+      }
+
+      return NextResponse.json(buildBestChoiceResponse(scanCategory, analysedScanContext, foods, requestLang));
     }
 
     // Check for food mention in user message
