@@ -429,6 +429,54 @@ const CATEGORY_MAP: Record<string, string> = {
 // Stores categorized food items to avoid re-analysis
 type ApiResultsCache = Record<string, FoodItem[]>
 
+type PredictFoodItem = {
+  f: string
+  sugar: number
+  salt: number
+  fat: number
+  risk: string
+  tip: { en: string; ms: string; zh: string } | string
+  best_reason?: { en: string; ms: string; zh: string } | string
+}
+
+type PredictResults = Record<string, { ranking?: PredictFoodItem[] }> & {
+  uniqueFoodCount?: number
+}
+
+function buildApiResultsCache(data: PredictResults): ApiResultsCache {
+  const cache: ApiResultsCache = {}
+  for (const [geminiKey, pageKey] of Object.entries(CATEGORY_MAP)) {
+    const raw = data[geminiKey]?.ranking ?? []
+    cache[pageKey] = raw.map((item, index) => {
+      // Tip: backend now returns a trilingual object; gracefully handle legacy string
+      const tipObj: { en: string; ms: string; zh: string } =
+        item.tip && typeof item.tip === "object"
+          ? item.tip
+          : { en: String(item.tip ?? ""), ms: String(item.tip ?? ""), zh: String(item.tip ?? "") }
+
+      // best_reason: trilingual object for the top item
+      let bestReasonObj: { en: string; ms: string; zh: string } | undefined
+      if (index === 0 && item.best_reason) {
+        bestReasonObj =
+          typeof item.best_reason === "object"
+            ? item.best_reason
+            : { en: String(item.best_reason), ms: String(item.best_reason), zh: String(item.best_reason) }
+      }
+
+      return {
+        name: item.f,
+        risk: item.risk?.toLowerCase() ?? "medium",
+        sugar: `${item.sugar}g`,
+        salt: `${item.salt}mg`,
+        fat: `${item.fat}g`,
+        tip: tipObj,
+        ...(bestReasonObj ? { best_reason: bestReasonObj } : {}),
+      }
+    })
+  }
+  return cache
+}
+
  
 // ─── MAIN RECOMMENDATION PAGE COMPONENT ───────────────────────────────────────────────
  
@@ -498,6 +546,29 @@ export default function RecommendationPage() {
   useEffect(() => {
     const savedText = sessionStorage.getItem("rec-text")
     if (savedText) setTextInput(savedText)
+  }, [])
+
+  /**
+   * Restore the latest analysis saved by the chatbot quick scan.
+   * Uses the same API result shape as handleAnalyze; no re-analysis is performed.
+   */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("sihat_scan_results")
+      if (!raw) return
+
+      const data = JSON.parse(raw) as PredictResults
+      const cache = buildApiResultsCache(data)
+      const firstCategory = ["main", "appetizer", "dessert", "drink"].find((category) => cache[category]?.length)
+      if (!firstCategory) return
+
+      setApiResultsCache(cache)
+      setShowCategories(true)
+      setSelectedCategory(firstCategory)
+      setResults(cache[firstCategory])
+    } catch {
+      // Ignore malformed session data and let users analyse again normally.
+    }
   }, [])
 
   /**
@@ -577,6 +648,7 @@ export default function RecommendationPage() {
     setSelectedCategory(null)
     setResults(null)
     setApiResultsCache(null)
+    sessionStorage.removeItem("sihat_scan_results")
   }
 
   const handleAnalyze = async (lang: string) => {
@@ -615,40 +687,7 @@ export default function RecommendationPage() {
       sessionStorage.setItem("sihat_scan_results", JSON.stringify(data))
       // ─────────────────────────────────────────────────────────
 
-      const cache: ApiResultsCache = {}
-      for (const [geminiKey, pageKey] of Object.entries(CATEGORY_MAP)) {
-        const raw = data[geminiKey]?.ranking ?? []
-        cache[pageKey] = raw.map((item: {
-          f: string; sugar: number; salt: number; fat: number; risk: string;
-          tip: { en: string; ms: string; zh: string } | string;
-          best_reason?: { en: string; ms: string; zh: string } | string;
-        }, index: number) => {
-          // Tip: backend now returns a trilingual object; gracefully handle legacy string
-          const tipObj: { en: string; ms: string; zh: string } =
-            item.tip && typeof item.tip === "object"
-              ? (item.tip as { en: string; ms: string; zh: string })
-              : { en: String(item.tip ?? ""), ms: String(item.tip ?? ""), zh: String(item.tip ?? "") }
-
-          // best_reason: trilingual object for the top item
-          let bestReasonObj: { en: string; ms: string; zh: string } | undefined
-          if (index === 0 && item.best_reason) {
-            bestReasonObj =
-              typeof item.best_reason === "object"
-                ? (item.best_reason as { en: string; ms: string; zh: string })
-                : { en: String(item.best_reason), ms: String(item.best_reason), zh: String(item.best_reason) }
-          }
-
-          return {
-            name: item.f,
-            risk: item.risk?.toLowerCase() ?? "medium",
-            sugar: `${item.sugar}g`,
-            salt: `${item.salt}mg`,
-            fat: `${item.fat}g`,
-            tip: tipObj,
-            ...(bestReasonObj ? { best_reason: bestReasonObj } : {}),
-          }
-        })
-      }
+      const cache = buildApiResultsCache(data as PredictResults)
 
       setApiResultsCache(cache)
       succeeded = true
@@ -691,6 +730,7 @@ export default function RecommendationPage() {
     setResults(null)
     setApiResultsCache(null)
     setAnalyzeError(null)
+    sessionStorage.removeItem("sihat_scan_results")
   }
 
   const openImageModal = (imageUrl: string) => {
