@@ -243,6 +243,43 @@ function getSpeechRecognitionLanguage(lang: LangCode): string {
   return "en-US";
 }
 
+function normalizeLanguageText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function detectUserMessageLanguage(message: string): LangCode | null {
+  const normalized = normalizeLanguageText(message);
+  if (!normalized) return null;
+  if (/[\u3400-\u9fff]/u.test(message)) return "zh";
+
+  const malayMarkers = [
+    "apa", "adakah", "bagaimana", "boleh", "makanan", "pilih", "daripada",
+    "diimbas", "tekanan darah", "tinggi", "gula darah", "pemakanan", "hadkan",
+    "kurangkan", "saya", "hari ini", "tiga tinggi", "makan", "minum",
+  ];
+  const englishMarkers = [
+    "what", "which", "how", "is this", "can i", "should i", "food", "choose",
+    "scanned menu", "daily food plan", "today", "diabetes", "blood pressure",
+    "high cholesterol", "three highs", "limit", "avoid", "suitable", "eat", "drink",
+  ];
+
+  const hasMalay = malayMarkers.some((marker) => normalized.includes(marker));
+  const hasEnglish = englishMarkers.some((marker) => normalized.includes(marker));
+
+  if (hasMalay && !hasEnglish) return "ms";
+  if (hasEnglish && !hasMalay) return "en";
+  return null;
+}
+
+function getUserMessageLanguage(message: string, fallback: LangCode): LangCode {
+  return detectUserMessageLanguage(message) ?? fallback;
+}
+
 function getSessionSuggestedQuestions(lang: LangCode): readonly string[] {
   const questions: readonly string[] = t[lang].suggestedQ;
   if (typeof window === "undefined") return questions.slice(0, 3);
@@ -287,6 +324,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
   const pathname = usePathname();
   const lastRequestedLangRef = useRef<LangCode>(lang);
+  const conversationLangRef = useRef<LangCode>(lang);
   const lastUnavailableRequestRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -396,6 +434,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       },
     ]);
     lastRequestedLangRef.current = lang;
+    conversationLangRef.current = lang;
   }, [lang, isOpen, hasInitialised, tx]);
 
   // ─── SEND MESSAGE ───────────────────────────────────────────────────────────
@@ -435,21 +474,36 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       const trimmed = text.trim();
       if (!trimmed || isLoading) return;
       const repeatKey = normalizeRepeatKey(trimmed);
+      const messageLang = getUserMessageLanguage(trimmed, lang);
+      const shouldShowTypedLanguageSwitch = messageLang !== conversationLangRef.current;
+      const typedLanguageSwitchMsg: Message | null = shouldShowTypedLanguageSwitch
+        ? {
+            role: "assistant",
+            kind: "system",
+            content: t[messageLang].languageSwitched,
+            id: uid(),
+          }
+        : null;
 
       if (lastUnavailableRequestRef.current === repeatKey) {
         const userMsg: Message = { role: "user", content: trimmed, id: uid() };
         setMessages((prev) => [
           ...prev,
           userMsg,
+          ...(typedLanguageSwitchMsg ? [typedLanguageSwitchMsg] : []),
           { role: "assistant", content: tx.stillUnavailable, id: uid() },
         ]);
+        conversationLangRef.current = messageLang;
         setInput("");
         return;
       }
 
       const userMsg: Message = { role: "user", content: trimmed, id: uid() };
-      const newMessages = [...messages, userMsg];
+      const newMessages = typedLanguageSwitchMsg
+        ? [...messages, userMsg, typedLanguageSwitchMsg]
+        : [...messages, userMsg];
       setMessages(newMessages);
+      conversationLangRef.current = messageLang;
       setInput("");
       setIsLoading(true);
 
@@ -466,11 +520,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
       try {
         const gender = readGenderPreference();
-        const intakeSummary = buildDailyIntakeSummary(cart, gender, lang);
+        const intakeSummary = buildDailyIntakeSummary(cart, gender, messageLang);
         const requestBody: ChatRequestBody = {
           message: trimmed,
           history: historyMessages,
-          language: lang,
+          language: messageLang,
           scanContext: scanContext ?? null,
           cart,
           intakeSummary,
@@ -602,7 +656,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)",
           border: "2px solid #047a57",
           bottom: "calc(1.5rem + env(safe-area-inset-bottom))",
-          zIndex: 9999,
+          zIndex: 70,
         }}
         aria-label={isOpen ? tx.ariaClose : tx.ariaOpen}
         aria-expanded={isOpen}
@@ -617,12 +671,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       {/* ── Chat Window ── */}
       {isOpen && (
         <>
-          {/* 透明背景 — 點擊關閉 */}
           <div
-            // Start overlay BELOW the sticky navbar so users can still switch language / navigate
-            // while the chatbot popup is open.
+            // Keep the click-away layer below the navbar and its open language menu.
             className="fixed left-0 right-0 bottom-0 top-16 md:top-20 transition-opacity duration-200"
-            style={{ zIndex: 9998 }}
+            style={{ zIndex: 60, pointerEvents: "none" }}
             onClick={() => setIsOpen(false)}
           />
           <div
@@ -631,7 +683,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
               top: "calc(4.5rem + env(safe-area-inset-top))",
               bottom: "calc(5.25rem + env(safe-area-inset-bottom))",
               border: "1.5px solid #0a7a74",
-              zIndex: 9999,
+              transform: "translateY(16px)",
+              zIndex: 70,
             }}
             role="dialog"
             aria-label={tx.title}
@@ -762,7 +815,14 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
           {/* ── Input Area ── */}
           <div className="px-4 py-3 bg-white border-t border-gray-200 shrink-0">
-            <div className="flex items-end gap-2">
+            <div
+              className="flex items-end gap-2 rounded-2xl border bg-gray-50 px-3 py-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2"
+              style={{
+                borderColor: isListening ? "#0a7a74" : "#d1d5db",
+                outlineColor: "#0a7a74",
+                boxShadow: isListening ? "0 0 0 3px rgba(15,95,90,0.12)" : "none",
+              }}
+            >
               <textarea
                 ref={inputRef}
                 value={input}
@@ -771,10 +831,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                 placeholder={tx.placeholder}
                 rows={2}
                 disabled={isLoading}
-                className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-2 text-gray-800 placeholder-gray-400 bg-gray-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors max-h-24 overflow-y-auto"
+                className="min-h-[52px] flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-gray-800 placeholder-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed max-h-24 overflow-y-auto"
                 style={{ fontSize: "18px", lineHeight: "1.45", outline: "none" }}
-                onFocus={(e) => { e.target.style.borderColor = "#0a7a74"; e.target.style.boxShadow = "0 0 0 3px rgba(15,95,90,0.15)"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#d1d5db"; e.target.style.boxShadow = "none"; }}
                 aria-label={tx.placeholder}
               />
               {supportsVoiceInput && (
@@ -782,10 +840,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                   type="button"
                   onClick={toggleVoiceInput}
                   disabled={isLoading}
-                  className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0 transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   style={{
-                    borderColor: isListening ? "#0a7a74" : "#d1d5db",
-                    background: isListening ? "#ecfdf5" : "#f9fafb",
+                    background: isListening ? "#d1fae5" : "transparent",
                     color: "#0a7a74",
                   }}
                   aria-label={isListening ? tx.voiceStop : tx.voiceStart}
@@ -797,10 +854,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
               <button
                 onClick={() => sendMessage(input)}
                 disabled={isLoading || !input.trim()}
-                className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 style={{
                   background: input.trim() && !isLoading ? "linear-gradient(135deg, #0a7a74, #047a57)" : "#e5e7eb",
-                  color: input.trim() && !isLoading ? "white" : "#9ca3af",
+                  color: input.trim() && !isLoading ? "white" : "#6b7280",
                 }}
                 aria-label={tx.send}
               >

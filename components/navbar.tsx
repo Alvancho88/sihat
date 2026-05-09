@@ -33,7 +33,10 @@ export function Navbar({ lang = "en", setLang }: { lang?: LangCode; setLang?: (l
   const t = (item: { en: string; ms: string; zh: string }) => item[lang]
 
   return (
-    <header className="sticky top-0 z-60 bg-background border-b-2 border-primary/20 shadow-sm">
+    <header
+      className="sticky top-0 z-[9998] bg-background border-b-2 border-primary/20 shadow-sm"
+      style={{ zIndex: 9998 }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}
@@ -73,7 +76,7 @@ export function Navbar({ lang = "en", setLang }: { lang?: LangCode; setLang?: (l
           {/* Right side */}
           <div className="flex items-center gap-2">
             {/* Language selector */}
-            { <div className="relative">
+            { <div className="relative z-[9999]" style={{ zIndex: 9999 }}>
               <button
                 onClick={() => setLangOpen(!langOpen)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-primary/30 text-base font-bold hover:bg-muted transition-colors bg-card text-foreground"
@@ -83,7 +86,10 @@ export function Navbar({ lang = "en", setLang }: { lang?: LangCode; setLang?: (l
                 <span>{lang === "en" ? "EN" : lang === "ms" ? "BM" : "中文"}</span>
               </button>
               {langOpen && (
-                <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-xl shadow-lg overflow-hidden z-50 min-w-[140px]">
+                <div
+                  className="absolute right-0 top-full mt-1 bg-card border border-border rounded-xl shadow-lg overflow-hidden z-[9999] min-w-[140px]"
+                  style={{ zIndex: 9999 }}
+                >
                   {languages.map((l) => (
                     <button
                       key={l.code}
