@@ -23,6 +23,10 @@ interface ChatResponse {
   suggestions?: FoodItem[];
   unavailableFoodName?: string;
   quickReplies?: string[];
+  actionButton?: {
+    label: string;
+    href: string;
+  };
 }
 
 interface ScanFoodItem {
@@ -62,88 +66,72 @@ interface GeminiContent {
   parts: { text: string }[];
 }
 
-// ─── NUTRITION RESPONSE BUILDERS ──────────────────────────────────────────────
+// ─── QUICK FOOD GUIDANCE BUILDERS ─────────────────────────────────────────────
 
-function buildNutritionSection(food: FoodItem, lang: LangCode): string {
+function getLocalizedRiskLabel(risk: "low" | "medium" | "high", lang: LangCode): string {
+  const labels = {
+    en: { low: "low-risk", medium: "medium-risk", high: "high-risk" },
+    ms: { low: "risiko rendah", medium: "risiko sederhana", high: "risiko tinggi" },
+    zh: { low: "低风险", medium: "中等风险", high: "高风险" },
+  };
+  return labels[lang][risk];
+}
+
+function buildQuickFoodSummary(food: FoodItem, lang: LangCode): string {
   const labels = {
     en: {
-      title: "Nutrition for",
-      sugar: "Sugar",
-      calories: "Calories",
-      gi: "GI",
-      fat: "Fat",
-      sodium: "Sodium",
-      thingsToNote: "Things to note",
-      tip: "Three Highs Health Tip",
-      highSodiumFat: "⚠️ High in sodium and fat",
-      highSodium: "⚠️ High in sodium",
-      highFat: "⚠️ High in fat",
-      giWarning: "⚠️ May raise blood sugar quickly",
+      lowerSugar: "✅ Lower sugar than many sweet foods",
+      highGi: "⚠️ May raise blood sugar quickly",
+      highSodiumFat: "⚠️ Higher in fat and sodium",
+      highSodium: "⚠️ Higher in sodium",
+      highFat: "⚠️ Higher in fat",
+      tip: "Health Tip",
+      intro: (foodName: string, risk: string) => `${foodName} is a ${risk} food for the Three Highs.`,
     },
     ms: {
-      title: "Nutrisi untuk",
-      sugar: "Gula",
-      calories: "Kalori",
-      gi: "IG",
-      fat: "Lemak",
-      sodium: "Natrium",
-      thingsToNote: "Perkara yang perlu diperhatikan",
-      tip: "Petua Kesihatan Tiga Tinggi",
-      highSodiumFat: "⚠️ Tinggi natrium dan lemak",
-      highSodium: "⚠️ Tinggi natrium",
-      highFat: "⚠️ Tinggi lemak",
-      giWarning: "⚠️ Boleh naikkan gula darah dengan cepat",
+      lowerSugar: "✅ Gula lebih rendah berbanding banyak makanan manis",
+      highGi: "⚠️ Boleh menaikkan gula darah dengan cepat",
+      highSodiumFat: "⚠️ Lebih tinggi lemak dan natrium",
+      highSodium: "⚠️ Lebih tinggi natrium",
+      highFat: "⚠️ Lebih tinggi lemak",
+      tip: "Tip Kesihatan",
+      intro: (foodName: string, risk: string) => `${foodName} ialah makanan ${risk} untuk Tiga Tinggi.`,
     },
     zh: {
-      title: "营养信息",
-      sugar: "糖",
-      calories: "卡路里",
-      gi: "GI",
-      fat: "脂肪",
-      sodium: "钠",
-      thingsToNote: "注意事项",
-      tip: "三高健康提示",
-      highSodiumFat: "⚠️ 高钠和高脂肪",
-      highSodium: "⚠️ 高钠",
-      highFat: "⚠️ 高脂肪",
-      giWarning: "⚠️ 可能快速升高血糖",
+      lowerSugar: "✅ 糖分比许多甜食低",
+      highGi: "⚠️ 可能较快升高血糖",
+      highSodiumFat: "⚠️ 脂肪和钠较高",
+      highSodium: "⚠️ 钠较高",
+      highFat: "⚠️ 脂肪较高",
+      tip: "健康提示",
+      intro: (foodName: string, risk: string) => `${foodName} 是三高方面的${risk}食物。`,
     },
-  };
+  }[lang];
 
-  const l = labels[lang];
   const foodName = food.name[lang] || food.name.en;
   const tip = food.tip[lang] || food.tip.en || "";
-
-  // Get levels using existing helpers
   const sugarLevel = getSugarLevel(food.sugar);
   const giLevel = getGILevel(food.gi);
   const fatLevel = getFatLevel(food.fat);
   const sodiumLevel = getSodiumLevel(food.sodium);
+  const risk = food.risk;
 
-  // Build warnings summary
-  const warnings: string[] = [];
-  if (giLevel === "high") {
-    warnings.push(l.giWarning);
-  }
+  const notes: string[] = [];
+  if (sugarLevel === "low") notes.push(labels.lowerSugar);
+  if (giLevel === "high") notes.push(labels.highGi);
   if (sodiumLevel === "high" && fatLevel === "high") {
-    warnings.push(l.highSodiumFat);
+    notes.push(labels.highSodiumFat);
   } else {
-    if (sodiumLevel === "high") warnings.push(l.highSodium);
-    if (fatLevel === "high") warnings.push(l.highFat);
+    if (sodiumLevel === "high") notes.push(labels.highSodium);
+    if (fatLevel === "high") notes.push(labels.highFat);
   }
 
-  const thingsToNote = warnings.length > 0 ? `\n${l.thingsToNote}:\n${warnings.join('\n')}` : '';
+  return compactBlankLines(`${labels.intro(foodName, getLocalizedRiskLabel(risk, lang))}
 
-  return `${l.title} ${foodName}
+${notes.slice(0, 2).join("\n")}
 
-${l.sugar}: ${food.sugar}
-${l.calories}: ${food.calories}
-${l.gi}: ${food.gi}
-${l.fat}: ${food.fat}
-${l.sodium}: ${food.sodium}${thingsToNote}
-
-${l.tip}:
-${tip}`;
+${labels.tip}:
+${tip}`);
 }
 
 // ─── CART MANAGEMENT ──────────────────────────────────────────────────────────
@@ -1161,82 +1149,66 @@ function buildBestChoiceResponse(
   const datasetFood = exactDatasetFoodMatch(best.f, foods);
   const foodName = datasetFood?.name[lang] || datasetFood?.name.en || best.f;
   const unavailable = { en: "Not available", ms: "Tiada data", zh: "暂无数据" }[lang];
-  const reason = selectLocalizedText(best.best_reason, lang) || unavailable;
-
-  const sugar = datasetFood ? datasetFood.sugar : `${best.sugar}g`;
-  const calories = datasetFood ? datasetFood.calories : best.calories !== undefined ? `${best.calories}kcal` : unavailable;
-  const gi = datasetFood ? datasetFood.gi : best.gi !== undefined ? String(best.gi) : unavailable;
-  const fat = datasetFood ? datasetFood.fat : `${best.fat}g`;
-  const sodium = datasetFood ? datasetFood.sodium : `${best.salt}mg`;
+  const reason = selectLocalizedText(best.best_reason, lang);
   const tip = datasetFood ? (datasetFood.tip[lang] || datasetFood.tip.en) : selectLocalizedText(best.tip, lang);
-
-  const sugarNum = parseNutrientNumber(sugar);
-  const giNum = parseNutrientNumber(gi);
-  const fatNum = parseNutrientNumber(fat);
-  const sodiumNum = parseNutrientNumber(sodium);
 
   const labels = {
     en: {
       best: "Best Choice",
-      why: "Why we pick this as the Best Choice",
-      nutrition: "Nutrition",
-      sugar: "Sugar",
-      cal: "Cal",
-      gi: "GI",
-      fat: "Fat",
-      sodium: "Salt/Sodium",
-      tip: "Three Highs Health Tip",
-      risk: "Risk",
+      riskSummary: (name: string, risk: string) => `${name} is the better choice from the foods found. It is a ${risk} option for the Three Highs.`,
+      lowerSugar: "✅ Lower sugar than many sweet foods",
+      highSodiumFat: "⚠️ Higher in fat and sodium",
+      highSodium: "⚠️ Higher in sodium",
+      highFat: "⚠️ Higher in fat",
+      why: "Why",
+      tip: "Health Tip",
+      openFull: "Open Full Analysis",
     },
     ms: {
       best: "Pilihan Terbaik",
-      why: "Mengapa kami pilih ini sebagai Pilihan Terbaik",
-      nutrition: "Nutrisi",
-      sugar: "Gula",
-      cal: "Kalori",
-      gi: "IG",
-      fat: "Lemak",
-      sodium: "Garam/Natrium",
-      tip: "Petua Kesihatan Tiga Tinggi",
-      risk: "Risiko",
+      riskSummary: (name: string, risk: string) => `${name} ialah pilihan yang lebih baik daripada makanan yang dijumpai. Ia pilihan ${risk} untuk Tiga Tinggi.`,
+      lowerSugar: "✅ Gula lebih rendah berbanding banyak makanan manis",
+      highSodiumFat: "⚠️ Lebih tinggi lemak dan natrium",
+      highSodium: "⚠️ Lebih tinggi natrium",
+      highFat: "⚠️ Lebih tinggi lemak",
+      why: "Sebab",
+      tip: "Tip Kesihatan",
+      openFull: "Buka Analisis Penuh",
     },
     zh: {
       best: "最佳选择",
-      why: "为什么选择它作为最佳选择",
-      nutrition: "营养",
-      sugar: "糖",
-      cal: "卡路里",
-      gi: "GI",
-      fat: "脂肪",
-      sodium: "盐/钠",
-      tip: "三高健康提示",
-      risk: "风险",
+      riskSummary: (name: string, risk: string) => `${name} 是检测到的食物中较好的选择。它在三高方面属于${risk}选择。`,
+      lowerSugar: "✅ 糖分比许多甜食低",
+      highSodiumFat: "⚠️ 脂肪和钠较高",
+      highSodium: "⚠️ 钠较高",
+      highFat: "⚠️ 脂肪较高",
+      why: "原因",
+      tip: "健康提示",
+      openFull: "打开完整分析",
     },
   }[lang];
+
+  const notes: string[] = [];
+  if (best.sugar <= 5) notes.push(labels.lowerSugar);
+  if (best.salt > 600 && best.fat > 7) {
+    notes.push(labels.highSodiumFat);
+  } else {
+    if (best.salt > 600) notes.push(labels.highSodium);
+    if (best.fat > 7) notes.push(labels.highFat);
+  }
 
   return {
     reply: compactBlankLines(`${labels.best}:
 ${foodName}
 
-${labels.why}:
-${reason}
+${labels.riskSummary(foodName, getLocalizedRiskLabel(normaliseRisk(best.risk).toLowerCase() as "low" | "medium" | "high", lang))}
 
-${labels.nutrition}:
-${nutritionWarningLine("sugar", sugarNum, lang)}
-${labels.sugar}: ${sugar}
-${labels.cal}: ${formatMaybeValue(calories, unavailable)}
-${nutritionWarningLine("gi", giNum, lang)}
-${labels.gi}: ${formatMaybeValue(gi, unavailable)}
-${nutritionWarningLine("sodium", sodiumNum, lang)}
-${labels.sodium}: ${sodium}
-${nutritionWarningLine("fat", fatNum, lang)}
-${labels.fat}: ${fat}
+${notes.slice(0, 2).join("\n")}
 
-${labels.tip}:
-${tip || unavailable}
-
-${labels.risk}:
-${normaliseRisk(best.risk)}`),
+${reason ? `${labels.why}:\n${reason}\n\n` : ""}${labels.tip}:
+${tip || unavailable}`),
+    suggestions: datasetFood ? [datasetFood] : undefined,
+    actionButton: { label: labels.openFull, href: "/recommendation" },
   };
 }
 
@@ -1301,25 +1273,11 @@ YOUR ROLE:
 - Answer questions about diabetes, high blood pressure, and high cholesterol in simple, easy-to-understand language.
 - Provide dietary guidance based on sugar, salt, and fat (the Three Highs framework).
 - Help users understand their food choices and make healthier decisions.
-- If EXACT NUTRITIONAL DATA is provided in the conversation, use those values precisely without modification or estimation.
-- When answering about specific foods, use this exact format for consistency:
-
-Nutrition for [Food Name]
-
-Sugar: [value]
-Calories: [value]
-GI: [value]
-Fat: [value]
-Sodium: [value]
-
-Things to note:
-[if applicable] ⚠️ May raise blood sugar quickly
-[if applicable] ⚠️ High in sodium and fat
-
-Three Highs Health Tip:
-[simple health tip]
-
-For foods not in our database, use "Estimated nutrition for..." and provide reasonable estimates based on typical Malaysian foods. Use simple template-based tips like "Watch portion size" or "Choose lower sodium options".
+- Keep the chatbot as a quick guidance layer, not a detailed nutrition report.
+- Do NOT list detailed nutrition values such as Sugar, Calories, GI, Fat, or Sodium in normal chatbot replies.
+- When answering about specific foods, mention only the food name, simple risk level, one short reason, and one short health tip.
+- If the user needs detailed nutrition values, guide them to the Full Analysis page.
+- For foods not in our database, do not invent detailed numbers. Give a cautious general tip such as "Watch portion size" or "Choose lower sodium options".
 - Keep responses SHORT: maximum 4 sentences. Be warm and encouraging.
 
 ${foodContext}
@@ -1451,8 +1409,18 @@ export async function POST(req: NextRequest) {
     let reply = "";
 
     if (foodMention.status === "matched") {
-      // Exact response from dataset: nutrition + health tip
-      reply = buildNutritionSection(foodMention.food, requestLang);
+      // Quick guidance from dataset. Detailed nutrition stays on the Full Analysis page.
+      reply = buildQuickFoodSummary(foodMention.food, requestLang);
+      const openFullLabels = {
+        en: "Open Full Analysis",
+        ms: "Buka Analisis Penuh",
+        zh: "打开完整分析",
+      };
+      return NextResponse.json({
+        reply,
+        suggestions: [foodMention.food],
+        actionButton: { label: openFullLabels[requestLang], href: "/recommendation" },
+      });
     } else if (foodMention.status === "ambiguous") {
       return NextResponse.json(formatFoodSuggestions(foodMention.foods, requestLang, foodQuestionQuery));
     } else {
