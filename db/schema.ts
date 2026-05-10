@@ -1,6 +1,6 @@
 import { timestamptz } from "drizzle-orm/gel-core";
 import { year } from "drizzle-orm/mysql-core";
-import { pgTable, serial, text, integer, timestamp, doublePrecision, varchar, decimal, date } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, doublePrecision, varchar, decimal, date, boolean } from "drizzle-orm/pg-core";
 
 // Table 1: State Information (Static Info)
 export const states = pgTable("states", {
@@ -59,3 +59,19 @@ export const food_translations = pgTable("food_translations", {
     food_name: text("food_name").notNull(),
     health_tip: text("health_tip").notNull(),
 }); 
+
+// Table 7: Healthcare Facilities (Static Info)
+export const healthcare_facility = pgTable("healthcare_facility", {
+    facility_id: serial("facility_id").primaryKey(),
+    state_id: integer("state_id").notNull().references(() => states.state_id),
+    facility_name: text("facility_name").notNull(),
+    address: text("address").notNull(),
+    ratings: doublePrecision("ratings").notNull(),
+    latitude: doublePrecision("latitude").notNull(),
+    longitude: doublePrecision("longitude").notNull(),
+    phone: text("phone"),
+    is_diabetes_ready: boolean("is_diabetes_ready").notNull(),
+    is_bp_ready: boolean("is_bp_ready").notNull(),
+    is_cholesterol_ready: boolean("is_cholesterol_ready").notNull(),
+    sector: text("sector").notNull(), // "public" or "private"
+});

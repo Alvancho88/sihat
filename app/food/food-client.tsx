@@ -2101,7 +2101,7 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
           )}
 
           {/* Usage hint banner */}
-          <div className="bg-[#B5E0F1] border border-[#1a5276]/30 rounded-2xl px-5 py-4 flex items-start gap-3">
+          <div className="bg-[#B5E0F1]/50 border border-[#1a5276]/30 rounded-2xl px-5 py-4 flex items-start gap-3">
             <Info className="w-6 h-6 text-[#1a5276] shrink-0 mt-0.5" />
             <p className="text-lg font-semibold text-[#1a5276] leading-relaxed">{t.click_hint}</p>
           </div>

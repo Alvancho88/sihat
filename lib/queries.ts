@@ -1,5 +1,5 @@
 import { db } from "@/db"; // adjust path to your db folder
-import { states, metabolic, trend, ethnicity, food, food_translations } from "@/db/schema";
+import { states, metabolic, trend, ethnicity, food, food_translations, healthcare_facility } from "@/db/schema";
 import { desc, eq, sql, avg, min, max, and, gte, lte, asc, ilike } from "drizzle-orm";
 
 export async function getMetabolicDataByYear(year: number) {
@@ -107,5 +107,38 @@ export async function getAllFoodData() {
     return rows;
 }
 
-/** Convenience type for a single row returned by getAllFoodData */
+// Convenience type for a single row returned by getAllFoodData
 export type FoodDataRow = Awaited<ReturnType<typeof getAllFoodData>>[number];
+
+// ─── Healthcare Facility Query ──────────────────────────────────────────────
+
+/**
+ * Fetch all healthcare facilities joined with their state name.
+ * Results are ordered alphabetically by facility name by default.
+ */
+export async function getHealthcareFacilities() {
+    const rows = await db
+        .select({
+            facility_id: healthcare_facility.facility_id,
+            facility_name: healthcare_facility.facility_name,
+            address: healthcare_facility.address,
+            ratings: healthcare_facility.ratings,
+            latitude: healthcare_facility.latitude,
+            longitude: healthcare_facility.longitude,
+            phone: healthcare_facility.phone,
+            is_diabetes_ready: healthcare_facility.is_diabetes_ready,
+            is_bp_ready: healthcare_facility.is_bp_ready,
+            is_cholesterol_ready: healthcare_facility.is_cholesterol_ready,
+            sector: healthcare_facility.sector,
+            state_id: healthcare_facility.state_id,
+            state_name: states.state_name,
+        })
+        .from(healthcare_facility)
+        .leftJoin(states, eq(healthcare_facility.state_id, states.state_id))
+        .orderBy(asc(healthcare_facility.facility_name));
+
+    return rows;
+}
+
+// Convenience type for a single facility row
+export type HealthcareFacilityRow = Awaited<ReturnType<typeof getHealthcareFacilities>>[number];

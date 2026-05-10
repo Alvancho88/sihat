@@ -828,7 +828,7 @@ function EthnicityBarChart({t, ethnicityData,}: {t: typeof content.en; ethnicity
             </div>
 
             {/* Mini stats row — all three highs */}
-            <div className="grid grid-cols-3 divide-x divide-border bg-muted/40">
+            <div className="grid max-[425px]:grid-cols-1 grid-cols-2 sm:grid-cols-3 divide-x divide-gray-200">
               {[
                 { label: t.tooltip_label,  value: selected.diabetes },
                 { label: t.tooltip_label2, value: selected.hypertension },
