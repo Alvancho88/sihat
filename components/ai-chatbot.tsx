@@ -11,7 +11,23 @@
 
 import { Fragment, useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Bot, X, Send, Loader2, ChevronDown, Plus, Check, Mic, ImagePlus } from "lucide-react";
+import {
+  Bot,
+  X,
+  Send,
+  Loader2,
+  ChevronDown,
+  Plus,
+  Check,
+  Mic,
+  ImagePlus,
+  Copy,
+  RefreshCw,
+  Square,
+  Trash2,
+  Utensils,
+  UserRound,
+} from "lucide-react";
 import { useCart } from "@/components/cart-context";
 import { buildDailyIntakeSummary, type Gender, type DailyIntakeSummary } from "@/lib/daily-intake-summary";
 import type { FoodItem as CartFoodItem } from "@/lib/food-functions";
@@ -71,6 +87,12 @@ interface Message {
   };
 }
 
+interface PendingChatImage {
+  id: string;
+  file: File;
+  url: string;
+}
+
 // Shape of what /api/predict stores — mirrors the API response
 interface ScanContext {
   "Appetizer"?: { ranking: FoodItem[] };
@@ -122,17 +144,27 @@ type ChatRequestBody = {
 const t = {
   en: {
     title: "SIHAT Assistant",
-    subtitle: "Ask me about diabetes & diet",
-    placeholder: "Ask about food...",
+    subtitle: "Helping you make healthier food choices",
+    placeholder: "Ask about food or the Three Highs...",
     send: "Send",
+    clearChat: "Clear chat",
+    clearConfirm: "Clear this conversation?",
+    copied: "Copied.",
+    copyReply: "Copy",
+    tryAgain: "Try again",
+    stopResponding: "Stop responding",
+    responseStopped: "Response stopped. You can ask another question anytime.",
     voiceStart: "Start voice input",
     voiceStop: "Stop listening",
-    listening: "Listening... Tap again to stop",
+    listening: "Recording... Tap again to stop",
     voiceNoSpeech: "I couldn't hear clearly. Please try again.",
     scanFood: "Analyse my food photo",
     uploadFoodPhoto: "Upload food photo",
     imageUnsupported: "Image upload is not supported on this device.",
     uploadPhotoUser: "Food photo uploaded.",
+    maxPhotos: "Maximum 5 photos",
+    removePhoto: "Remove photo",
+    previewPhoto: "Preview photo",
     photoAnalysing: "Analysing your food photo...",
     photoFailed: "Sorry, I could not analyse this photo. Please try again.",
     noFoodDetected: "I could not detect food clearly. Please try another photo.",
@@ -157,17 +189,27 @@ const t = {
   },
   ms: {
     title: "Pembantu SIHAT",
-    subtitle: "Tanya saya tentang diabetes & pemakanan",
-    placeholder: "Tanya tentang makanan...",
+    subtitle: "Membantu anda membuat pilihan makanan lebih sihat",
+    placeholder: "Tanya makanan atau Tiga Tinggi...",
     send: "Hantar",
+    clearChat: "Kosongkan chat",
+    clearConfirm: "Kosongkan perbualan ini?",
+    copied: "Disalin.",
+    copyReply: "Salin",
+    tryAgain: "Cuba lagi",
+    stopResponding: "Hentikan jawapan",
+    responseStopped: "Jawapan dihentikan. Anda boleh tanya soalan lain pada bila-bila masa.",
     voiceStart: "Mulakan input suara",
     voiceStop: "Berhenti mendengar",
-    listening: "Sedang mendengar... Tekan sekali lagi untuk berhenti",
+    listening: "Sedang merakam... Tekan sekali lagi untuk berhenti",
     voiceNoSpeech: "Saya tidak dengar dengan jelas. Sila cuba lagi.",
     scanFood: "Analisis foto makanan saya",
     uploadFoodPhoto: "Muat naik foto makanan",
     imageUnsupported: "Muat naik imej tidak disokong pada peranti ini.",
     uploadPhotoUser: "Foto makanan dimuat naik.",
+    maxPhotos: "Maksimum 5 foto",
+    removePhoto: "Buang foto",
+    previewPhoto: "Pratonton foto",
     photoAnalysing: "Sedang menganalisis foto makanan anda...",
     photoFailed: "Maaf, saya tidak dapat menganalisis foto ini. Sila cuba lagi.",
     noFoodDetected: "Saya tidak dapat mengesan makanan dengan jelas. Sila cuba foto lain.",
@@ -192,17 +234,27 @@ const t = {
   },
   zh: {
     title: "SIHAT 健康助手",
-    subtitle: "询问关于糖尿病和饮食的问题",
-    placeholder: "询问食物选择...",
+    subtitle: "帮助您选择更健康的食物",
+    placeholder: "询问食物或三高...",
     send: "发送",
+    clearChat: "清除聊天",
+    clearConfirm: "清除这段对话？",
+    copied: "已复制。",
+    copyReply: "复制",
+    tryAgain: "再试一次",
+    stopResponding: "停止回复",
+    responseStopped: "回复已停止。您可以随时再问问题。",
     voiceStart: "开始语音输入",
     voiceStop: "停止聆听",
-    listening: "正在聆听... 再点一次即可停止",
+    listening: "正在录音... 再点一次即可停止",
     voiceNoSpeech: "我听不清楚，请再试一次。",
     scanFood: "分析我的食物照片",
     uploadFoodPhoto: "上传食物照片",
     imageUnsupported: "此设备不支持图片上传。",
     uploadPhotoUser: "已上传食物照片。",
+    maxPhotos: "最多5张照片",
+    removePhoto: "移除照片",
+    previewPhoto: "预览照片",
     photoAnalysing: "正在分析您的食物照片...",
     photoFailed: "抱歉，我无法分析这张照片。请再试一次。",
     noFoodDetected: "我无法清楚识别食物。请换一张照片再试。",
@@ -245,6 +297,7 @@ function readScanContext(): ScanContext | null {
 /** Generates a simple unique ID for messages */
 const STORAGE_KEY = "sihat_assistant_messages";
 const SCAN_CONTEXT_KEY = "sihat_scan_results";
+const MAX_CHAT_UPLOAD_IMAGES = 5;
 
 function hasScanContextItems(ctx: ScanContext | null): boolean {
   if (!ctx) return false;
@@ -310,6 +363,12 @@ function getSpeechRecognitionLanguage(lang: LangCode): string {
   if (lang === "ms") return "ms-MY";
   if (lang === "zh") return "zh-CN";
   return "en-US";
+}
+
+function formatRecordingTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 function normalizeLanguageText(value: string): string {
@@ -394,6 +453,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const [supportsVoiceInput, setSupportsVoiceInput] = useState(false);
   const [supportsImageUpload, setSupportsImageUpload] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [messageImagePreviews, setMessageImagePreviews] = useState<Record<string, string[]>>({});
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [voiceNotice, setVoiceNotice] = useState("");
   const { cart, addToCart, removeFromCart, clearCart, isInCart } = useCart();
 
@@ -406,8 +468,15 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  const imagePreviewUrlsRef = useRef<Set<string>>(new Set());
   const pendingVoiceTranscriptRef = useRef("");
   const lastScanContextRawRef = useRef<string | null>(null);
+
+  const revokeImagePreview = useCallback((url: string) => {
+    URL.revokeObjectURL(url);
+    imagePreviewUrlsRef.current.delete(url);
+  }, []);
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
@@ -445,6 +514,19 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   }, [messages]);
 
   useEffect(() => {
+    if (!isListening) {
+      setRecordingSeconds(0);
+      return;
+    }
+
+    const timerId = window.setInterval(() => {
+      setRecordingSeconds((seconds) => seconds + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timerId);
+  }, [isListening]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const speechWindow = window as SpeechRecognitionWindow;
     setSupportsVoiceInput(Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition));
@@ -453,6 +535,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     return () => {
       recognitionRef.current?.abort();
       recognitionRef.current = null;
+      imagePreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      imagePreviewUrlsRef.current.clear();
     };
   }, []);
 
@@ -588,6 +672,52 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     [addToCart, isInCart, lang]
   );
 
+  const getFreshWelcomeMessages = useCallback((): Message[] => {
+    const ctx = readScanContext();
+    const freshMessages: Message[] = [
+      {
+        role: "assistant",
+        content: tx.welcome,
+        starterQuestions: tx.suggestedQ,
+        id: uid(),
+      },
+    ];
+
+    if (ctx) {
+      freshMessages.push({
+        role: "assistant",
+        content: tx.scanFound,
+        id: uid(),
+      });
+    }
+
+    setScanContext(ctx);
+    return freshMessages;
+  }, [tx.scanFound, tx.suggestedQ, tx.welcome]);
+
+  const clearConversation = useCallback(() => {
+    if (typeof window !== "undefined" && !window.confirm(tx.clearConfirm)) return;
+    chatAbortRef.current?.abort();
+    recognitionRef.current?.abort();
+    imagePreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    imagePreviewUrlsRef.current.clear();
+    setMessageImagePreviews({});
+    setPendingImages([]);
+    chatAbortRef.current = null;
+    setIsLoading(false);
+    setIsListening(false);
+    setVoiceNotice("");
+    lastUnavailableRequestRef.current = null;
+    conversationLangRef.current = lang;
+    lastRequestedLangRef.current = lang;
+    const freshMessages = getFreshWelcomeMessages();
+    setMessages(freshMessages);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(freshMessages));
+    setInput("");
+    setHasInitialised(true);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, [getFreshWelcomeMessages, lang, tx.clearConfirm]);
+
   const buildPhotoSummary = useCallback(
     (ctx: ScanContext): string => {
       const names = getScanFoodNames(ctx).slice(0, 5);
@@ -606,29 +736,75 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   }, [router]);
 
   const handleImageUpload = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
       event.target.value = "";
-      if (!file || isLoading || isPhotoAnalyzing) return;
+      if (!files.length || isLoading || isPhotoAnalyzing) return;
 
       if (!supportsImageUpload) {
         setMessages((prev) => [...prev, { role: "assistant", content: tx.imageUnsupported, id: uid() }]);
         return;
       }
 
-      if (!file.type.startsWith("image/")) {
+      const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+      if (!imageFiles.length) {
         setMessages((prev) => [...prev, { role: "assistant", content: tx.photoFailed, id: uid() }]);
         return;
       }
 
-      const userMsg: Message = { role: "user", content: tx.uploadPhotoUser, id: uid() };
+      const remainingSlots = Math.max(0, MAX_CHAT_UPLOAD_IMAGES - pendingImages.length);
+      if (remainingSlots === 0) {
+        setVoiceNotice(tx.maxPhotos);
+        return;
+      }
+
+      const nextImages = imageFiles.slice(0, remainingSlots).map((file) => {
+        const url = URL.createObjectURL(file);
+        imagePreviewUrlsRef.current.add(url);
+        return { id: uid(), file, url };
+      });
+
+      setPendingImages((prev) => [...prev, ...nextImages]);
+      setVoiceNotice(imageFiles.length > remainingSlots ? tx.maxPhotos : "");
+      setTimeout(() => inputRef.current?.focus(), 100);
+    },
+    [isLoading, isPhotoAnalyzing, pendingImages.length, supportsImageUpload, tx.imageUnsupported, tx.maxPhotos, tx.photoFailed]
+  );
+
+  const removePendingImage = useCallback(
+    (imageId: string) => {
+      setPendingImages((prev) => {
+        const imageToRemove = prev.find((image) => image.id === imageId);
+        if (imageToRemove) revokeImagePreview(imageToRemove.url);
+        return prev.filter((image) => image.id !== imageId);
+      });
+      setVoiceNotice("");
+      setTimeout(() => inputRef.current?.focus(), 100);
+    },
+    [revokeImagePreview]
+  );
+
+  const previewPendingImage = useCallback((url: string) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const analysePendingImages = useCallback(
+    async (text: string) => {
+      const imagesToSend = pendingImages;
+      if (!imagesToSend.length || isLoading || isPhotoAnalyzing) return;
+
+      const messageId = uid();
+      const userMsg: Message = { role: "user", content: text.trim() || tx.uploadPhotoUser, id: messageId };
+      setMessageImagePreviews((prev) => ({ ...prev, [messageId]: imagesToSend.map((image) => image.url) }));
       setMessages((prev) => [...prev, userMsg]);
+      setPendingImages([]);
+      setInput("");
       setIsPhotoAnalyzing(true);
       setVoiceNotice("");
 
       try {
         const formData = new FormData();
-        formData.append("file", file);
+        imagesToSend.forEach((image) => formData.append("file", image.file));
         formData.append("language", lang);
 
         const res = await fetch("/api/predict", { method: "POST", body: formData });
@@ -671,18 +847,33 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       isLoading,
       isPhotoAnalyzing,
       lang,
-      supportsImageUpload,
-      tx.imageUnsupported,
       tx.noFoodDetected,
       tx.openFullAnalysis,
       tx.photoFailed,
       tx.uploadPhotoUser,
+      pendingImages,
     ]
   );
 
+  const resizeInput = useCallback(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    const minHeight = textarea.value.trim() ? 48 : 72;
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, minHeight), 112)}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    resizeInput();
+  }, [input, resizeInput, tx.placeholder]);
+
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { retry?: boolean }) => {
       const trimmed = text.trim();
+      if (!options?.retry && pendingImages.length) {
+        await analysePendingImages(trimmed);
+        return;
+      }
       if (!trimmed || isLoading || isPhotoAnalyzing) return;
       const repeatKey = normalizeRepeatKey(trimmed);
       const messageLang = getUserMessageLanguage(trimmed, lang);
@@ -696,7 +887,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           }
         : null;
 
-      if (lastUnavailableRequestRef.current === repeatKey) {
+      if (!options?.retry && lastUnavailableRequestRef.current === repeatKey) {
         const userMsg: Message = { role: "user", content: trimmed, id: uid() };
         setMessages((prev) => [
           ...prev,
@@ -710,7 +901,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       }
 
       const userMsg: Message = { role: "user", content: trimmed, id: uid() };
-      const newMessages = typedLanguageSwitchMsg
+      const newMessages: Message[] = options?.retry
+        ? messages
+        : typedLanguageSwitchMsg
         ? [...messages, userMsg, typedLanguageSwitchMsg]
         : [...messages, userMsg];
       setMessages(newMessages);
@@ -718,7 +911,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       setInput("");
       setIsLoading(true);
 
-      const historyMessages: ChatMessage[] = newMessages.slice(-6).map(({ role, content }) => ({ role, content }));
+      const historySource: Message[] = options?.retry ? [...newMessages, userMsg] : newMessages;
+      const historyMessages: ChatMessage[] = historySource.slice(-6).map(({ role, content }) => ({ role, content }));
       if (lang !== lastRequestedLangRef.current) {
         const languageGuards: Record<LangCode, string> = {
           en: "The user switched language to English. Answer future messages in English.",
@@ -730,6 +924,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       }
 
       try {
+        const abortController = new AbortController();
+        chatAbortRef.current = abortController;
         const gender = readGenderPreference();
         const intakeSummary = buildDailyIntakeSummary(cart, gender, messageLang);
         const latestScanContext = readScanContext();
@@ -747,6 +943,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),
+          signal: abortController.signal,
         });
 
         const data = (await res.json()) as ChatResponse;
@@ -777,16 +974,60 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           { role: "assistant", content: reply, suggestions: data.suggestions, quickReplies: data.quickReplies, id: uid() },
         ]);
       } catch {
+        if (chatAbortRef.current?.signal.aborted) return;
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: tx.errorRetry, id: uid() },
         ]);
       } finally {
+        chatAbortRef.current = null;
         setIsLoading(false);
         setTimeout(() => inputRef.current?.focus(), 100);
       }
     },
-    [addToCart, cart, clearCart, isLoading, isPhotoAnalyzing, lang, messages, removeFromCart, tx]
+    [addToCart, analysePendingImages, cart, clearCart, isLoading, isPhotoAnalyzing, lang, messages, pendingImages.length, removeFromCart, tx]
+  );
+
+  const stopResponding = useCallback(() => {
+    if (!isLoading) return;
+    chatAbortRef.current?.abort();
+    setIsLoading(false);
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", kind: "system", content: tx.responseStopped, id: uid() },
+    ]);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, [isLoading, tx.responseStopped]);
+
+  const copyAssistantMessage = useCallback(
+    async (content: string) => {
+      try {
+        await navigator.clipboard.writeText(content.replace(/^!HIGH_NUTRITION! /gm, ""));
+        setVoiceNotice(tx.copied);
+      } catch {
+        setVoiceNotice("");
+      }
+    },
+    [tx.copied]
+  );
+
+  const getPreviousUserMessage = useCallback(
+    (assistantIndex: number): string | null => {
+      for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+        if (messages[index]?.role === "user") return messages[index].content;
+      }
+      return null;
+    },
+    [messages]
+  );
+
+  const retryAssistantMessage = useCallback(
+    (assistantIndex: number) => {
+      const previousUserMessage = getPreviousUserMessage(assistantIndex);
+      if (!previousUserMessage) return;
+      sendMessage(previousUserMessage, { retry: true });
+    },
+    [getPreviousUserMessage, sendMessage]
   );
 
   // Handle Enter key (Shift+Enter for newline)
@@ -916,33 +1157,48 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
             aria-label={tx.title}
           >
           {/* ── Header — teal green to stand out from the dark blue site ── */}
-          <div className="flex items-center justify-between gap-2 px-4 py-3 text-white shrink-0" style={{ background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)" }}>
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                <Bot className="w-5 h-5 text-white" />
+          <div className="px-4 py-3 text-white shrink-0" style={{ background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                  <Bot className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-base leading-tight">{tx.title}</p>
+                  <p className="text-sm text-white/85 leading-snug">{tx.subtitle}</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="font-bold text-base leading-tight">{tx.title}</p>
-                <p className="text-sm text-white/80 leading-tight truncate">{tx.subtitle}</p>
-              </div>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="min-h-11 min-w-11 shrink-0 p-2 rounded-full hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                aria-label={tx.ariaClose}
+              >
+                <X className="w-6 h-6" />
+              </button>
             </div>
-            {hasScanContextItems(scanContext) && (
-              <span className="hidden sm:inline-flex text-xs bg-white/20 text-white font-semibold px-2.5 py-1 rounded-full">
-                {lang === "zh" ? "已扫描菜单" : lang === "ms" ? "Menu diimbas" : "Menu scanned"}
-              </span>
-            )}
-            <button
-              onClick={() => setIsOpen(false)}
-              className="min-h-11 min-w-11 shrink-0 p-2 rounded-full hover:bg-white/20 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-              aria-label={tx.ariaClose}
-            >
-              <X className="w-6 h-6" />
-            </button>
+            <div className="ml-[52px] mt-2 flex flex-wrap items-center gap-2">
+              {hasScanContextItems(scanContext) && (
+                <span className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-emerald-100/70 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-900">
+                  <Utensils className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {lang === "zh" ? "已检测到食物" : lang === "ms" ? "Makanan dikesan" : "Food detected"}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={clearConversation}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-white/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                aria-label={tx.clearChat}
+                title={tx.clearChat}
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>{tx.clearChat}</span>
+              </button>
+            </div>
           </div>
 
           {/* ── Messages ── */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50" aria-live="polite" aria-atomic="false">
-            {messages.map((msg) => (
+            {messages.map((msg, index) => (
               <div
                 key={msg.id}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -954,7 +1210,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                 )}
                 <div className="max-w-[82%]">
                   <div
-                    className={`px-4 py-3 rounded-2xl leading-relaxed whitespace-pre-wrap ${
+                    className={`px-4 py-3 rounded-2xl leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${
                       msg.role === "user"
                         ? "text-white rounded-tr-sm"
                         : msg.kind === "system"
@@ -964,9 +1220,23 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                     style={{
                       fontSize: msg.kind === "system" ? "15px" : "18px",
                       lineHeight: msg.kind === "system" ? "1.6" : "1.75",
+                      wordBreak: "break-word",
+                      overflowWrap: "anywhere",
                       ...(msg.role === "user" ? { background: "linear-gradient(135deg, #0a7a74, #047a57)" } : {}),
                     }}
                   >
+                    {msg.role === "user" && messageImagePreviews[msg.id]?.length ? (
+                      <div className="mb-2 grid grid-cols-1 gap-2">
+                        {messageImagePreviews[msg.id].map((url, imageIndex) => (
+                          <img
+                            key={`${msg.id}-${url}`}
+                            src={url}
+                            alt={`${tx.uploadPhotoUser} ${imageIndex + 1}`}
+                            className="block h-auto max-h-48 w-64 max-w-full rounded-xl border border-white/30 object-cover shadow-sm sm:w-72"
+                          />
+                        ))}
+                      </div>
+                    ) : null}
                     {renderMessageContent(msg.content)}
                     {msg.role === "assistant" &&
                     msg.starterQuestions?.length &&
@@ -1061,21 +1331,75 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                       </button>
                     </div>
                   ) : null}
+                  {msg.role === "assistant" && !msg.kind && getPreviousUserMessage(index) ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => copyAssistantMessage(msg.content)}
+                        className="min-h-10 rounded-full px-3 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        aria-label={tx.copyReply}
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <Copy className="h-4 w-4" />
+                          {tx.copyReply}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => retryAssistantMessage(index)}
+                        disabled={isLoading || isPhotoAnalyzing}
+                        className="min-h-10 rounded-full px-3 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        aria-label={tx.tryAgain}
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <RefreshCw className="h-4 w-4" />
+                          {tx.tryAgain}
+                        </span>
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
+                {msg.role === "user" && (
+                  <div
+                    className="ml-2 mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white"
+                    style={{ background: "linear-gradient(135deg, #0a7a74, #047a57)" }}
+                    aria-hidden="true"
+                  >
+                    <UserRound className="h-5 w-5" />
+                  </div>
+                )}
               </div>
             ))}
 
             {/* Loading indicator */}
             {(isLoading || isPhotoAnalyzing) && (
-              <div className="flex justify-start">
+              <div className="flex items-start justify-start">
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-1 mr-2" style={{ background: "linear-gradient(135deg, #0a7a74, #047a57)" }}>
                   <Bot className="w-5 h-5 text-white" />
                 </div>
-                <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-5 py-3.5 shadow-sm flex items-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#0a7a74" }} />
-                  <span className="text-gray-500" style={{ fontSize: "16px" }}>
-                    {isPhotoAnalyzing ? tx.photoAnalysing : tx.thinking}
-                  </span>
+                <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-5 py-3.5 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#0a7a74" }} />
+                    <span className="text-gray-600 font-medium" style={{ fontSize: "16px" }}>
+                      {isPhotoAnalyzing ? tx.photoAnalysing : lang === "zh" ? "Siti 正在回复..." : lang === "ms" ? "Siti sedang menjawab..." : "Siti is responding..."}
+                    </span>
+                  </div>
+                  {isLoading && !isPhotoAnalyzing && (
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={stopResponding}
+                        className="min-h-10 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        style={{ borderColor: "#d1d5db", color: "#4b5563", background: "#f9fafb" }}
+                        aria-label={tx.stopResponding}
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <Square className="h-3.5 w-3.5" />
+                          {lang === "zh" ? "停止" : lang === "ms" ? "Henti" : "Stop"}
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1089,12 +1413,46 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
               ref={imageInputRef}
               type="file"
               accept="image/*"
+              multiple
               className="hidden"
               onChange={handleImageUpload}
               aria-label={tx.uploadFoodPhoto}
             />
+            {pendingImages.length > 0 && (
+              <div className="mb-3 rounded-2xl border border-teal-100 bg-teal-50/70 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-teal-900">
+                    {pendingImages.length}/{MAX_CHAT_UPLOAD_IMAGES} - {tx.maxPhotos}
+                  </p>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {pendingImages.map((image, index) => (
+                    <div key={image.id} className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-teal-200 bg-white shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => previewPendingImage(image.url)}
+                        className="block h-full w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        aria-label={`${tx.previewPhoto} ${index + 1}`}
+                        title={tx.previewPhoto}
+                      >
+                        <img src={image.url} alt={`${tx.previewPhoto} ${index + 1}`} className="h-full w-full object-cover" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removePendingImage(image.id)}
+                        className="absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-700 shadow-md transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        aria-label={`${tx.removePhoto} ${index + 1}`}
+                        title={tx.removePhoto}
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div
-              className="relative rounded-2xl border bg-gray-50 px-3 pt-2.5 pb-2 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2"
+              className="relative rounded-2xl border bg-gray-50 px-3 py-1.5 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2"
               style={{
                 borderColor: isListening || isPhotoAnalyzing ? "#0a7a74" : "#d1d5db",
                 outlineColor: "#0a7a74",
@@ -1110,10 +1468,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={tx.placeholder}
-                rows={2}
+                rows={1}
                 disabled={isLoading || isPhotoAnalyzing}
-                className="min-h-12 w-full resize-none border-0 bg-transparent px-1 py-0 pr-40 text-gray-800 placeholder-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed max-h-24 overflow-y-auto whitespace-nowrap"
-                style={{ fontSize: "18px", lineHeight: "1.4", outline: "none" }}
+                className="min-h-12 w-full resize-none border-0 bg-transparent px-1 py-2.5 pr-40 text-gray-800 placeholder-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed max-h-28 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words placeholder:whitespace-pre-wrap"
+                style={{ fontSize: "18px", lineHeight: "1.45", outline: "none", overflowWrap: "anywhere", wordBreak: "break-word" }}
                 aria-label={tx.placeholder}
               />
               <div className="absolute bottom-1.5 right-2 flex items-center gap-1">
@@ -1121,7 +1479,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                   <button
                     type="button"
                     onClick={() => imageInputRef.current?.click()}
-                    disabled={isLoading || isPhotoAnalyzing}
+                    disabled={isLoading || isPhotoAnalyzing || pendingImages.length >= MAX_CHAT_UPLOAD_IMAGES}
                     className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-60 hover:bg-teal-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     style={{
                       color: "#075f59",
@@ -1152,11 +1510,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                 )}
                 <button
                   onClick={() => sendMessage(input)}
-                  disabled={isLoading || isPhotoAnalyzing || !input.trim()}
+                  disabled={isLoading || isPhotoAnalyzing || (!input.trim() && pendingImages.length === 0)}
                   className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   style={{
-                    background: input.trim() && !isLoading && !isPhotoAnalyzing ? "linear-gradient(135deg, #0a7a74, #047a57)" : "#e5e7eb",
-                    color: input.trim() && !isLoading && !isPhotoAnalyzing ? "white" : "#6b7280",
+                    background: (input.trim() || pendingImages.length > 0) && !isLoading && !isPhotoAnalyzing ? "linear-gradient(135deg, #0a7a74, #047a57)" : "#e5e7eb",
+                    color: (input.trim() || pendingImages.length > 0) && !isLoading && !isPhotoAnalyzing ? "white" : "#6b7280",
                   }}
                   aria-label={tx.send}
                 >
@@ -1177,7 +1535,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                     aria-hidden="true"
                   />
                 )}
-                <span>{isListening ? tx.listening : voiceNotice}</span>
+                <span>{isListening ? `${tx.listening} ${formatRecordingTime(recordingSeconds)}` : voiceNotice}</span>
               </p>
             )}
           </div>
