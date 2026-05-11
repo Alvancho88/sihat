@@ -561,8 +561,8 @@ export function HealthcareClient({ facilities}: Props) {
                   {/* Sector */}
                   <SelectField value={selectedSector} onChange={setSelectedSector} icon={Building2} label={t.label_sector}>
                     <option value="">{t.filter_sector}</option>
-                    <option value="public">{t.sector_public}</option>
-                    <option value="private">{t.sector_private}</option>
+                    <option value="Public">{t.sector_public}</option>
+                    <option value="Private">{t.sector_private}</option>
                   </SelectField>
 
                   {/* Specialty */}

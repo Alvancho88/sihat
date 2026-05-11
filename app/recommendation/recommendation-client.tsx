@@ -331,7 +331,6 @@ function computeRiskFromIndicators(sugar: number, salt: number, fat: number, api
 
 function indicatorClass(level: "low" | "medium" | "high") {
   if (level === "high") return "bg-[#FFF3CD] text-[#856404]" 
-  if (level === "medium") return "bg-[var(--risk-medium-bg)] text-[var(--risk-medium)]"
   return "bg-muted text-foreground"
 }
 
@@ -409,15 +408,15 @@ function FoodResultCard({
         <div className="flex flex-wrap gap-4 mb-4 text-base">
           <div className={`rounded-xl px-4 py-2 ${indicatorClass(sugarLevel)}`}>
             <span className="font-semibold text-foreground">{t.nutrition_sugar}:</span>
-            <span className={`ml-1 ${sugarLevel !== "low" ? "font-extrabold" : ""}`}>{food.sugar}</span>
+            <span className={`ml-1 ${sugarLevel === "high" ? "font-extrabold" : ""}`}>{food.sugar}</span>
           </div>
           <div className={`rounded-xl px-4 py-2 ${indicatorClass(saltLevel)}`}>
             <span className="font-semibold text-foreground">{t.nutrition_salt}:</span>
-            <span className={`ml-1 ${saltLevel !== "low" ? "font-extrabold" : ""}`}>{food.salt}</span>
+            <span className={`ml-1 ${saltLevel === "high" ? "font-extrabold" : ""}`}>{food.salt}</span>
           </div>
           <div className={`rounded-xl px-4 py-2 ${indicatorClass(fatLevel)}`}>
             <span className="font-semibold text-foreground">{t.nutrition_fat}:</span>
-            <span className={`ml-1 ${fatLevel !== "low" ? "font-extrabold" : ""}`}>{food.fat}</span>
+            <span className={`ml-1 ${fatLevel === "high" ? "font-extrabold" : ""}`}>{food.fat}</span>
           </div>
         </div>
         <div className={`flex items-start gap-2 rounded-xl p-4 ${
@@ -426,7 +425,7 @@ function FoodResultCard({
             : "bg-accent/20"
         }`}>
           <Info className="w-5 h-5 shrink-0 mt-0.5 text-accent-foreground" />
-          <p className={`text-base text-foreground ${isHighRisk ? "font-bold" : ""}`}>
+          <p className="text-base text-foreground">
             <span className="font-bold">{t.tip_label}:</span> {tipText}
           </p>
         </div>
@@ -547,6 +546,11 @@ type AnalysisSession = {
 
 function getFirstAnalysisCategory(cache: ApiResultsCache): AnalysisSessionCategory | null {
   return (["main", "appetizer", "dessert", "drink"] as const).find((category) => cache[category]?.length) ?? null
+}
+
+function getAvailableCategories(cache: ApiResultsCache | null): AnalysisSessionCategory[] {
+  if (!cache) return []
+  return (["main", "appetizer", "dessert", "drink"] as const).filter((category) => cache[category]?.length > 0)
 }
 
 function saveScanContext(data: PredictResults, session?: Omit<AnalysisSession, "result" | "createdAt" | "source">) {
@@ -1243,51 +1247,59 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               <div ref={categoryTabsRef} className="bg-card rounded-2xl border border-border p-4 md:p-6 shadow-sm mb-8">
                 <h2 className="text-2xl font-bold mb-2 text-center">{t.select_category}</h2>
                 <p className="text-muted-foreground text-center mb-6">{t.select_category_hint}</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
-                  <button
-                    onClick={() => handleCategorySelect("appetizer")}
-                    className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
-                      selectedCategory === "appetizer"
-                        ? "border-primary bg-primary/10 text-primary shadow-sm"
-                        : "border-border hover:border-primary hover:bg-primary/5"
-                    }`}
-                  >
-                    <Salad className="w-5 h-5 text-primary" />
-                    <span className="text-base font-bold">{t.categories.appetizer}</span>
-                  </button>
-                  <button
-                    onClick={() => handleCategorySelect("main")}
-                    className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
-                      selectedCategory === "main"
-                        ? "border-primary bg-primary/10 text-primary shadow-sm"
-                        : "border-border hover:border-primary hover:bg-primary/5"
-                    }`}
-                  >
-                    <Utensils className="w-5 h-5 text-primary" />
-                    <span className="text-base font-bold">{t.categories.main}</span>
-                  </button>
-                  <button
-                    onClick={() => handleCategorySelect("dessert")}
-                    className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
-                      selectedCategory === "dessert"
-                        ? "border-primary bg-primary/10 text-primary shadow-sm"
-                        : "border-border hover:border-primary hover:bg-primary/5"
-                    }`}
-                  >
-                    <Cake className="w-5 h-5 text-primary" />
-                    <span className="text-base font-bold">{t.categories.dessert}</span>
-                  </button>
-                  <button
-                    onClick={() => handleCategorySelect("drink")}
-                    className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
-                      selectedCategory === "drink"
-                        ? "border-primary bg-primary/10 text-primary shadow-sm"
-                        : "border-border hover:border-primary hover:bg-primary/5"
-                    }`}
-                  >
-                    <GlassWater className="w-5 h-5 text-primary" />
-                    <span className="text-base font-bold">{t.categories.drink}</span>
-                  </button>
+                <div className={`grid gap-3 w-full ${getAvailableCategories(apiResultsCache).length === 1 ? "grid-cols-1" : getAvailableCategories(apiResultsCache).length === 2 ? "grid-cols-2 md:grid-cols-2" : "grid-cols-2 md:grid-cols-4"}`}>
+                  {getAvailableCategories(apiResultsCache).includes("appetizer") && (
+                    <button
+                      onClick={() => handleCategorySelect("appetizer")}
+                      className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
+                        selectedCategory === "appetizer"
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
+                          : "border-border hover:border-primary hover:bg-primary/5"
+                      }`}
+                    >
+                      <Salad className="w-5 h-5 text-primary" />
+                      <span className="text-base font-bold">{t.categories.appetizer}</span>
+                    </button>
+                  )}
+                  {getAvailableCategories(apiResultsCache).includes("main") && (
+                    <button
+                      onClick={() => handleCategorySelect("main")}
+                      className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
+                        selectedCategory === "main"
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
+                          : "border-border hover:border-primary hover:bg-primary/5"
+                      }`}
+                    >
+                      <Utensils className="w-5 h-5 text-primary" />
+                      <span className="text-base font-bold">{t.categories.main}</span>
+                    </button>
+                  )}
+                  {getAvailableCategories(apiResultsCache).includes("dessert") && (
+                    <button
+                      onClick={() => handleCategorySelect("dessert")}
+                      className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
+                        selectedCategory === "dessert"
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
+                          : "border-border hover:border-primary hover:bg-primary/5"
+                      }`}
+                    >
+                      <Cake className="w-5 h-5 text-primary" />
+                      <span className="text-base font-bold">{t.categories.dessert}</span>
+                    </button>
+                  )}
+                  {getAvailableCategories(apiResultsCache).includes("drink") && (
+                    <button
+                      onClick={() => handleCategorySelect("drink")}
+                      className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
+                        selectedCategory === "drink"
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
+                          : "border-border hover:border-primary hover:bg-primary/5"
+                      }`}
+                    >
+                      <GlassWater className="w-5 h-5 text-primary" />
+                      <span className="text-base font-bold">{t.categories.drink}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1298,8 +1310,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 <div className="w-16 h-16 mx-auto mb-4 bg-[#8b3a62]/10 rounded-full flex items-center justify-center">
                   <Info className="w-8 h-8 text-[#8b3a62]" />
                 </div>
-                <h3 className="text-xl font-bold mb-2 text-[#8b3a62]">{t.no_results}</h3>
-                <p className="text-base text-foreground/80 mb-6">{t.no_results_hint}</p>
+                <h3 className="text-xl font-bold mb-2 text-[#8b3a62]">No food detected</h3>
+                <p className="text-base text-foreground/80 mb-6">Please upload a clearer photo of the menu or describe your food.</p>
                 <button onClick={clearAll} className="w-full flex items-center justify-center gap-2 bg-[#8b3a62] text-white font-bold text-lg py-4 rounded-2xl hover:opacity-90">
                   <Trash2 className="w-5 h-5" />
                   {t.analyze_new_food}
