@@ -905,6 +905,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [voiceNotice, setVoiceNotice] = useState("");
   const [mealPlanToast, setMealPlanToast] = useState("");
+  const [isFoodDetailModalOpen, setIsFoodDetailModalOpen] = useState(false);
   const { cart, addToCart, removeFromCart, clearCart, isInCart } = useCart();
 
   const pathname = usePathname();
@@ -913,6 +914,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const conversationLangRef = useRef<LangCode>(lang);
   const lastUnavailableRequestRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
@@ -928,7 +930,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, []);
 
   useEffect(() => {
@@ -938,7 +942,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   // Ensure chat reopens at the latest message before rendering
   useLayoutEffect(() => {
     if (!isOpen || messages.length === 0) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
   }, [isOpen, messages.length]);
 
   // Close chatbot on route change while preserving session history
@@ -946,6 +952,18 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     if (!isOpen) return;
     setIsOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const handleFoodDetailModal = (event: Event) => {
+      const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+      const open = Boolean(detail?.open);
+      setIsFoodDetailModalOpen(open);
+      if (open) setIsOpen(false);
+    };
+
+    window.addEventListener("sihat_food_detail_modal", handleFoodDetailModal);
+    return () => window.removeEventListener("sihat_food_detail_modal", handleFoodDetailModal);
+  }, []);
 
   // Restore chat history for the current browser session
   useEffect(() => {
@@ -1763,38 +1781,42 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   return (
     <>
       {/* ── Floating Button ── */}
-      <button
-        onClick={() => setIsOpen((v) => !v)}
-        className="fixed right-6 w-16 h-16 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        style={{
-          background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)",
-          border: "2px solid #047a57",
-          bottom: "calc(1.5rem + env(safe-area-inset-bottom))",
-          zIndex: 70,
-        }}
-        aria-label={isOpen ? tx.ariaClose : tx.ariaOpen}
-        aria-expanded={isOpen}
-      >
-        {isOpen ? (
-          <ChevronDown className="w-7 h-7" />
-        ) : (
-          <Bot className="w-8 h-8" />
-        )}
-      </button>
+      {!isFoodDetailModalOpen && (
+        <button
+          onClick={() => setIsOpen((v) => !v)}
+          className="fixed w-16 h-16 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          style={{
+            background: "linear-gradient(135deg, #0a7a74 0%, #047a57 100%)",
+            border: "2px solid #047a57",
+            right: "2rem",
+            bottom: "calc(1.5rem + env(safe-area-inset-bottom))",
+            zIndex: 70,
+          }}
+          aria-label={isOpen ? tx.ariaClose : tx.ariaOpen}
+          aria-expanded={isOpen}
+        >
+          {isOpen ? (
+            <ChevronDown className="w-7 h-7" />
+          ) : (
+            <Bot className="w-8 h-8" />
+          )}
+        </button>
+      )}
 
       {/* ── Chat Window ── */}
-      {isOpen && (
+      {isOpen && !isFoodDetailModalOpen && (
         <>
           <div
             // Keep the click-away layer below the navbar and its open language menu.
             className="fixed left-0 right-0 bottom-0 top-16 md:top-20 transition-opacity duration-200"
-            style={{ zIndex: 60, pointerEvents: "none" }}
+            style={{ zIndex: 60 }}
             onClick={() => setIsOpen(false)}
           />
           <div
-            className="fixed inset-x-4 sm:inset-x-auto sm:right-5 sm:w-[520px] lg:w-[560px] flex flex-col rounded-xl overflow-hidden shadow-xl bg-white transition-opacity duration-200"
+            className="fixed inset-x-4 sm:inset-x-auto sm:w-[520px] lg:w-[560px] flex flex-col rounded-xl overflow-hidden shadow-xl bg-white transition-opacity duration-200"
             style={{
               top: "calc(4.5rem + env(safe-area-inset-top))",
+              right: "2rem",
               bottom: "calc(5.25rem + env(safe-area-inset-bottom))",
               border: "1.5px solid #0a7a74",
               transform: "translateY(16px)",
@@ -1844,7 +1866,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           </div>
 
           {/* ── Messages ── */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50" aria-live="polite" aria-atomic="false">
+          <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50" aria-live="polite" aria-atomic="false">
             {messages.map((msg, index) => (
               <div
                 key={msg.id}
