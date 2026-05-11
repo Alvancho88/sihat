@@ -297,14 +297,14 @@ const content = {
 
 function RiskBadge({ risk, t }: { risk: string; t: typeof content.en }) {
   const configs = {
-    low: { label: t.risk_low, icon: TrendingDown, bg: "bg-[var(--risk-low-bg)]", text: "text-[var(--risk-low)]", border: "border-[var(--risk-low)]/30" },
-    medium: { label: t.risk_medium, icon: Minus, bg: "bg-[var(--risk-medium-bg)]", text: "text-[var(--risk-medium)]", border: "border-[var(--risk-medium)]/30" },
-    high: { label: t.risk_high, icon: TrendingUp, bg: "bg-[#FFF3CD]", text: "text-[#856404]", border: "border-[#856404]/30" },
+    low: { label: t.risk_low, icon: TrendingDown, bg: "bg-[var(--risk-low-bg)]", text: "text-[var(--risk-low)]", border: "" },
+    medium: { label: t.risk_medium, icon: Minus, bg: "bg-[var(--risk-medium-bg)]", text: "text-[var(--risk-medium)]", border: "" },
+    high: { label: t.risk_high, icon: TrendingUp, bg: "bg-[#FFF3CD]", text: "text-[#856404]", border: "" },
   }
   const c = configs[risk as keyof typeof configs] || configs.medium
   const isHigh = risk === "high"
   return (
-    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full border ${c.bg} ${c.text} ${c.border} ${isHigh ? "font-extrabold" : ""}`}>
+    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full ${c.bg} ${c.text} ${c.border} ${isHigh ? "font-extrabold" : ""}`}>
       <c.icon className="w-4 h-4" />
       {c.label}
     </span>
@@ -330,8 +330,8 @@ function computeRiskFromIndicators(sugar: number, salt: number, fat: number, api
 }
 
 function indicatorClass(level: "low" | "medium" | "high") {
-  if (level === "high") return "bg-[#FFF3CD] border border-[#856404]/30 text-[#856404]" 
-  if (level === "medium") return "bg-[var(--risk-medium-bg)] border border-[var(--risk-medium)]/40 text-[var(--risk-medium)]"
+  if (level === "high") return "bg-[#FFF3CD] text-[#856404]" 
+  if (level === "medium") return "bg-[var(--risk-medium-bg)] text-[var(--risk-medium)]"
   return "bg-muted text-foreground"
 }
 
@@ -422,7 +422,7 @@ function FoodResultCard({
         </div>
         <div className={`flex items-start gap-2 rounded-xl p-4 ${
           isHighRisk
-            ? "bg-[#FFF3CD] border border-[#856404]/30"
+            ? "bg-[#FFF3CD]"
             : "bg-accent/20"
         }`}>
           <Info className="w-5 h-5 shrink-0 mt-0.5 text-accent-foreground" />
@@ -1023,7 +1023,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
         currentLangRef.current = lang
         const t = content[lang]
         return (
-          <div className="max-w-7xl mx-auto px-4 py-10 md:py-14 space-y-10">
+          <div className="max-w-7xl mx-auto px-4 py-4 md:py-6 space-y-6">
             {/* Header */}
             <div className="text-center">
               <h1 className="text-2xl md:text-5xl font-extrabold mb-4 text-balance">{t.page_title}</h1>
@@ -1173,27 +1173,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               </div>
             </div>
 
-            {/* Photo Guide */}
-            <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4 md:p-6">
-              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-primary">
-                <Camera className="w-7 h-7" />
-                {t.guide_title}
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {t.guide_steps.map((step, i) => (
-                  <div key={i} className="bg-card rounded-xl p-4 text-center border border-border">
-                    <div className="w-12 h-12 mx-auto mb-3 bg-primary/10 rounded-full flex items-center justify-center">
-                      {i === 0 && <Camera className="w-6 h-6 text-primary" />}
-                      {i === 1 && <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
-                      {i === 2 && <Utensils className="w-6 h-6 text-primary" />}
-                      {i === 3 && <CheckCircle className="w-6 h-6 text-primary" />}
-                    </div>
-                    <p className="text-base font-medium">{step.text}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* Analyse Button */}
             {showAnalyzeButton && (
               <div className="flex flex-col items-center gap-4">
@@ -1208,6 +1187,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               </div>
             )}
 
+            
             {/* Loading */}
             {isAnalyzing && (
               <div className="flex flex-col items-center gap-4 py-8">
@@ -1260,7 +1240,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
             {/* Category Selection */}
             {showCategoryTabs && (
-              <div ref={categoryTabsRef} className="bg-card rounded-2xl border border-border p-4 md:p-6 shadow-sm">
+              <div ref={categoryTabsRef} className="bg-card rounded-2xl border border-border p-4 md:p-6 shadow-sm mb-8">
                 <h2 className="text-2xl font-bold mb-2 text-center">{t.select_category}</h2>
                 <p className="text-muted-foreground text-center mb-6">{t.select_category_hint}</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
@@ -1331,19 +1311,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
             {results && results.length > 0 && (
               <div>
                 <h2 className="text-3xl font-bold mb-3">{t.result_title} - {t.categories[selectedCategory as keyof typeof t.categories]}</h2>
-                <div className="flex flex-wrap items-center gap-3 mb-4">
-                  {[
-                    { bg: "bg-[var(--risk-low-bg)]", text: "text-[var(--risk-low)]", label: t.risk_low, icon: TrendingDown, isHigh: false },
-                    { bg: "bg-[var(--risk-medium-bg)]", text: "text-[var(--risk-medium)]", label: t.risk_medium, icon: Minus, isHigh: false },
-                    { bg: "bg-[#FFF3CD]", text: "text-[#856404]", label: t.risk_high, icon: TrendingUp, isHigh: true },
-                  ].map((l) => (
-                    <span key={l.label} className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-base ${l.isHigh ? "font-extrabold" : "font-semibold"} ${l.bg} ${l.text}`}>
-                      <l.icon className="w-5 h-5" />
-                      {l.label}
-                    </span>
-                  ))}
-                </div>
-                <div className="bg-slate-100 rounded-xl px-5 py-4 mb-4 flex items-start gap-3 border border-slate-200">
+                                <div className="bg-slate-100 rounded-xl px-5 py-4 mb-4 flex items-start gap-3 border border-slate-200">
                   <Info className="w-5 h-5 shrink-0 mt-0.5 text-slate-600" />
                   <p className="text-lg font-semibold text-[var(--risk-low)] leading-relaxed">{t.disclaimer}</p>
                 </div>
@@ -1390,6 +1358,27 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
             )}
 
             </div>{/* end analysis-result-section */}
+
+            {/* Photo Guide */}
+            <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4 md:p-6">
+              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-primary">
+                <Camera className="w-7 h-7" />
+                {t.guide_title}
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {t.guide_steps.map((step, i) => (
+                  <div key={i} className="bg-card rounded-xl p-4 text-center border border-border">
+                    <div className="w-12 h-12 mx-auto mb-3 bg-primary/10 rounded-full flex items-center justify-center">
+                      {i === 0 && <Camera className="w-6 h-6 text-primary" />}
+                      {i === 1 && <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
+                      {i === 2 && <Utensils className="w-6 h-6 text-primary" />}
+                      {i === 3 && <CheckCircle className="w-6 h-6 text-primary" />}
+                    </div>
+                    <p className="text-base font-medium">{step.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {/* Image Modal */}
             {showImageModal && modalImage && (
