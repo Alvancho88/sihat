@@ -26,11 +26,13 @@ import {
   Square,
   Trash2,
   Utensils,
+  ClipboardList,
+  BookOpen,
   UserRound,
 } from "lucide-react";
 import { useCart } from "@/components/cart-context";
 import { buildDailyIntakeSummary, type Gender, type DailyIntakeSummary } from "@/lib/daily-intake-summary";
-import type { FoodItem as CartFoodItem } from "@/lib/food-functions";
+import { getLocalizedCategory, type FoodItem as CartFoodItem } from "@/lib/food-functions";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -73,12 +75,21 @@ type SpeechRecognitionWindow = Window &
     webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
   };
 
+interface ScanFoodSummary {
+  name: string;
+  risk: "Low" | "Medium" | "High";
+  tip: string;
+  category?: keyof Omit<ScanContext, "uniqueFoodCount">;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
   id: string;
   kind?: "system";
   suggestions?: CartFoodItem[];
+  unavailableFoodName?: string;
+  scanFood?: ScanFoodSummary;
   quickReplies?: string[];
   starterQuestions?: readonly string[];
   actionButton?: {
@@ -128,6 +139,10 @@ interface ChatResponse {
   suggestions?: CartFoodItem[];
   unavailableFoodName?: string;
   quickReplies?: string[];
+  actionButton?: {
+    label: string;
+    href: string;
+  };
 }
 
 type ChatRequestBody = {
@@ -169,8 +184,25 @@ const t = {
     photoFailed: "Sorry, I could not analyse this photo. Please try again.",
     noFoodDetected: "I could not detect food clearly. Please try another photo.",
     foundFoods: "I found these foods:",
+    foundCategories: "Food groups found:",
     highNutrientSummary: "Some items may be high in fat or sodium.",
-    openFullAnalysis: "Open Full Analysis",
+    openFullAnalysis: "View Detailed Analysis",
+    addToMealPlan: "Add to Meal Plan",
+    inMealPlan: "Added to Meal Plan",
+    tapAgainToRemove: "Tap again to remove",
+    removedFromMealPlan: "Removed from meal plan",
+    openLearnPage: "Open Learn Page",
+    openFoodPage: "Open Food Page",
+    cartAdded: "added to your meal plan.",
+    cartAlreadyIn: "is already in your meal plan.",
+    cartRemoved: "removed from your meal plan.",
+    cartNotIn: "is not in your meal plan.",
+    cartNotAvailable: "This food is not yet available for meal planning.",
+    cartNoContext: "Please tell me which food you would like to add first.",
+    sitiResponding: "Siti is responding…",
+    stop: "Stop",
+    foodDetected: "Food detected",
+    disclaimer: "General guidance only — please consult your doctor for personal medical advice.",
     welcome:
       "Hello! I'm Siti, your SIHAT health assistant. Ask me about food choices, diabetes, or the Three Highs.",
     scanFound: "💡 I can see you've scanned a menu! Ask me about your food choices and I'll give you personalised advice.",
@@ -181,10 +213,16 @@ const t = {
     ariaOpen: "Open health assistant",
     ariaClose: "Close health assistant",
     suggestedQ: [
-      "Analyse my food photo",
-      "What foods are better for diabetes?",
-      "What are the Three Highs?",
+      "Check my food or menu",
+      "Help me plan today's meals",
+      "Learn about diabetes, blood pressure & cholesterol",
     ],
+    foodCheckGuide:
+      "I can help check your food choices.\n\nYou can:\n• Upload a food photo\n• Upload a menu photo\n• Take a photo\n• Type food names\n\nI will analyze the food and explain:\n• Risk level\n• Healthier choices\n• Health tips",
+    mealPlanGuide:
+      "I can help you plan healthier meals for today.\n\nYou can:\n• Add foods to your meal plan\n• Build breakfast, lunch, and dinner\n• Choose healthier options\n• Track better choices for the Three Highs\n\nYou can start by:\n• Typing a food name\n• Opening Food Analysis\n• Or choosing foods from your Food page",
+    learnGuide:
+      "I can help you learn about:\n• Diabetes\n• High blood pressure\n• Cholesterol",
     languageSwitched: "From now on, I will reply in English.",
   },
   ms: {
@@ -192,11 +230,11 @@ const t = {
     subtitle: "Membantu anda membuat pilihan makanan lebih sihat",
     placeholder: "Tanya makanan atau Tiga Tinggi...",
     send: "Hantar",
-    clearChat: "Kosongkan chat",
+    clearChat: "Kosongkan perbualan",
     clearConfirm: "Kosongkan perbualan ini?",
     copied: "Disalin.",
     copyReply: "Salin",
-    tryAgain: "Cuba lagi",
+    tryAgain: "Cuba semula",
     stopResponding: "Hentikan jawapan",
     responseStopped: "Jawapan dihentikan. Anda boleh tanya soalan lain pada bila-bila masa.",
     voiceStart: "Mulakan input suara",
@@ -214,8 +252,25 @@ const t = {
     photoFailed: "Maaf, saya tidak dapat menganalisis foto ini. Sila cuba lagi.",
     noFoodDetected: "Saya tidak dapat mengesan makanan dengan jelas. Sila cuba foto lain.",
     foundFoods: "Saya menjumpai makanan ini:",
+    foundCategories: "Kumpulan makanan dijumpai:",
     highNutrientSummary: "Sesetengah item mungkin tinggi lemak atau natrium.",
-    openFullAnalysis: "Buka Analisis Penuh",
+    openFullAnalysis: "Lihat Analisis Penuh",
+    addToMealPlan: "Tambah ke Pelan Makanan",
+    inMealPlan: "Ditambah ke Pelan Makanan",
+    tapAgainToRemove: "Ketuk lagi untuk buang",
+    removedFromMealPlan: "Dibuang daripada pelan makanan",
+    openLearnPage: "Buka Halaman Belajar",
+    openFoodPage: "Buka Halaman Makanan",
+    cartAdded: "ditambah ke pelan makanan anda.",
+    cartAlreadyIn: "sudah ada dalam pelan makanan anda.",
+    cartRemoved: "dibuang dari pelan makanan anda.",
+    cartNotIn: "tidak ada dalam pelan makanan anda.",
+    cartNotAvailable: "Makanan ini belum tersedia untuk perancangan makanan.",
+    cartNoContext: "Sila beritahu saya makanan yang ingin anda tambah dahulu.",
+    sitiResponding: "Siti sedang menjawab…",
+    stop: "Berhenti",
+    foodDetected: "Makanan dikesan",
+    disclaimer: "Panduan umum sahaja — sila berjumpa doktor untuk nasihat perubatan peribadi.",
     welcome:
       "Helo! Saya Siti, pembantu kesihatan SIHAT anda. Tanya saya tentang pilihan makanan, diabetes, atau Tiga Tinggi.",
     scanFound: "💡 Saya nampak anda telah mengimbas menu! Tanya saya tentang pilihan makanan anda untuk nasihat peribadi.",
@@ -226,55 +281,84 @@ const t = {
     ariaOpen: "Buka pembantu kesihatan",
     ariaClose: "Tutup pembantu kesihatan",
     suggestedQ: [
-      "Analisis foto makanan saya",
-      "Makanan apa yang lebih baik untuk diabetes?",
-      "Apa itu Tiga Tinggi?",
+      "Semak makanan atau menu saya",
+      "Bantu saya rancang makanan hari ini",
+      "Belajar tentang diabetes, tekanan darah & kolesterol",
     ],
+    foodCheckGuide:
+      "Saya boleh membantu menyemak pilihan makanan anda.\n\nAnda boleh:\n• Muat naik foto makanan\n• Muat naik foto menu\n• Ambil foto\n• Taip nama makanan\n\nSaya akan menganalisis makanan dan menerangkan:\n• Tahap risiko\n• Pilihan lebih sihat\n• Tips kesihatan",
+    mealPlanGuide:
+      "Saya boleh membantu anda merancang makanan lebih sihat untuk hari ini.\n\nAnda boleh:\n• Tambah makanan ke pelan makanan anda\n• Rancang sarapan, makan tengah hari dan makan malam\n• Pilih pilihan lebih sihat\n• Jejak pilihan lebih baik untuk Tiga Tinggi\n\nAnda boleh mula dengan:\n• Taip nama makanan\n• Buka Analisis Makanan\n• Atau pilih makanan dari halaman Makanan anda",
+    learnGuide:
+      "Saya boleh membantu anda belajar tentang:\n• Diabetes\n• Tekanan darah tinggi\n• Kolesterol",
     languageSwitched: "Mulai sekarang, saya akan menjawab dalam Bahasa Malaysia.",
   },
   zh: {
     title: "SIHAT 健康助手",
     subtitle: "帮助您选择更健康的食物",
-    placeholder: "询问食物或三高...",
+    placeholder: "询问食物或三高…",
     send: "发送",
-    clearChat: "清除聊天",
+    clearChat: "清除对话",
     clearConfirm: "清除这段对话？",
     copied: "已复制。",
     copyReply: "复制",
-    tryAgain: "再试一次",
-    stopResponding: "停止回复",
+    tryAgain: "重新回答",
+    stopResponding: "停止",
     responseStopped: "回复已停止。您可以随时再问问题。",
     voiceStart: "开始语音输入",
     voiceStop: "停止聆听",
-    listening: "正在录音... 再点一次即可停止",
+    listening: "正在录音… 再点一次即可停止",
     voiceNoSpeech: "我听不清楚，请再试一次。",
     scanFood: "分析我的食物照片",
     uploadFoodPhoto: "上传食物照片",
     imageUnsupported: "此设备不支持图片上传。",
     uploadPhotoUser: "已上传食物照片。",
-    maxPhotos: "最多5张照片",
+    maxPhotos: "最多 5 张照片",
     removePhoto: "移除照片",
     previewPhoto: "预览照片",
-    photoAnalysing: "正在分析您的食物照片...",
+    photoAnalysing: "正在分析您的食物照片…",
     photoFailed: "抱歉，我无法分析这张照片。请再试一次。",
     noFoodDetected: "我无法清楚识别食物。请换一张照片再试。",
     foundFoods: "我找到这些食物：",
-    highNutrientSummary: "有些食物可能脂肪或钠含量较高。",
-    openFullAnalysis: "打开完整分析",
+    foundCategories: "找到的食物类别：",
+    highNutrientSummary: "部分食物的脂肪或钠含量可能较高。",
+    openFullAnalysis: "查看完整食物分析",
+    addToMealPlan: "加入每日餐点计划",
+    inMealPlan: "已加入每日餐点计划",
+    tapAgainToRemove: "再次点击可移除",
+    removedFromMealPlan: "已从每日餐点计划中移除",
+    openLearnPage: "打开学习页面",
+    openFoodPage: "打开食物页面",
+    cartAdded: "已加入您的每日餐点计划。",
+    cartAlreadyIn: "已在您的每日餐点计划中。",
+    cartRemoved: "已从您的每日餐点计划中移除。",
+    cartNotIn: "不在您的每日餐点计划中。",
+    cartNotAvailable: "此食物暂时无法加入每日餐点计划。",
+    cartNoContext: "请先告诉我您想加入哪种食物。",
+    sitiResponding: "Siti 正在回复…",
+    stop: "停止",
+    foodDetected: "已检测到食物",
+    disclaimer: "仅供一般健康参考，个人医疗建议请咨询医生。",
     welcome:
       "您好！我是 Siti，您的 SIHAT 健康助手。您可以询问食物选择、糖尿病或三高相关问题。",
     scanFound: "💡 我看到您已扫描了菜单！向我询问您的食物选择，我将为您提供个性化建议。",
     noScan: "未找到食物扫描记录。请先扫描菜单以获取个性化建议！",
-    thinking: "思考中...",
+    thinking: "思考中…",
     errorRetry: "出现错误，请重试。",
     stillUnavailable: "抱歉，这个食物不在我们的食物列表中。",
     ariaOpen: "打开健康助手",
     ariaClose: "关闭健康助手",
     suggestedQ: [
-      "分析我的食物照片",
-      "哪些食物比较适合糖尿病？",
-      "什么是三高？",
+      "检查我的食物或菜单",
+      "帮我规划今天的饮食",
+      "了解糖尿病、血压和胆固醇",
     ],
+    foodCheckGuide:
+      "我可以帮您检查食物选择。\n\n您可以：\n• 上传食物照片\n• 上传菜单照片\n• 拍照\n• 输入食物名称\n\n我会分析食物并说明：\n• 风险等级\n• 更健康的选择\n• 健康建议",
+    mealPlanGuide:
+      "我可以帮您规划今天更健康的饮食。\n\n您可以：\n• 将食物加入您的每日餐点计划\n• 规划早餐、午餐和晚餐\n• 选择更健康的选项\n• 追踪三高的更好选择\n\n您可以从以下开始：\n• 输入食物名称\n• 查看食物分析\n• 或从您的食物页面选择食物",
+    learnGuide:
+      "我可以帮您了解：\n• 糖尿病\n• 高血压\n• 胆固醇",
     languageSwitched: "从现在开始，我将使用简体中文回答。",
   },
 } as const;
@@ -297,7 +381,55 @@ function readScanContext(): ScanContext | null {
 /** Generates a simple unique ID for messages */
 const STORAGE_KEY = "sihat_assistant_messages";
 const SCAN_CONTEXT_KEY = "sihat_scan_results";
+const ANALYSIS_SESSION_KEY = "sihat_analysis_session";
+const SCAN_CONTEXT_EVENT = "sihat_scan_results_changed";
 const MAX_CHAT_UPLOAD_IMAGES = 5;
+
+type AnalysisSessionCategory = "main" | "appetizer" | "dessert" | "drink";
+
+function getFirstAnalysisCategory(ctx: ScanContext): AnalysisSessionCategory | null {
+  const categoryMap: Array<[keyof Omit<ScanContext, "uniqueFoodCount">, AnalysisSessionCategory]> = [
+    ["Main Dish", "main"],
+    ["Appetizer", "appetizer"],
+    ["Dessert", "dessert"],
+    ["Drinks", "drink"],
+  ];
+  return categoryMap.find(([scanCategory]) => Boolean(ctx[scanCategory]?.ranking?.length))?.[1] ?? null;
+}
+
+function notifyScanContextChanged() {
+  window.dispatchEvent(new CustomEvent(SCAN_CONTEXT_EVENT, { detail: { source: "chatbot" } }));
+}
+
+function saveScanContext(raw: string, session?: { imagePreviews?: string[]; userText?: string; selectedCategory?: AnalysisSessionCategory | null }) {
+  sessionStorage.setItem(SCAN_CONTEXT_KEY, raw);
+  if (session) {
+    sessionStorage.setItem(ANALYSIS_SESSION_KEY, JSON.stringify({
+      result: JSON.parse(raw) as ScanContext,
+      imagePreviews: session.imagePreviews ?? [],
+      userText: session.userText ?? "",
+      selectedCategory: session.selectedCategory ?? null,
+      createdAt: Date.now(),
+      source: "chatbot",
+    }));
+  }
+  notifyScanContextChanged();
+}
+
+function clearStoredScanContext() {
+  sessionStorage.removeItem(SCAN_CONTEXT_KEY);
+  sessionStorage.removeItem(ANALYSIS_SESSION_KEY);
+  notifyScanContextChanged();
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 function hasScanContextItems(ctx: ScanContext | null): boolean {
   if (!ctx) return false;
@@ -327,8 +459,64 @@ function getScanFoodNames(ctx: ScanContext | null): string[] {
   return names;
 }
 
+function getFoodScanCategory(ctx: ScanContext, foodName: string): keyof Omit<ScanContext, "uniqueFoodCount"> | undefined {
+  const categories = ["Main Dish", "Appetizer", "Dessert", "Drinks"] as const;
+  return categories.find((cat) => ctx[cat]?.ranking?.some((item) => item.f === foodName));
+}
+
+function getLocalizedScanCategory(category: keyof Omit<ScanContext, "uniqueFoodCount">, lang: LangCode): string {
+  const labels = {
+    "Main Dish": { en: "Main Dish", ms: "Hidangan Utama", zh: "主食" },
+    Appetizer: { en: "Appetizer", ms: "Pembuka Selera", zh: "前菜" },
+    Dessert: { en: "Dessert", ms: "Pencuci Mulut", zh: "甜点" },
+    Drinks: { en: "Drinks", ms: "Minuman", zh: "饮料" },
+  } as const;
+  return labels[category][lang];
+}
+
+function getScanCategoryNames(ctx: ScanContext | null, lang: LangCode): string[] {
+  if (!ctx) return [];
+  return (["Main Dish", "Appetizer", "Dessert", "Drinks"] as const)
+    .filter((category) => Boolean(ctx[category]?.ranking?.length))
+    .map((category) => getLocalizedScanCategory(category, lang));
+}
+
 function hasHighFatOrSodium(ctx: ScanContext | null): boolean {
   return getScanFoodItems(ctx).some((item) => item.fat > 7 || item.salt > 600 || item.risk === "High");
+}
+
+function isHealthierComparisonRequest(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return [
+    "which one is healthier",
+    "which is healthier",
+    "healthier",
+    "better choice",
+    "best choice",
+    "lebih sihat",
+    "pilihan lebih baik",
+    "更健康",
+    "比较健康",
+    "哪一个比较好",
+  ].some((phrase) => normalized.includes(phrase));
+}
+
+function getLowestRiskFoodName(ctx: ScanContext | null): string | null {
+  const riskRank: Record<FoodItem["risk"], number> = { Low: 1, Medium: 2, High: 3 };
+  const items = getScanFoodItems(ctx).filter((item) => item.f?.trim());
+  if (!items.length) return null;
+  return [...items].sort((a, b) => riskRank[a.risk] - riskRank[b.risk])[0]?.f ?? null;
+}
+
+function isManualCategoryPrompt(reply: string, quickReplies?: string[]): boolean {
+  if (!quickReplies?.length) return false;
+  const normalizedReply = reply.toLowerCase();
+  return (
+    normalizedReply.includes("which category") ||
+    normalizedReply.includes("kategori") ||
+    normalizedReply.includes("哪一类") ||
+    normalizedReply.includes("类别")
+  );
 }
 
 function uid(): string {
@@ -408,6 +596,66 @@ function getUserMessageLanguage(message: string, fallback: LangCode): LangCode {
   return detectUserMessageLanguage(message) ?? fallback;
 }
 
+type OnboardingIntent = "food-check" | "meal-plan" | "learn";
+
+function getOnboardingIntent(message: string): OnboardingIntent | null {
+  const normalized = message.trim().toLowerCase();
+  const intentOrder: OnboardingIntent[] = ["food-check", "meal-plan", "learn"];
+  for (const translations of Object.values(t)) {
+    const index = translations.suggestedQ.findIndex((question) => question.toLowerCase() === normalized);
+    if (index >= 0) return intentOrder[index] ?? null;
+  }
+  return null;
+}
+
+function getMealPlanIntent(message: string): "add" | "remove" | null {
+  const n = normalizeLanguageText(message);
+
+  // Specific phrases that clearly mean add/remove even without a cart keyword
+  const addPhrases = [
+    "add it", "add this", "add that", "add food",
+    "帮我加进去", "帮我加入", "加进去", "加入这个", "加入这", "帮我加",
+    "tambahkan", "masukkan ini", "tambah ini",
+  ];
+  const removePhrases = [
+    "remove it", "remove this", "remove that",
+    "移除这个", "删掉这个", "删除这个",
+    "buang ini", "keluarkan ini",
+  ];
+
+  // Cart/plan target words
+  const cartTargets = ["cart", "meal plan", "pelan makanan", "pelan", "购物车", "饮食计划", "餐单"];
+  const hasCartTarget = cartTargets.some((kw) => n.includes(normalizeLanguageText(kw)));
+
+  // Verb groups
+  const addVerbs = ["add", "tambah", "masukkan", "simpan", "加"];
+  const removeVerbs = ["remove", "delete", "buang", "keluarkan", "移除", "删除"];
+  const hasAddVerb = addVerbs.some((v) => n.includes(normalizeLanguageText(v)));
+  const hasRemoveVerb = removeVerbs.some((v) => n.includes(normalizeLanguageText(v)));
+
+  const hasAddPhrase = addPhrases.some((p) => n.includes(normalizeLanguageText(p)));
+  const hasRemovePhrase = removePhrases.some((p) => n.includes(normalizeLanguageText(p)));
+
+  if ((hasRemoveVerb && hasCartTarget) || hasRemovePhrase) return "remove";
+  if ((hasAddVerb && hasCartTarget) || hasAddPhrase) return "add";
+  return null;
+}
+
+type FoodContext =
+  | { status: "available"; food: CartFoodItem }
+  | { status: "unavailable"; name: string }
+  | { status: "none" };
+
+function getLatestFoodContext(messages: Message[]): FoodContext {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== "assistant") continue;
+    if (msg.suggestions?.length) return { status: "available", food: msg.suggestions[0] };
+    if (msg.unavailableFoodName) return { status: "unavailable", name: msg.unavailableFoodName };
+  }
+  return { status: "none" };
+}
+
 function renderMessageContent(content: string) {
   return content.split("\n").map((line, index, lines) => {
     const lineBreak = index < lines.length - 1 ? <br /> : null;
@@ -438,10 +686,208 @@ function renderMessageContent(content: string) {
   });
 }
 
+// ─── FOOD SUMMARY CARD ────────────────────────────────────────────────────────
+
+interface ParsedFoodSummary {
+  risk: "low" | "medium" | "high";
+  goodPoints: string[];
+  tip: string;
+}
+
+function parseFoodSummary(content: string): ParsedFoodSummary | null {
+  const clean = content.replace(/^!HIGH_NUTRITION! /gm, "");
+  const lower = clean.toLowerCase();
+
+  let risk: "low" | "medium" | "high" | null = null;
+  if (
+    lower.includes("high-risk") || lower.includes("high risk") ||
+    lower.includes("risiko tinggi") || lower.includes("高风险") || lower.includes("高危")
+  ) risk = "high";
+  else if (
+    lower.includes("medium-risk") || lower.includes("medium risk") ||
+    lower.includes("risiko sederhana") || lower.includes("中等风险")
+  ) risk = "medium";
+  else if (
+    lower.includes("low-risk") || lower.includes("low risk") ||
+    lower.includes("risiko rendah") || lower.includes("低风险")
+  ) risk = "low";
+
+  if (!risk) return null;
+
+  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+  const goodPoints = lines
+    .filter((l) => /^[✅✓✔]/.test(l))
+    .map((l) => l.replace(/^[✅✓✔]\s*/, "").trim())
+    .filter(Boolean);
+
+  let tip = "";
+  for (const pattern of [
+    /Health Tips?[：:]\s*\n?([\s\S]+?)(?:\n\n|$)/i,
+    /Tip Kesihatan[：:]\s*\n?([\s\S]+?)(?:\n\n|$)/i,
+    /健康提示[：:]\s*\n?([\s\S]+?)(?:\n\n|$)/i,
+  ]) {
+    const m = clean.match(pattern);
+    if (m) { tip = m[1].trim(); break; }
+  }
+
+  return { risk, goodPoints, tip };
+}
+
+function FoodSummaryCard({ content, food, scanFood, lang }: {
+  content: string;
+  food?: CartFoodItem;
+  scanFood?: ScanFoodSummary;
+  lang: LangCode;
+}) {
+  const parsedFromText = parseFoodSummary(content);
+
+  // Photo scan path: structured data already extracted
+  if (scanFood) {
+    const riskKey = scanFood.risk.toLowerCase() as "low" | "medium" | "high";
+    const riskLabel = {
+      low:    { en: "Low Risk",    ms: "Risiko Rendah",    zh: "低风险"   },
+      medium: { en: "Medium Risk", ms: "Risiko Sederhana", zh: "中等风险" },
+      high:   { en: "High Risk",   ms: "Risiko Tinggi",    zh: "高风险"   },
+    }[riskKey][lang];
+    const riskStyle = {
+      low:    { color: "#065f46", bg: "#d1fae5", border: "#6ee7b7" },
+      medium: { color: "#92400e", bg: "#fef3c7", border: "#fcd34d" },
+      high:   { color: "#991b1b", bg: "#fee2e2", border: "#fca5a5" },
+    }[riskKey];
+    const tipHeader = lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health tip";
+
+    const categoryLabel = scanFood.category ? getLocalizedScanCategory(scanFood.category, lang) : null;
+
+    return (
+      <div style={{ whiteSpace: "normal", fontSize: "18px", lineHeight: "1.7" }}>
+        <p className="font-bold text-gray-800 mb-2" style={{ fontSize: "20px" }}>{scanFood.name}</p>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {categoryLabel && (
+            <span
+              className="inline-block rounded-full px-3 py-1 font-semibold"
+              style={{ background: "#e0f2fe", color: "#0369a1", border: "1.5px solid #7dd3fc", fontSize: "14px" }}
+            >
+              {categoryLabel}
+            </span>
+          )}
+          <span
+            className="inline-block rounded-full px-3 py-1 font-bold"
+            style={{ background: riskStyle.bg, color: riskStyle.color, border: `1.5px solid ${riskStyle.border}`, fontSize: "14px" }}
+          >
+            {riskLabel}
+          </span>
+        </div>
+        {scanFood.tip && (
+          <div className="rounded-xl px-4 py-3" style={{ background: "#ecfdf5", border: "1px solid #a7f3d0" }}>
+            <p className="font-semibold mb-1" style={{ fontSize: "13px", color: "#0a7a74", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              {tipHeader}
+            </p>
+            <p className="text-gray-800" style={{ fontSize: "17px", lineHeight: "1.65" }}>{scanFood.tip}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Text-chat path: parse the AI reply text
+  if (!parsedFromText || !food) return <>{renderMessageContent(content)}</>;
+
+  const parsed = parsedFromText;
+  const foodName = getCartFoodName(food, lang);
+  const categoryLabel = food.category ? getLocalizedCategory(food.category, lang) : null;
+
+  const riskLabel = {
+    low:    { en: "Low Risk",    ms: "Risiko Rendah",    zh: "低风险"   },
+    medium: { en: "Medium Risk", ms: "Risiko Sederhana", zh: "中等风险" },
+    high:   { en: "High Risk",   ms: "Risiko Tinggi",    zh: "高风险"   },
+  }[parsed.risk][lang];
+
+  const riskStyle = {
+    low:    { color: "#065f46", bg: "#d1fae5", border: "#6ee7b7" },
+    medium: { color: "#92400e", bg: "#fef3c7", border: "#fcd34d" },
+    high:   { color: "#991b1b", bg: "#fee2e2", border: "#fca5a5" },
+  }[parsed.risk];
+
+  const goodPointHeader = lang === "zh" ? "优点" : lang === "ms" ? "Kebaikan" : "Good point";
+  const tipHeader = lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health tip";
+
+  return (
+    <div style={{ whiteSpace: "normal", fontSize: "18px", lineHeight: "1.7" }}>
+      {/* Food name */}
+      <p className="font-bold text-gray-800 mb-2" style={{ fontSize: "20px" }}>
+        {foodName}
+      </p>
+
+      {/* Category + Risk badges */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {categoryLabel && (
+          <span
+            className="inline-block rounded-full px-3 py-1 font-semibold"
+            style={{ background: "#e0f2fe", color: "#0369a1", border: "1.5px solid #7dd3fc", fontSize: "14px" }}
+          >
+            {categoryLabel}
+          </span>
+        )}
+        <span
+          className="inline-block rounded-full px-3 py-1 font-bold"
+          style={{
+            background: riskStyle.bg,
+            color: riskStyle.color,
+            border: `1.5px solid ${riskStyle.border}`,
+            fontSize: "14px",
+          }}
+        >
+          {riskLabel}
+        </span>
+      </div>
+
+      {/* Good points */}
+      {parsed.goodPoints.length > 0 && (
+        <div className="mb-3">
+          <p
+            className="font-semibold text-gray-400 mb-1"
+            style={{ fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.05em" }}
+          >
+            {goodPointHeader}
+          </p>
+          {parsed.goodPoints.map((pt, i) => (
+            <p key={i} className="flex items-start gap-2 text-gray-800" style={{ fontSize: "18px" }}>
+              <span className="shrink-0 font-bold" style={{ color: "#059669" }}>✓</span>
+              <span>{pt}</span>
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Health tip */}
+      {parsed.tip && (
+        <div
+          className="rounded-xl px-4 py-3"
+          style={{ background: "#ecfdf5", border: "1px solid #a7f3d0" }}
+        >
+          <p
+            className="font-semibold mb-1"
+            style={{ fontSize: "13px", color: "#0a7a74", textTransform: "uppercase", letterSpacing: "0.05em" }}
+          >
+            {tipHeader}
+          </p>
+          <p className="text-gray-800" style={{ fontSize: "17px", lineHeight: "1.65" }}>
+            {parsed.tip}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function AIChatbot({ lang }: { lang: LangCode }) {
   const tx = t[lang] ?? t["en"];
+  // Tracks the language the conversation is actually happening in (may differ
+  // from the page lang when user types in another language).
+  const [conversationLang, setConversationLang] = useState<LangCode>(lang);
+  const ctx = t[conversationLang] ?? t["en"];
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -456,7 +902,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [messageImagePreviews, setMessageImagePreviews] = useState<Record<string, string[]>>({});
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [voiceNotice, setVoiceNotice] = useState("");
+  const [mealPlanToast, setMealPlanToast] = useState("");
   const { cart, addToCart, removeFromCart, clearCart, isInCart } = useCart();
 
   const pathname = usePathname();
@@ -525,6 +973,15 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
     return () => window.clearInterval(timerId);
   }, [isListening]);
+
+  useEffect(() => {
+    if (!previewImageUrl) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewImageUrl(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewImageUrl]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -607,17 +1064,19 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       const target = event.target instanceof Element ? event.target.closest("button") : null;
       const label = target?.textContent?.toLowerCase().replace(/\s+/g, " ").trim() ?? "";
       if (!label || !resetLabels.some((resetLabel) => label.includes(resetLabel))) return;
-      sessionStorage.removeItem(SCAN_CONTEXT_KEY);
+      clearStoredScanContext();
       lastScanContextRawRef.current = null;
       setScanContext(null);
     };
 
     syncScanContext();
     window.addEventListener("storage", handleStorage);
+    window.addEventListener(SCAN_CONTEXT_EVENT, syncScanContext);
     document.addEventListener("click", handleRecommendationResetClick, true);
 
     return () => {
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(SCAN_CONTEXT_EVENT, syncScanContext);
       document.removeEventListener("click", handleRecommendationResetClick, true);
     };
   }, [pathname]);
@@ -638,38 +1097,28 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     ]);
     lastRequestedLangRef.current = lang;
     conversationLangRef.current = lang;
+    setConversationLang(lang);
   }, [lang, isOpen, hasInitialised, tx]);
 
   // ─── SEND MESSAGE ───────────────────────────────────────────────────────────
 
-  const addSuggestedFood = useCallback(
+  const toggleSuggestedFood = useCallback(
     (food: CartFoodItem) => {
       const foodName = getCartFoodName(food, lang);
       const alreadyAdded = isInCart(food.name.en);
 
-      if (!alreadyAdded) {
+      if (alreadyAdded) {
+        const cartIndex = cart.findIndex((item) => item.name.en === food.name.en);
+        if (cartIndex !== -1) removeFromCart(cartIndex);
+        setMealPlanToast(`${foodName} ${t[conversationLang]?.removedFromMealPlan ?? t.en.removedFromMealPlan}`);
+        window.setTimeout(() => setMealPlanToast(""), 2500);
+      } else {
         addToCart(food);
       }
 
-      const confirmText = {
-        en: alreadyAdded
-          ? `${foodName} is already in your daily plan.`
-          : `${foodName} added to your daily plan.`,
-        ms: alreadyAdded
-          ? `${foodName} sudah ada dalam pelan harian anda.`
-          : `${foodName} ditambah ke pelan harian anda.`,
-        zh: alreadyAdded
-          ? `${foodName} 已经在您的每日计划中了。`
-          : `${foodName} 已添加到您的每日计划。`,
-      };
-
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: confirmText[lang], id: uid() },
-      ]);
       lastUnavailableRequestRef.current = null;
     },
-    [addToCart, isInCart, lang]
+    [addToCart, cart, isInCart, lang, removeFromCart]
   );
 
   const getFreshWelcomeMessages = useCallback((): Message[] => {
@@ -709,6 +1158,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     setVoiceNotice("");
     lastUnavailableRequestRef.current = null;
     conversationLangRef.current = lang;
+    setConversationLang(lang);
     lastRequestedLangRef.current = lang;
     const freshMessages = getFreshWelcomeMessages();
     setMessages(freshMessages);
@@ -719,21 +1169,84 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   }, [getFreshWelcomeMessages, lang, tx.clearConfirm]);
 
   const buildPhotoSummary = useCallback(
-    (ctx: ScanContext): string => {
+    (ctx: ScanContext, userText = ""): string => {
       const names = getScanFoodNames(ctx).slice(0, 5);
       const lines = [`${tx.foundFoods}`, ...names.map((name) => `• ${name}`)];
+      const categories = getScanCategoryNames(ctx, lang);
+      if (categories.length) {
+        lines.push("", tx.foundCategories, ...categories.map((category) => `• ${category}`));
+      }
+      const bestName = isHealthierComparisonRequest(userText) ? getLowestRiskFoodName(ctx) : null;
+      if (bestName) {
+        lines.push(
+          "",
+          lang === "zh"
+            ? `较健康的选择：${bestName}`
+            : lang === "ms"
+            ? `Pilihan yang lebih sihat: ${bestName}`
+            : `Healthier choice: ${bestName}`
+        );
+      }
       if (hasHighFatOrSodium(ctx)) {
         lines.push("", tx.highNutrientSummary);
       }
       return lines.join("\n");
     },
-    [tx.foundFoods, tx.highNutrientSummary]
+    [lang, tx.foundCategories, tx.foundFoods, tx.highNutrientSummary]
+  );
+
+  const buildAutomaticBestChoiceSummary = useCallback(
+    (ctx: ScanContext): string => {
+      const categories = getScanCategoryNames(ctx, lang);
+      const bestName = getLowestRiskFoodName(ctx);
+      const lines =
+        lang === "zh"
+          ? ["我已查看找到的食物。"]
+          : lang === "ms"
+          ? ["Saya telah menyemak makanan yang dijumpai."]
+          : ["I checked the foods I found."];
+
+      if (categories.length) {
+        lines.push("", tx.foundCategories, ...categories.map((category) => `• ${category}`));
+      }
+
+      if (bestName) {
+        lines.push(
+          "",
+          lang === "zh"
+            ? `较健康的选择：${bestName}`
+            : lang === "ms"
+            ? `Pilihan yang lebih sihat: ${bestName}`
+            : `Healthier choice: ${bestName}`
+        );
+      }
+
+      return lines.join("\n");
+    },
+    [lang, tx.foundCategories]
   );
 
   const openFullAnalysis = useCallback((href: string) => {
+    // If the user is already on the recommendation page, avoid a full navigation.
+    // Instead dispatch a custom event that tells the page to sync the latest
+    // chatbot result and smooth-scroll to the analysis result section.
+    if (pathname === "/recommendation") {
+      setIsOpen(false);
+      window.dispatchEvent(new CustomEvent("sihat_view_analysis"));
+      return;
+    }
+    const scanRaw = sessionStorage.getItem(SCAN_CONTEXT_KEY);
+    const sessionRaw = sessionStorage.getItem(ANALYSIS_SESSION_KEY);
+    console.log("[Chatbot] openFullAnalysis: scan context saved?", {
+      hasScanResult: !!scanRaw,
+      hasAnalysisSession: !!sessionRaw,
+      sessionSource: sessionRaw ? (JSON.parse(sessionRaw) as { source?: string }).source : null,
+    });
+    const separator = href.includes("?") ? "&" : "?";
+    const url = `${href}${separator}fromChatbot=1&ts=${Date.now()}`;
     setIsOpen(false);
-    router.push(href);
-  }, [router]);
+    router.push(url);
+  }, [pathname, router]);
 
   const handleImageUpload = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -803,8 +1316,12 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       setVoiceNotice("");
 
       try {
+        const imagePreviews = await Promise.all(
+          imagesToSend.map((image) => fileToDataUrl(image.file).catch(() => image.url))
+        );
         const formData = new FormData();
         imagesToSend.forEach((image) => formData.append("file", image.file));
+        if (text.trim()) formData.append("userText", text.trim());
         formData.append("language", lang);
 
         const res = await fetch("/api/predict", { method: "POST", body: formData });
@@ -814,7 +1331,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
         const data = (await res.json()) as ScanContext;
         if (!hasScanContextItems(data)) {
-          sessionStorage.removeItem(SCAN_CONTEXT_KEY);
+          clearStoredScanContext();
           lastScanContextRawRef.current = null;
           setScanContext(null);
           setMessages((prev) => [...prev, { role: "assistant", content: tx.noFoodDetected, id: uid() }]);
@@ -822,15 +1339,33 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         }
 
         const raw = JSON.stringify(data);
-        sessionStorage.setItem(SCAN_CONTEXT_KEY, raw);
+        saveScanContext(raw, {
+          imagePreviews,
+          userText: text.trim(),
+          selectedCategory: getFirstAnalysisCategory(data),
+        });
         lastScanContextRawRef.current = raw;
         setScanContext(data);
+
+        const scannedFoods = getScanFoodItems(data);
+        const singleFood = scannedFoods.length === 1 ? scannedFoods[0] : null;
+        const scanFood: ScanFoodSummary | undefined = singleFood
+          ? {
+              name: singleFood.f,
+              risk: singleFood.risk,
+              tip: typeof singleFood.tip === "object"
+                ? (singleFood.tip[lang] || singleFood.tip.en || "")
+                : (singleFood.tip ?? ""),
+              category: getFoodScanCategory(data, singleFood.f),
+            }
+          : undefined;
 
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content: buildPhotoSummary(data),
+            content: buildPhotoSummary(data, text),
+            scanFood,
             actionButton: { label: tx.openFullAnalysis, href: "/recommendation" },
             id: uid(),
           },
@@ -886,6 +1421,86 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
             id: uid(),
           }
         : null;
+      const onboardingIntent = !options?.retry ? getOnboardingIntent(trimmed) : null;
+
+      if (onboardingIntent) {
+        const userMsg: Message = { role: "user", content: trimmed, id: uid() };
+        const onboardingContent =
+          onboardingIntent === "food-check"
+            ? tx.foodCheckGuide
+            : onboardingIntent === "meal-plan"
+            ? tx.mealPlanGuide
+            : tx.learnGuide;
+        const onboardingActionButton =
+          onboardingIntent === "meal-plan"
+            ? { label: tx.openFoodPage, href: "/food" }
+            : onboardingIntent === "learn"
+            ? { label: tx.openLearnPage, href: "/learn" }
+            : undefined;
+        const assistantMsg: Message = {
+          role: "assistant",
+          content: onboardingContent,
+          ...(onboardingActionButton ? { actionButton: onboardingActionButton } : {}),
+          id: uid(),
+        };
+
+        setMessages((prev) => [
+          ...prev,
+          userMsg,
+          ...(typedLanguageSwitchMsg ? [typedLanguageSwitchMsg] : []),
+          assistantMsg,
+        ]);
+        conversationLangRef.current = messageLang;
+        setConversationLang(messageLang);
+        setInput("");
+        return;
+      }
+
+      // Intercept natural-language add/remove cart commands so the LLM never
+      // replies "I cannot access the cart." — we execute the real action instead.
+      const mealPlanIntent = !options?.retry ? getMealPlanIntent(trimmed) : null;
+      if (mealPlanIntent) {
+        const userMsg: Message = { role: "user", content: trimmed, id: uid() };
+        const foodCtx = getLatestFoodContext(messages);
+        let replyContent: string;
+
+        if (foodCtx.status === "none") {
+          replyContent = tx.cartNoContext;
+        } else if (foodCtx.status === "unavailable") {
+          replyContent = tx.cartNotAvailable;
+        } else {
+          // status === "available"
+          const food = foodCtx.food;
+          const foodName = getCartFoodName(food, messageLang);
+          if (mealPlanIntent === "add") {
+            if (isInCart(food.name.en)) {
+              replyContent = `${foodName} ${tx.cartAlreadyIn}`;
+            } else {
+              addToCart(food);
+              replyContent = `✓ ${foodName} ${tx.cartAdded}`;
+            }
+          } else {
+            const cartIndex = cart.findIndex((item) => item.name.en === food.name.en);
+            if (cartIndex === -1) {
+              replyContent = `${foodName} ${tx.cartNotIn}`;
+            } else {
+              removeFromCart(cartIndex);
+              replyContent = `✓ ${foodName} ${tx.cartRemoved}`;
+            }
+          }
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          userMsg,
+          ...(typedLanguageSwitchMsg ? [typedLanguageSwitchMsg] : []),
+          { role: "assistant", kind: "system", content: replyContent, id: uid() },
+        ]);
+        conversationLangRef.current = messageLang;
+        setConversationLang(messageLang);
+        setInput("");
+        return;
+      }
 
       if (!options?.retry && lastUnavailableRequestRef.current === repeatKey) {
         const userMsg: Message = { role: "user", content: trimmed, id: uid() };
@@ -896,6 +1511,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           { role: "assistant", content: tx.stillUnavailable, id: uid() },
         ]);
         conversationLangRef.current = messageLang;
+        setConversationLang(messageLang);
         setInput("");
         return;
       }
@@ -908,6 +1524,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         : [...messages, userMsg];
       setMessages(newMessages);
       conversationLangRef.current = messageLang;
+      setConversationLang(messageLang);
       setInput("");
       setIsLoading(true);
 
@@ -947,7 +1564,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         });
 
         const data = (await res.json()) as ChatResponse;
-        const reply = data.reply || tx.errorRetry;
+        const apiReply = data.reply || tx.errorRetry;
+        const categoryPrompt = isManualCategoryPrompt(apiReply, data.quickReplies) && hasScanContextItems(latestScanContext);
+        const reply = categoryPrompt ? buildAutomaticBestChoiceSummary(latestScanContext!) : apiReply;
+        const quickReplies = categoryPrompt ? undefined : data.quickReplies;
+        const actionButton = categoryPrompt ? { label: tx.openFullAnalysis, href: "/recommendation" } : undefined;
 
         if (data.action?.type === "add" && data.action.food) {
           // Guard against stale cart snapshot: don't add if already present
@@ -969,9 +1590,35 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           lastUnavailableRequestRef.current = null;
         }
 
+        // When the chat API directs the user to the recommendation page via a text
+        // query (data.actionButton from API, not the locally-built categoryPrompt one),
+        // write rec-text and clear any stale photo-scan context so the recommendation
+        // page auto-analyzes the text query instead of restoring old scan results.
+        if (
+          typeof window !== "undefined" &&
+          !categoryPrompt &&
+          data.actionButton?.href?.includes("/recommendation") &&
+          data.suggestions?.length
+        ) {
+          const names = data.suggestions.map((f) => getCartFoodName(f, messageLang)).join(", ");
+          sessionStorage.setItem("rec-text", names);
+          sessionStorage.removeItem(SCAN_CONTEXT_KEY);
+          sessionStorage.removeItem(ANALYSIS_SESSION_KEY);
+          setScanContext(null);
+          console.log("[Chatbot] Text query — pre-filled rec-text and cleared scan context:", names);
+        }
+
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: reply, suggestions: data.suggestions, quickReplies: data.quickReplies, id: uid() },
+          {
+            role: "assistant",
+            content: reply,
+            suggestions: data.suggestions,
+            unavailableFoodName: data.unavailableFoodName,
+            quickReplies,
+            actionButton: actionButton ?? data.actionButton,
+            id: uid(),
+          },
         ]);
       } catch {
         if (chatAbortRef.current?.signal.aborted) return;
@@ -985,7 +1632,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         setTimeout(() => inputRef.current?.focus(), 100);
       }
     },
-    [addToCart, analysePendingImages, cart, clearCart, isLoading, isPhotoAnalyzing, lang, messages, pendingImages.length, removeFromCart, tx]
+    [addToCart, analysePendingImages, buildAutomaticBestChoiceSummary, cart, clearCart, isLoading, isPhotoAnalyzing, lang, messages, pendingImages.length, removeFromCart, tx]
   );
 
   const stopResponding = useCallback(() => {
@@ -1180,7 +1827,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
               {hasScanContextItems(scanContext) && (
                 <span className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-emerald-100/70 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-900">
                   <Utensils className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {lang === "zh" ? "已检测到食物" : lang === "ms" ? "Makanan dikesan" : "Food detected"}
+                  {ctx.foodDetected}
                 </span>
               )}
               <button
@@ -1228,43 +1875,96 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                     {msg.role === "user" && messageImagePreviews[msg.id]?.length ? (
                       <div className="mb-2 grid grid-cols-1 gap-2">
                         {messageImagePreviews[msg.id].map((url, imageIndex) => (
-                          <img
+                          <button
                             key={`${msg.id}-${url}`}
-                            src={url}
-                            alt={`${tx.uploadPhotoUser} ${imageIndex + 1}`}
-                            className="block h-auto max-h-48 w-64 max-w-full rounded-xl border border-white/30 object-cover shadow-sm sm:w-72"
-                          />
+                            type="button"
+                            onClick={() => setPreviewImageUrl(url)}
+                            className="block max-w-full rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                            aria-label={`${tx.previewPhoto} ${imageIndex + 1}`}
+                            title={tx.previewPhoto}
+                          >
+                            <img
+                              src={url}
+                              alt={`${tx.uploadPhotoUser} ${imageIndex + 1}`}
+                              className="block h-auto max-h-48 w-64 max-w-full rounded-xl border border-white/30 object-cover shadow-sm sm:w-72"
+                            />
+                          </button>
                         ))}
                       </div>
                     ) : null}
-                    {renderMessageContent(msg.content)}
+                    {msg.role === "assistant" && (msg.scanFood || msg.suggestions?.length === 1)
+                      ? <FoodSummaryCard
+                          content={msg.content}
+                          food={msg.suggestions?.[0]}
+                          scanFood={msg.scanFood}
+                          lang={lang}
+                        />
+                      : renderMessageContent(msg.content)}
                     {msg.role === "assistant" &&
                     msg.starterQuestions?.length &&
                     !messages.some((message) => message.role === "user") &&
                     !isLoading &&
                     !isPhotoAnalyzing &&
                     !input.trim() ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {msg.starterQuestions.map((question) => (
+                      <div className="mt-3 grid w-full gap-2">
+                        {msg.starterQuestions.map((question, questionIndex) => {
+                          const StarterIcon = questionIndex === 0 ? Utensils : questionIndex === 1 ? ClipboardList : BookOpen;
+                          const isPrimaryStarter = questionIndex === 0;
+                          return (
                           <button
                             key={question}
                             type="button"
                             onClick={() => sendMessage(question)}
-                            className="min-h-11 rounded-full border px-3.5 py-2 text-left font-semibold transition-colors hover:bg-teal-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                            className="flex min-h-14 w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left font-semibold transition-colors hover:bg-teal-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                             style={{
-                              borderColor: "#99d3cf",
-                              color: "#075f59",
-                              background: "#f0faf9",
-                              fontSize: "15px",
+                              borderColor: isPrimaryStarter ? "#7bc7c1" : "#c7e2f0",
+                              color: isPrimaryStarter ? "#064e3b" : "#1f4f63",
+                              background: isPrimaryStarter ? "#ecfdf5" : "#f4fbfd",
+                              fontSize: "16px",
                               lineHeight: "1.35",
+                              boxShadow: isPrimaryStarter ? "0 1px 0 rgba(10,122,116,0.14)" : "none",
                             }}
                           >
-                            {question}
+                            <span
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                              style={{
+                                background: isPrimaryStarter ? "#d1fae5" : "#e6f4fa",
+                                color: isPrimaryStarter ? "#047a57" : "#1f6f88",
+                              }}
+                              aria-hidden="true"
+                            >
+                              <StarterIcon className="h-5 w-5" />
+                            </span>
+                            <span>{question}</span>
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>
+                  {msg.role === "assistant" && msg.actionButton ? (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => openFullAnalysis(msg.actionButton!.href)}
+                        className="min-h-12 rounded-xl border-2 px-4 py-3 font-bold shadow-sm transition-colors text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        style={{
+                          background: "linear-gradient(135deg, #0a7a74, #047a57)",
+                          borderColor: "#047a57",
+                          fontSize: "18px",
+                          lineHeight: "1.35",
+                        }}
+                      >
+                        {msg.actionButton.href === "/recommendation"
+                          ? ctx.openFullAnalysis
+                          : msg.actionButton.href === "/learn"
+                          ? ctx.openLearnPage
+                          : msg.actionButton.href === "/food"
+                          ? ctx.openFoodPage
+                          : msg.actionButton.label}
+                      </button>
+                    </div>
+                  ) : null}
                   {msg.role === "assistant" && msg.suggestions?.length ? (
                     <div className="mt-2 flex flex-col gap-2">
                       {msg.suggestions.map((food) => {
@@ -1274,20 +1974,27 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                           <button
                             key={food.name.en}
                             type="button"
-                            onClick={() => addSuggestedFood(food)}
-                            disabled={alreadyAdded}
-                            className="w-full min-h-12 rounded-xl border-2 px-4 py-3 text-left font-bold shadow-sm transition-colors disabled:cursor-default disabled:opacity-75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                            onClick={() => toggleSuggestedFood(food)}
+                            aria-pressed={alreadyAdded}
+                            className="w-full min-h-14 rounded-xl border-2 px-4 py-3 text-left font-bold shadow-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                             style={{
-                              borderColor: alreadyAdded ? "#047a57" : "#0a7a74",
-                              background: alreadyAdded ? "#ecfdf5" : "white",
-                              color: "#064e3b",
+                              borderColor: alreadyAdded ? "#16a34a" : "#22c55e",
+                              background: alreadyAdded ? "#dcfce7" : "white",
+                              color: "#14532d",
                               fontSize: "18px",
                               lineHeight: "1.35",
                             }}
                           >
                             <span className="flex items-center gap-2">
-                              {alreadyAdded ? <Check className="h-5 w-5 shrink-0" /> : <Plus className="h-5 w-5 shrink-0" />}
-                              <span>{alreadyAdded ? foodName : `+ ${foodName}`}</span>
+                              {alreadyAdded ? <Check className="h-5 w-5 shrink-0 text-green-600" /> : <Plus className="h-5 w-5 shrink-0" />}
+                              <span className="flex flex-col gap-0.5">
+                                <span>{alreadyAdded ? ` ${ctx.inMealPlan}: ${foodName}` : ` ${ctx.addToMealPlan}: ${foodName}`}</span>
+                                {alreadyAdded && (
+                                  <span style={{ fontSize: "13px", color: "#16a34a", fontWeight: "500" }}>
+                                    {ctx.tapAgainToRemove}
+                                  </span>
+                                )}
+                              </span>
                             </span>
                           </button>
                         );
@@ -1314,34 +2021,17 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                       ))}
                     </div>
                   ) : null}
-                  {msg.role === "assistant" && msg.actionButton ? (
-                    <div className="mt-2">
-                      <button
-                        type="button"
-                        onClick={() => openFullAnalysis(msg.actionButton!.href)}
-                        className="min-h-12 rounded-xl border-2 px-4 py-3 font-bold shadow-sm transition-colors text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                        style={{
-                          background: "linear-gradient(135deg, #0a7a74, #047a57)",
-                          borderColor: "#047a57",
-                          fontSize: "18px",
-                          lineHeight: "1.35",
-                        }}
-                      >
-                        {msg.actionButton.label}
-                      </button>
-                    </div>
-                  ) : null}
                   {msg.role === "assistant" && !msg.kind && getPreviousUserMessage(index) ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={() => copyAssistantMessage(msg.content)}
                         className="min-h-10 rounded-full px-3 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                        aria-label={tx.copyReply}
+                        aria-label={ctx.copyReply}
                       >
                         <span className="inline-flex items-center gap-1.5">
                           <Copy className="h-4 w-4" />
-                          {tx.copyReply}
+                          {ctx.copyReply}
                         </span>
                       </button>
                       <button
@@ -1349,11 +2039,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                         onClick={() => retryAssistantMessage(index)}
                         disabled={isLoading || isPhotoAnalyzing}
                         className="min-h-10 rounded-full px-3 py-1.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                        aria-label={tx.tryAgain}
+                        aria-label={ctx.tryAgain}
                       >
                         <span className="inline-flex items-center gap-1.5">
                           <RefreshCw className="h-4 w-4" />
-                          {tx.tryAgain}
+                          {ctx.tryAgain}
                         </span>
                       </button>
                     </div>
@@ -1381,7 +2071,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                   <div className="flex items-center gap-2">
                     <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#0a7a74" }} />
                     <span className="text-gray-600 font-medium" style={{ fontSize: "16px" }}>
-                      {isPhotoAnalyzing ? tx.photoAnalysing : lang === "zh" ? "Siti 正在回复..." : lang === "ms" ? "Siti sedang menjawab..." : "Siti is responding..."}
+                      {isPhotoAnalyzing ? ctx.photoAnalysing : ctx.sitiResponding}
                     </span>
                   </div>
                   {isLoading && !isPhotoAnalyzing && (
@@ -1391,11 +2081,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                         onClick={stopResponding}
                         className="min-h-10 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                         style={{ borderColor: "#d1d5db", color: "#4b5563", background: "#f9fafb" }}
-                        aria-label={tx.stopResponding}
+                        aria-label={ctx.stopResponding}
                       >
                         <span className="inline-flex items-center gap-1.5">
                           <Square className="h-3.5 w-3.5" />
-                          {lang === "zh" ? "停止" : lang === "ms" ? "Henti" : "Stop"}
+                          {ctx.stop}
                         </span>
                       </button>
                     </div>
@@ -1406,6 +2096,18 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
             <div ref={messagesEndRef} />
           </div>
+
+          {/* ── Meal Plan Toast ── */}
+          {mealPlanToast && (
+            <div
+              className="px-4 py-3 shrink-0 flex items-center gap-2 font-semibold"
+              style={{ background: "#dcfce7", borderTop: "1.5px solid #86efac", color: "#14532d", fontSize: "16px" }}
+              aria-live="polite"
+            >
+              <Check className="h-5 w-5 shrink-0 text-green-600" aria-hidden="true" />
+              {mealPlanToast}
+            </div>
+          )}
 
           {/* ── Input Area ── */}
           <div className="px-4 py-3 bg-white border-t border-gray-200 shrink-0">
@@ -1544,14 +2246,42 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           <div className="px-4 py-3 shrink-0" style={{ background: "#ecfdf5", borderTop: "1.5px solid #6ee7b7" }}>
             <p className="text-center font-semibold" style={{ fontSize: "14px", color: "#064e3b" }}>
               🩺{" "}
-              {lang === "zh"
-                ? "以上仅为一般性建议——如需个人医疗建议，请咨询您的医生。"
-                : lang === "ms"
-                ? "Panduan umum sahaja — sila rujuk doktor anda untuk nasihat peribadi."
-                : "General guidance only — please consult your doctor for personal medical advice."}
+              {ctx.disclaimer}
             </p>
           </div>
         </div>
+        {previewImageUrl && (
+          <div
+            className="fixed inset-0 flex items-start justify-center overflow-y-auto bg-black/60 px-4 pb-6"
+            style={{ zIndex: 90, paddingTop: "calc(5.5rem + env(safe-area-inset-top))" }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={tx.previewPhoto}
+            onClick={() => setPreviewImageUrl(null)}
+          >
+            <div
+              className="relative w-full"
+              style={{ maxWidth: "min(90vw, 520px)" }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setPreviewImageUrl(null)}
+                className="absolute right-3 top-3 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-white text-gray-800 shadow-lg transition-colors hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                aria-label={tx.ariaClose}
+                title={tx.ariaClose}
+              >
+                <X className="h-7 w-7" />
+              </button>
+              <img
+                src={previewImageUrl}
+                alt={tx.uploadPhotoUser}
+                className="mx-auto h-auto w-auto max-w-full rounded-2xl border border-white/20 bg-white object-contain shadow-2xl"
+                style={{ maxHeight: "calc(100vh - 8.5rem - env(safe-area-inset-top))" }}
+              />
+            </div>
+          </div>
+        )}
         </>
       )}
     </>
