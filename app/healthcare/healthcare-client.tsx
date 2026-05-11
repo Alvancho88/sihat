@@ -23,10 +23,14 @@ const content = {
     consent_desc: "We can sort clinics by distance if you share your location. Your location is never stored.",
     consent_allow: "Yes, Use My Location",
     consent_deny: "No Thanks, Search Manually",
-    search_placeholder: "Search by clinic name or area…",
+    search_placeholder: "Search clinic or area…",
     filter_state: "All States",
     filter_sector: "All Sectors",
     filter_specialty: "All Specialties",
+    label_state: "State",
+    label_sector: "Sector",
+    label_specialty: "Specialty",
+    filters_label: "Filters:",
     sector_public: "Public",
     sector_private: "Private",
     specialty_diabetes: "Diabetes",
@@ -61,10 +65,14 @@ const content = {
     consent_desc: "Kami boleh menyusun klinik mengikut jarak jika anda berkongsi lokasi anda. Lokasi anda tidak disimpan.",
     consent_allow: "Ya, Guna Lokasi Saya",
     consent_deny: "Tidak, Cari Manual",
-    search_placeholder: "Cari nama klinik atau kawasan…",
+    search_placeholder: "Cari klinik atau kawasan",
     filter_state: "Semua Negeri",
     filter_sector: "Semua Sektor",
     filter_specialty: "Semua Kepakaran",
+    label_state: "Negeri",
+    label_sector: "Sektor",
+    label_specialty: "Kepakaran",
+    filters_label: "Tapis:",
     sector_public: "Awam",
     sector_private: "Swasta",
     specialty_diabetes: "Diabetes",
@@ -103,6 +111,10 @@ const content = {
     filter_state: "所有州属",
     filter_sector: "所有类型",
     filter_specialty: "所有专科",
+    label_state: "州属",
+    label_sector: "类型",
+    label_specialty: "专科",
+    filters_label: "筛选：",
     sector_public: "公立",
     sector_private: "私立",
     specialty_diabetes: "糖尿病",
@@ -279,24 +291,29 @@ function FacilityCard({ facility, t }: { facility: FacilityWithDistance; t: type
 }
 
 // ─── SelectField ─────────────────────────────────────────────────────────────
-
-function SelectField({ value, onChange, icon: Icon, children }: {
+function SelectField({ value, onChange, icon: Icon, label, children }: {
   value: string
   onChange: (v: string) => void
   icon: React.ElementType
+  label: string
   children: React.ReactNode
 }) {
   return (
-    <div className="relative flex-1 min-w-0">
-      <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none pl-10 pr-9 py-3.5 rounded-xl border-2 border-border focus:border-primary focus:outline-none bg-background text-base cursor-pointer font-medium"
-      >
-        {children}
-      </select>
-      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
+    <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+      <label className="flex items-center gap-1.5 text-base font-semibold text-muted-foreground px-1">
+        <Icon className="w-4 h-4 shrink-0" />
+        {label}
+      </label>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full appearance-none pl-4 pr-9 py-3.5 rounded-xl border-2 border-border focus:border-primary focus:outline-none bg-background text-base cursor-pointer font-medium"
+        >
+          {children}
+        </select>
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
+      </div>
     </div>
   )
 }
@@ -514,7 +531,7 @@ export function HealthcareClient({ facilities}: Props) {
                   placeholder={t.search_placeholder}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-12 pr-12 py-3.5 rounded-xl border-2 border-border focus:border-primary focus:outline-none bg-background text-base sm:text-lg"
+                  className="w-full pl-12 pr-12 py-3.5 rounded-xl border-2 border-border focus:border-primary focus:outline-none bg-background text-base sm:text-lg truncate"
                 />
                 {search && (
                   <button
@@ -528,41 +545,43 @@ export function HealthcareClient({ facilities}: Props) {
               </div>
 
               {/* Filter row */}
-              <div className="flex flex-wrap gap-3 items-center">
-                <div className="flex items-center gap-2 text-muted-foreground shrink-0">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
                   <SlidersHorizontal className="w-5 h-5" />
-                  <span className="text-base font-medium hidden sm:inline">Filters:</span>
+                  <span className="text-sm font-semibold">{t.filters_label}</span>
                 </div>
 
-                {/* State */}
-                <SelectField value={selectedState} onChange={setSelectedState} icon={MapPin}>
-                  <option value="">{t.filter_state}</option>
-                  {stateOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                </SelectField>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* State */}
+                  <SelectField value={selectedState} onChange={setSelectedState} icon={MapPin} label={t.label_state}>
+                    <option value="">{t.filter_state}</option>
+                    {stateOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </SelectField>
 
-                {/* Sector */}
-                <SelectField value={selectedSector} onChange={setSelectedSector} icon={Building2}>
-                  <option value="">{t.filter_sector}</option>
-                  <option value="Public">{t.sector_public}</option>
-                  <option value="Private">{t.sector_private}</option>
-                </SelectField>
+                  {/* Sector */}
+                  <SelectField value={selectedSector} onChange={setSelectedSector} icon={Building2} label={t.label_sector}>
+                    <option value="">{t.filter_sector}</option>
+                    <option value="public">{t.sector_public}</option>
+                    <option value="private">{t.sector_private}</option>
+                  </SelectField>
 
-                {/* Specialty */}
-                <SelectField value={selectedSpecialty} onChange={setSelectedSpecialty} icon={Filter}>
-                  <option value="">{t.filter_specialty}</option>
-                  <option value="diabetes">{t.specialty_diabetes}</option>
-                  <option value="bp">{t.specialty_bp}</option>
-                  <option value="cholesterol">{t.specialty_cholesterol}</option>
-                </SelectField>
+                  {/* Specialty */}
+                  <SelectField value={selectedSpecialty} onChange={setSelectedSpecialty} icon={Filter} label={t.label_specialty}>
+                    <option value="">{t.filter_specialty}</option>
+                    <option value="diabetes">{t.specialty_diabetes}</option>
+                    <option value="bp">{t.specialty_bp}</option>
+                    <option value="cholesterol">{t.specialty_cholesterol}</option>
+                  </SelectField>
+                </div>
 
-                {/* Clear */}
+                {/* Clear — full width on mobile, auto width on desktop */}
                 {hasActiveFilters && (
                   <button
                     onClick={clearFilters}
-                    className="flex items-center gap-2 px-4 py-3.5 border-2 border-border rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors font-semibold text-base shrink-0"
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 border-2 border-border rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors font-semibold text-base"
                   >
                     <X className="w-5 h-5" />
-                    <span className="hidden sm:inline">{t.clear_filters}</span>
+                    {t.clear_filters}
                   </button>
                 )}
               </div>
