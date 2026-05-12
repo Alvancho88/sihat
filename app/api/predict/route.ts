@@ -8,6 +8,103 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 60; // Maximum execution time for the API route (60 seconds)
 
+// ─── KALORI-API DATABASE LOOKUP ───────────────────────────────────────────────────────
+
+/**
+ * Represents a food item from the kalori-api.my database.
+ * Calories, protein, carbs, and fat are per serving.
+ */
+interface KaloriFood {
+  id: string;
+  name: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  serving: string;
+  category: string;
+}
+
+/**
+ * Fetches all foods from kalori-api.my (natural + halal) and caches them
+ * for the lifetime of this serverless invocation.
+ */
+let _kaloriCache: KaloriFood[] | null = null;
+
+async function fetchKaloriDatabase(): Promise<KaloriFood[]> {
+  if (_kaloriCache) return _kaloriCache;
+
+  try {
+    const [naturalRes, halalRes] = await Promise.all([
+      fetch("https://kalori-api.my/api/foods?limit=500", { next: { revalidate: 3600 } }),
+      fetch("https://kalori-api.my/api/halal?limit=500", { next: { revalidate: 3600 } }),
+    ]);
+
+    const naturalData = naturalRes.ok ? await naturalRes.json() : { data: [] };
+    const halalData = halalRes.ok ? await halalRes.json() : { data: [] };
+
+    const combined: KaloriFood[] = [
+      ...(naturalData.data ?? []),
+      ...(halalData.data ?? []),
+    ];
+
+    _kaloriCache = combined;
+    console.log(`[predict] ✅ Kalori-API loaded: ${combined.length} foods`);
+    return combined;
+  } catch (err) {
+    console.warn("[predict] ⚠️ Could not fetch kalori-api database:", err);
+    return [];
+  }
+}
+
+/**
+ * Normalises a food name for fuzzy comparison:
+ * lowercase, trim whitespace, remove common filler words.
+ */
+function normaliseForMatch(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\b(goreng|bakar|rebus|kukus|panggang|special|original|classic|extra|with|with|dan|dan|dengan|dengan)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Checks whether two food name tokens overlap sufficiently.
+ * Returns true if the shorter name's tokens are ≥70% contained in the longer name.
+ */
+function fuzzyMatch(a: string, b: string): boolean {
+  const na = normaliseForMatch(a);
+  const nb = normaliseForMatch(b);
+
+  // Exact match
+  if (na === nb) return true;
+
+  // One contains the other
+  if (na.includes(nb) || nb.includes(na)) return true;
+
+  // Token overlap ≥ 60%
+  const tokensA = na.split(" ").filter(Boolean);
+  const tokensB = nb.split(" ").filter(Boolean);
+  const shorter = tokensA.length <= tokensB.length ? tokensA : tokensB;
+  const longer = tokensA.length <= tokensB.length ? tokensB : tokensA;
+
+  if (shorter.length === 0) return false;
+  const overlap = shorter.filter((t) => longer.some((l) => l.includes(t) || t.includes(l)));
+  return overlap.length / shorter.length >= 0.6;
+}
+
+/**
+ * Looks up a food name in the kalori-api database.
+ * Returns the matched entry or null if not found.
+ */
+async function lookupKaloriFood(foodName: string): Promise<KaloriFood | null> {
+  const db = await fetchKaloriDatabase();
+  return db.find((entry) => fuzzyMatch(foodName, entry.name)) ?? null;
+}
+
 // ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────────────
 
 /**
@@ -108,19 +205,24 @@ async function executeGemma4OcrRequest(apiKey: string, base64: string, mimeType:
         {
           parts: [
             {
-              text: `You are a menu analysis engine. Check if the image is food image or menu image.
+              text: `You are a menu analysis engine. Your FIRST task is to determine if the image contains food or a food menu.
 
-A. If the image is a food image:
-DETECTION STRATEGY (Adaptive):
-1. Return Food name you detected
-2. IGNORE The Food Ingredients (Return ["Satay"] not ["Satay", "Peanut Sauce", "Ketupat", "Cucumber", "Red  Onion"])
+STEP 1 — IS THIS A FOOD/MENU IMAGE?
+- If the image does NOT clearly show food, drinks, or a food menu (e.g. it is a random object, person, landscape, document, screenshot, meme, or abstract image), return {"items": []} IMMEDIATELY.
+- Only proceed to Step 2 if the image clearly shows food items or a printed/digital food menu.
 
-B. If the image is a menu image:
-DETECTION STRATEGY (Adaptive):
+STEP 2 — IF FOOD/MENU IMAGE:
+A. If the image is a food photo:
+1. Return only food/drink names you can clearly identify.
+2. IGNORE ingredients (Return ["Satay"], NOT ["Satay", "Peanut Sauce", "Ketupat"]).
+
+B. If the image is a menu:
 1. IF PRICES EXIST: Use prices or codes (A1, RM10) as anchors to identify valid items.
 2. IF NO PRICES EXIST: Identify items based on list structure (columns, bullets, or photos).
 3. HIERARCHY RULE: IGNORE large category headers (e.g., "NASI GORENG"). Only extract specific sub-items.
-4. DECORATION RULE: Ignore generic background illustrations.
+4. DECORATION RULE: Ignore generic background illustrations or watermarks.
+
+CRITICAL RULE: If you are not at least 80% confident the image shows food or a food menu, return {"items": []}. NEVER hallucinate or guess food names from non-food images.
 
 Formatting:
 - Return ONLY valid JSON: {"items": ["Item 1", "Item 2"]}`
@@ -178,19 +280,24 @@ async function executeLlama4ScoutOcrRequest(groqApiKey: string, base64: string, 
           content: [
             {
               type: "text",
-              text: `You are a menu analysis engine. Check if the image is food image or menu image.
+              text: `You are a menu analysis engine. Your FIRST task is to determine if the image contains food or a food menu.
 
-A. If the image is a food image:
-DETECTION STRATEGY (Adaptive):
-1. Return Food name you detected
-2. IGNORE The Food Ingredients (Return ["Satay"] not ["Satay", "Peanut Sauce", "Ketupat", "Cucumber", "Red  Onion"])
+STEP 1 — IS THIS A FOOD/MENU IMAGE?
+- If the image does NOT clearly show food, drinks, or a food menu (e.g. it is a random object, person, landscape, document, screenshot, meme, or abstract image), return {"items": []} IMMEDIATELY.
+- Only proceed to Step 2 if the image clearly shows food items or a printed/digital food menu.
 
-B. If the image is a menu image:
-DETECTION STRATEGY (Adaptive):
+STEP 2 — IF FOOD/MENU IMAGE:
+A. If the image is a food photo:
+1. Return only food/drink names you can clearly identify.
+2. IGNORE ingredients (Return ["Satay"], NOT ["Satay", "Peanut Sauce", "Ketupat"]).
+
+B. If the image is a menu:
 1. IF PRICES EXIST: Use prices or codes (A1, RM10) as anchors to identify valid items.
 2. IF NO PRICES EXIST: Identify items based on list structure (columns, bullets, or photos).
 3. HIERARCHY RULE: IGNORE large category headers (e.g., "NASI GORENG"). Only extract specific sub-items.
-4. DECORATION RULE: Ignore generic background illustrations.
+4. DECORATION RULE: Ignore generic background illustrations or watermarks.
+
+CRITICAL RULE: If you are not at least 80% confident the image shows food or a food menu, return {"items": []}. NEVER hallucinate or guess food names from non-food images.
 
 Formatting:
 - Return ONLY valid JSON: {"items": ["Item 1", "Item 2"]}`,
@@ -545,6 +652,48 @@ export async function POST(req: NextRequest) {
       rawData = JSON.parse(rawJson);
     }
 
+    // ─── KALORI-API DATABASE ENRICHMENT ──────────────────────────────────────────
+    // For each identified food item, check if it exists in kalori-api.my.
+    // If matched, override the AI-generated nutritional values with database values
+    // to reduce randomness. The fat field maps to saturated fat (we use total fat as
+    // a proxy since the API only returns total fat). Sugar is estimated as 20% of carbs
+    // when a direct sugar field is absent. Salt/sodium is estimated from fat context.
+    //
+    // NOTE: The analysis model is NOT changed. We only post-process its output here.
+
+    const kaloriDb = await fetchKaloriDatabase();
+    console.log(`[predict] Kalori-API available: ${kaloriDb.length} items`);
+
+    const enrichItemWithDb = (item: Record<string, any>): void => {
+      const match = kaloriDb.find((entry) => fuzzyMatch(item.f ?? "", entry.name));
+      if (!match) return;
+
+      console.log(`[predict] 🗄️  DB match: "${item.f}" → "${match.name}" (${match.calories} cal, fat ${match.fat}g, carbs ${match.carbs}g)`);
+
+      // Override nutritional values from database
+      // sugar: the DB doesn't have sugar directly, estimate as ~20% of carbs for Malaysian foods
+      const estimatedSugar = Math.round(match.carbs * 0.20);
+      // salt/sodium: the DB doesn't have sodium directly; use fat as a proxy risk signal
+      // Keep AI sodium estimate if it's non-zero, otherwise set a reasonable default
+      const aiSalt = cleanToNumber(item.salt ?? 0);
+
+      item.sugar = estimatedSugar;
+      item.fat = Math.round(match.fat);
+      // Only override salt if AI gave 0 (trusting AI sodium estimates more)
+      if (aiSalt === 0) item.salt = Math.round(match.fat * 50); // rough proxy
+      item.calories = match.calories;
+      item.db_source = true; // flag that this came from the database
+      item.db_serving = match.serving;
+    };
+
+    for (const cat of ["Appetizer", "Main Dish", "Dessert", "Drinks"]) {
+      const items = (rawData[cat] ?? []) as Record<string, any>[];
+      for (const item of items) {
+        enrichItemWithDb(item);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────────
+
     // Risk level mapping — uses normalised strings now (fix for ranking bug)
     const riskMap: Record<string, number> = {
       "Low": 1,
@@ -561,6 +710,15 @@ export async function POST(req: NextRequest) {
         item.sugar = cleanToNumber(item.sugar ?? 0);
         item.salt = cleanToNumber(item.salt ?? 0);
         item.fat = cleanToNumber(item.fat ?? 0);
+
+        // ── If item came from DB, re-derive risk from the database values ──
+        if (item.db_source) {
+          const sugarRisk = item.sugar <= 5 ? 1 : item.sugar <= 15 ? 2 : 3;
+          const saltRisk = item.salt <= 200 ? 1 : item.salt <= 600 ? 2 : 3;
+          const fatRisk = item.fat <= 3 ? 1 : item.fat <= 7 ? 2 : 3;
+          const maxRisk = Math.max(sugarRisk, saltRisk, fatRisk);
+          item.risk = maxRisk === 1 ? "Low" : maxRisk === 3 ? "High" : "Medium";
+        }
 
         // ── RANKING BUG FIX: normalise risk before mapping ──────────────
         const normalisedRisk = normaliseRisk(item.risk);

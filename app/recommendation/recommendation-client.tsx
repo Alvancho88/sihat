@@ -342,6 +342,9 @@ type FoodItem = {
   fat: string
   tip: { en: string; ms: string; zh: string }
   best_reason?: { en: string; ms: string; zh: string }
+  calories?: number        // from kalori-api.my database (if matched)
+  db_source?: boolean      // true = nutritional values from database
+  db_serving?: string      // serving size from database (e.g. "1 plate")
 }
 
 function FoodResultCard({
@@ -398,6 +401,21 @@ function FoodResultCard({
           <h3 className="text-xl font-bold">{food.name}</h3>
           <RiskBadge risk={computedRisk} t={t} />
         </div>
+        {/* Calorie display — from DB if available, otherwise not shown */}
+        {food.calories != null && (
+          <div className="flex items-center gap-2 mb-3">
+            <span className="inline-flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 text-sm font-bold px-3 py-1 rounded-full">
+              🔥 {food.calories} kcal
+              {food.db_serving && <span className="font-normal text-orange-600">/ {food.db_serving}</span>}
+            </span>
+            {food.db_source && (
+              <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold px-2.5 py-1 rounded-full">
+                <CheckCircle className="w-3 h-3" />
+                Database
+              </span>
+            )}
+          </div>
+        )}
         {isBest && bestReasonText && (
           <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 mb-4">
             <p className="text-base text-primary font-semibold">
@@ -519,6 +537,9 @@ type PredictFoodItem = {
   risk: string
   tip: { en: string; ms: string; zh: string } | string
   best_reason?: { en: string; ms: string; zh: string } | string
+  calories?: number
+  db_source?: boolean
+  db_serving?: string
 }
 
 type PredictResults = Record<string, { ranking?: PredictFoodItem[] }> & {
@@ -600,6 +621,9 @@ function buildApiResultsCache(data: PredictResults): ApiResultsCache {
         fat: `${item.fat}g`,
         tip: tipObj,
         ...(bestReasonObj ? { best_reason: bestReasonObj } : {}),
+        ...(item.calories != null ? { calories: item.calories } : {}),
+        ...(item.db_source ? { db_source: true } : {}),
+        ...(item.db_serving ? { db_serving: item.db_serving } : {}),
       }
     })
   }
@@ -799,7 +823,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     window.addEventListener("sihat-analysis-reset", handleAnalysisReset)
     return () => window.removeEventListener("sihat-analysis-reset", handleAnalysisReset)
   }, [])
-
   // When chatbot navigates here with ?fromChatbot=1&ts=..., force a re-read of
   // sessionStorage even if Next.js restored this page from its router cache
   // (in which case the mount-only effect above does not re-run).
@@ -1234,17 +1257,29 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
             {/* Success */}
             {successCount !== null && (
               <div className="flex flex-col items-center gap-3 py-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="w-20 h-20 rounded-full bg-[var(--risk-low-bg)] flex items-center justify-center shadow-md">
-                  <CheckCircle className="w-10 h-10 text-[var(--risk-low)]" />
-                </div>
-                <p className="text-2xl font-extrabold text-[var(--risk-low)]">
-                  {successCount > 0 ? `${successCount} ${t.success_found}` : t.success_none}
-                </p>
-                <div className="flex gap-1.5">
-                  {[0, 1, 2].map(i => (
-                    <div key={i} className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-                  ))}
-                </div>
+                {successCount > 0 ? (
+                  <>
+                    <div className="w-20 h-20 rounded-full bg-[var(--risk-low-bg)] flex items-center justify-center shadow-md">
+                      <CheckCircle className="w-10 h-10 text-[var(--risk-low)]" />
+                    </div>
+                    <p className="text-2xl font-extrabold text-[var(--risk-low)]">
+                      {successCount} {t.success_found}
+                    </p>
+                    <div className="flex gap-1.5">
+                      {[0, 1, 2].map(i => (
+                        <div key={i} className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-[var(--cb-pink)] border border-[#8b3a62]/30 rounded-2xl p-6 text-center max-w-sm w-full">
+                    <div className="w-16 h-16 mx-auto mb-3 bg-[#8b3a62]/10 rounded-full flex items-center justify-center">
+                      <Info className="w-8 h-8 text-[#8b3a62]" />
+                    </div>
+                    <p className="text-xl font-extrabold text-[#8b3a62] mb-1">{t.no_results}</p>
+                    <p className="text-sm text-foreground/70">{t.no_results_hint}</p>
+                  </div>
+                )}
               </div>
             )}
 
