@@ -486,10 +486,15 @@ export function HealthcareClient({ facilities}: Props) {
                     </button>
                     <button
                       onClick={handleDenyLocation}
-                      className="w-full flex items-center justify-center gap-3 border-2 border-border font-bold py-4 text-xl rounded-2xl hover:bg-muted active:scale-[0.98] transition-all"
+                      className="w-full border-2 border-border font-bold py-4 text-xl rounded-2xl hover:bg-muted active:scale-[0.98] transition-all px-6"
                     >
-                      <Search className="w-6 h-6" />
-                      {t.consent_deny}
+                      <span className="flex items-center justify-center">
+                        <Search className="w-6 h-6 shrink-0 mr-2" />
+                        <span className="text-center leading-tight">
+                          {t.consent_deny}
+                        </span>
+                        <div className="w-6 mr-[-14px]" aria-hidden="true" />
+                      </span>
                     </button>
                   </div>
                 </div>
