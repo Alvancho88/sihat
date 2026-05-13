@@ -107,8 +107,8 @@ const content = {
     in_meal_plan: "In Meal Plan",
     added_to_meal_plan: "Added to your meal plan",
     removed_from_meal_plan: "Removed from your meal plan",
-    meal_plan_unavailable: "Meal planning unavailable",
-    meal_plan_unavailable_hint: "This food is not yet available in the meal planner.",
+    meal_plan_unavailable: "AI-generated food analysis",
+    meal_plan_unavailable_hint: "This food is not currently in the SIHAT food database. The nutrition information and health advice shown here are estimated by AI and may not be fully accurate.",
     // Action sheet
     sheet_title: "Add Photo",
     sheet_camera: "Take Photo",
@@ -197,8 +197,8 @@ const content = {
     in_meal_plan: "Dalam Pelan Makanan",
     added_to_meal_plan: "Ditambah ke pelan makanan anda",
     removed_from_meal_plan: "Dikeluarkan daripada pelan makanan anda",
-    meal_plan_unavailable: "Perancangan makanan tidak tersedia",
-    meal_plan_unavailable_hint: "Makanan ini belum tersedia dalam perancang makanan.",
+    meal_plan_unavailable: "Analisis makanan jana AI",
+    meal_plan_unavailable_hint: "Makanan ini tidak terdapat dalam pangkalan data makanan SIHAT. Maklumat pemakanan dan nasihat kesihatan yang ditunjukkan di sini dianggarkan oleh AI dan mungkin tidak sepenuhnya tepat.",
     sheet_title: "Tambah Foto",
     sheet_camera: "Ambil Foto",
     sheet_gallery: "Pilih dari Galeri",
@@ -286,8 +286,8 @@ const content = {
     in_meal_plan: "已在饮食计划中",
     added_to_meal_plan: "已加入您的饮食计划",
     removed_from_meal_plan: "已从饮食计划中移除",
-    meal_plan_unavailable: "暂不能加入饮食计划",
-    meal_plan_unavailable_hint: "这个食物暂时还没有在饮食规划中提供。",
+    meal_plan_unavailable: "AI生成的食物分析",
+    meal_plan_unavailable_hint: "此食物目前不在SIHAT食物数据库中。此处显示的营养信息和健康建议由AI估算，可能并不完全准确。",
     sheet_title: "添加照片",
     sheet_camera: "拍照",
     sheet_gallery: "从相册选择",
@@ -454,7 +454,7 @@ function FoodResultCard({
                 <Info className="w-5 h-5" />
                 {t.meal_plan_unavailable}
               </button>
-              <p className="mt-2 text-sm font-medium text-slate-600">{t.meal_plan_unavailable_hint}</p>
+              <p className="mt-2 text-sm text-slate-500">{t.meal_plan_unavailable_hint}</p>
             </div>
           )}
           {mealPlanNotice && (
