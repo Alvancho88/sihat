@@ -10,11 +10,12 @@ import { useCart } from "@/components/cart-context"
 import { useState, useRef, useCallback, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import type { FoodItem as MealPlanFoodItem } from "@/lib/food-functions"
+import { DailyIntakePanel, type DailyIntakePanelStrings } from "@/components/daily-intake-panel"
 
 import Image from "next/image"
 import {
   Camera, Upload, X, Star, TrendingDown, TrendingUp, Minus, Split,
-  CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ImageIcon
+  CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ImageIcon, ShoppingCart
 } from "lucide-react"
 
 // Define language codes for multi-language support
@@ -114,6 +115,7 @@ const content = {
     sheet_camera: "Take Photo",
     sheet_gallery: "Choose from Gallery",
     sheet_cancel: "Cancel",
+    view_cart: "View Plan",
   },
   ms: {
     page_title: "Semak & Cadangan Makanan",
@@ -203,6 +205,7 @@ const content = {
     sheet_camera: "Ambil Foto",
     sheet_gallery: "Pilih dari Galeri",
     sheet_cancel: "Batal",
+    view_cart: "Lihat Pelan",
   },
   zh: {
     page_title: "食物检查与推荐",
@@ -292,7 +295,119 @@ const content = {
     sheet_camera: "拍照",
     sheet_gallery: "从相册选择",
     sheet_cancel: "取消",
+    view_cart: "查看计划",
   },
+}
+
+// Strings passed to the shared DailyIntakePanel component
+const dailyIntakePanelContent: Record<LangCode, DailyIntakePanelStrings> = {
+  en: {
+    daily_intake: "Daily Intake",
+    no_items: "No items in your daily plan",
+    no_items_hint: "Tap '+' on any food to start planning",
+    clear_all: "Clear All",
+    total: "Total",
+    daily_limit: "Daily Limit",
+    nutrition_sugar: "Sugar",
+    nutrition_fat: "Fat",
+    nutrition_sodium: "Sodium",
+    nutrition_gi: "GI",
+    nutrition_cal: "Cal",
+    male: "Male",
+    female: "Female",
+    exceeded_by: "Exceeded",
+    sugar_status_ok: "Sugar intake is within limit.",
+    sugar_status_over: "Sugar intake exceeds daily limit.",
+    fat_status_ok: "Fat intake is within limit.",
+    fat_status_over: "Fat intake exceeds daily limit.",
+    sodium_status_ok: "Sodium intake is within limit.",
+    sodium_status_over: "Sodium intake exceeds daily limit.",
+    health_tip_short: "Health tip",
+    sugar_tip_1: "Reduce sugary drinks and desserts",
+    sugar_tip_2: "Choose lower GI foods next meal",
+    fat_tip_1: "Choose grilled or steamed foods next meal",
+    fat_tip_2: "Reduce fried foods and creamy sauces",
+    sodium_tip_1: "Drink more water today",
+    sodium_tip_2: "Reduce salty soups, sauces, and processed foods",
+  },
+  ms: {
+    daily_intake: "Pengambilan Harian",
+    no_items: "Tiada item dalam pelan harian",
+    no_items_hint: "Ketik '+' pada makanan untuk mula merancang",
+    clear_all: "Kosongkan",
+    total: "Jumlah",
+    daily_limit: "Had Harian",
+    nutrition_sugar: "Gula",
+    nutrition_fat: "Lemak",
+    nutrition_sodium: "Natrium",
+    nutrition_gi: "GI",
+    nutrition_cal: "Kal",
+    male: "Lelaki",
+    female: "Perempuan",
+    exceeded_by: "Melebihi",
+    sugar_status_ok: "Pengambilan gula dalam had.",
+    sugar_status_over: "Pengambilan gula melebihi had harian.",
+    fat_status_ok: "Pengambilan lemak dalam had.",
+    fat_status_over: "Pengambilan lemak melebihi had harian.",
+    sodium_status_ok: "Pengambilan natrium dalam had.",
+    sodium_status_over: "Pengambilan natrium melebihi had harian.",
+    health_tip_short: "Tip kesihatan",
+    sugar_tip_1: "Kurangkan minuman manis dan pencuci mulut",
+    sugar_tip_2: "Pilih makanan GI lebih rendah untuk hidangan seterusnya",
+    fat_tip_1: "Pilih makanan panggang atau kukus untuk hidangan seterusnya",
+    fat_tip_2: "Kurangkan makanan bergoreng dan sos berkrim",
+    sodium_tip_1: "Minum lebih air hari ini",
+    sodium_tip_2: "Kurangkan sup masin, sos, dan makanan diproses",
+  },
+  zh: {
+    daily_intake: "每日摄取量",
+    no_items: "计划中没有食物",
+    no_items_hint: "点击食物上的'+'开始规划",
+    clear_all: "清空",
+    total: "总计",
+    daily_limit: "每日限量",
+    nutrition_sugar: "糖分",
+    nutrition_fat: "脂肪",
+    nutrition_sodium: "钠",
+    nutrition_gi: "GI",
+    nutrition_cal: "大卡",
+    male: "男性",
+    female: "女性",
+    exceeded_by: "超出",
+    sugar_status_ok: "糖分摄取在限量内。",
+    sugar_status_over: "糖分摄取超出每日限量。",
+    fat_status_ok: "脂肪摄取在限量内。",
+    fat_status_over: "脂肪摄取超出每日限量。",
+    sodium_status_ok: "钠摄取在限量内。",
+    sodium_status_over: "钠摄取超出每日限量。",
+    health_tip_short: "健康提示",
+    sugar_tip_1: "减少含糖饮料和甜点",
+    sugar_tip_2: "下一餐选择较低 GI 的食物",
+    fat_tip_1: "下一餐选择烤或蒸的食物",
+    fat_tip_2: "减少油炸食物和奶油酱汁",
+    sodium_tip_1: "今天多喝水",
+    sodium_tip_2: "减少咸汤、酱料和加工食品",
+  },
+}
+
+// Floating "View Plan" button — must render inside CartProvider (i.e. inside PageLayout)
+// so it can read cart.length for the badge via useCart().
+function ViewPlanButton({ label, onClick }: { label: string; onClick: () => void }) {
+  const { cart } = useCart()
+  return (
+    <button
+      onClick={onClick}
+      className="fixed top-[4.25rem] md:top-24 right-4 md:right-8 z-50 inline-flex items-center gap-2 px-5 md:px-6 py-2 md:py-2.5 rounded-full bg-primary text-primary-foreground font-semibold hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
+    >
+      <ShoppingCart className="w-5 h-5 md:w-6 md:h-6" />
+      <span className="text-base md:text-lg">{label}</span>
+      {cart.length > 0 && (
+        <span className="bg-white text-primary text-sm md:text-base font-bold w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center">
+          {cart.length}
+        </span>
+      )}
+    </button>
+  )
 }
 
 function RiskBadge({ risk, t }: { risk: string; t: typeof content.en }) {
@@ -657,6 +772,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const [results, setResults] = useState<FoodItem[] | null>(null)
   
   // Modal and mobile UI state
+  const [cartOpen, setCartOpen] = useState(false)
   const [showImageModal, setShowImageModal] = useState(false)
   const [modalImage, setModalImage] = useState<string | null>(null)
 
@@ -1036,6 +1152,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
         currentLangRef.current = lang
         const t = content[lang]
         return (
+          <>
           <div className="max-w-7xl mx-auto px-4 py-4 md:py-6 space-y-6">
             {/* Header */}
             <div className="text-center">
@@ -1481,6 +1598,18 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               </>
             )}
           </div>
+
+          {!cartOpen && (
+            <ViewPlanButton label={t.view_cart} onClick={() => setCartOpen(true)} />
+          )}
+
+          <DailyIntakePanel
+            t={dailyIntakePanelContent[lang]}
+            isOpen={cartOpen}
+            onClose={() => setCartOpen(false)}
+            lang={lang}
+          />
+          </>
         )
       }}
     </PageLayout>
