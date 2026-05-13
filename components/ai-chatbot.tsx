@@ -212,7 +212,7 @@ const t = {
     cartAlreadyIn: "is already in your meal plan.",
     cartRemoved: "removed from your meal plan.",
     cartNotIn: "is not in your meal plan.",
-    cartNotAvailable: "This food is not yet available for meal planning.",
+    cartNotAvailable: "This food is not currently in the SIHAT food database. The nutrition information and health advice shown here are estimated by AI and may not be fully accurate.",
     cartNoContext: "Please tell me which food you would like to add first.",
     sitiResponding: "Siti is responding…",
     stop: "Stop",
@@ -282,7 +282,7 @@ const t = {
     cartAlreadyIn: "sudah ada dalam pelan makanan anda.",
     cartRemoved: "dibuang dari pelan makanan anda.",
     cartNotIn: "tidak ada dalam pelan makanan anda.",
-    cartNotAvailable: "Makanan ini belum tersedia untuk perancangan makanan.",
+    cartNotAvailable: "Makanan ini tidak terdapat dalam pangkalan data makanan SIHAT. Maklumat pemakanan dan nasihat kesihatan yang ditunjukkan di sini dianggarkan oleh AI dan mungkin tidak sepenuhnya tepat.",
     cartNoContext: "Sila beritahu saya makanan yang ingin anda tambah dahulu.",
     sitiResponding: "Siti sedang menjawab…",
     stop: "Berhenti",
@@ -352,7 +352,7 @@ const t = {
     cartAlreadyIn: "已在您的每日餐点计划中。",
     cartRemoved: "已从您的每日餐点计划中移除。",
     cartNotIn: "不在您的每日餐点计划中。",
-    cartNotAvailable: "此食物暂时无法加入每日餐点计划。",
+    cartNotAvailable: "此食物目前不在SIHAT食物数据库中。此处显示的营养信息和健康建议由AI估算，可能并不完全准确。",
     cartNoContext: "请先告诉我您想加入哪种食物。",
     sitiResponding: "Siti 正在回复…",
     stop: "停止",
@@ -1052,7 +1052,12 @@ function AiFoodCard({ food, lang }: { food: EstimatedFoodCard; lang: LangCode })
     high:   { en: "High Risk",  ms: "Risiko Tinggi",    zh: "高风险"   },
   }[food.risk][lang];
   const tipHeader  = lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health Tip";
-  const noDbNote   = { en: "Meal planning unavailable", ms: "Perancangan makanan tidak tersedia", zh: "膳食计划不可用" }[lang];
+  const noDbLabel      = { en: "AI-generated food analysis", ms: "Analisis makanan jana AI", zh: "AI生成的食物分析" }[lang];
+  const noDbDisclaimer = {
+    en: "This food is not currently in the SIHAT food database. The nutrition information and health advice shown here are estimated by AI and may not be fully accurate.",
+    ms: "Makanan ini tidak terdapat dalam pangkalan data makanan SIHAT. Maklumat pemakanan dan nasihat kesihatan yang ditunjukkan di sini dianggarkan oleh AI dan mungkin tidak sepenuhnya tepat.",
+    zh: "此食物目前不在SIHAT食物数据库中。此处显示的营养信息和健康建议由AI估算，可能并不完全准确。",
+  }[lang];
 
   return (
     <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3" style={{ fontSize: "16px", lineHeight: "1.6" }}>
@@ -1077,7 +1082,8 @@ function AiFoodCard({ food, lang }: { food: EstimatedFoodCard; lang: LangCode })
           <p className="text-gray-800" style={{ fontSize: "15px", lineHeight: "1.6" }}>{food.tip}</p>
         </div>
       )}
-      <p className="mt-2 text-gray-400" style={{ fontSize: "12px" }}>{noDbNote}</p>
+      <p className="mt-2 font-semibold text-gray-500" style={{ fontSize: "12px" }}>{noDbLabel}</p>
+      <p className="mt-1 text-gray-400" style={{ fontSize: "12px" }}>{noDbDisclaimer}</p>
     </div>
   );
 }
