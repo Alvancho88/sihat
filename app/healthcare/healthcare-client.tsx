@@ -25,6 +25,7 @@ const content = {
     consent_allow: "Yes, Use My Location",
     consent_deny: "No Thanks, Search Manually",
     search_placeholder: "Search clinic or area…",
+    enable: "Enable",
     filter_state: "All States",
     filter_sector: "All Sectors",
     filter_specialty: "All Specialties",
@@ -58,6 +59,7 @@ const content = {
     public_sector: "Public",
     private_sector: "Private",
     tags_label: "Screening Available:",
+    back_to_search: "Back to Search",
   },
   ms: {
     title: "Cari Klinik Berdekatan",
@@ -67,6 +69,7 @@ const content = {
     consent_allow: "Ya, Guna Lokasi Saya",
     consent_deny: "Tidak, Cari Manual",
     search_placeholder: "Cari klinik atau kawasan",
+    enable: "Aktifkan",
     filter_state: "Semua Negeri",
     filter_sector: "Semua Sektor",
     filter_specialty: "Semua Kepakaran",
@@ -100,6 +103,7 @@ const content = {
     public_sector: "Awam",
     private_sector: "Swasta",
     tags_label: "Saringan Tersedia:",
+    back_to_search: "Kembali ke Carian",
   },
   zh: {
     title: "查找附近诊所",
@@ -109,6 +113,7 @@ const content = {
     consent_allow: "是，使用我的位置",
     consent_deny: "不，手动搜索",
     search_placeholder: "搜索诊所名称或地区…",
+    enable: "启用",
     filter_state: "所有州属",
     filter_sector: "所有类型",
     filter_specialty: "所有专科",
@@ -142,6 +147,7 @@ const content = {
     public_sector: "公立",
     private_sector: "私立",
     tags_label: "可用筛查：",
+    back_to_search: "返回搜索",
   },
 }
 
@@ -335,6 +341,8 @@ export function HealthcareClient({ facilities}: Props) {
   const [isLocating, setIsLocating] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const searchRef = useRef<HTMLInputElement>(null)
+  const [showFloatingButton, setShowFloatingButton] = useState(false)
+  const [isNearBottom, setIsNearBottom] = useState(false)
 
   // ── Derive unique state list ──
   const stateOptions = useMemo(() => {
@@ -356,6 +364,25 @@ export function HealthcareClient({ facilities}: Props) {
       } catch { /* ignore */ }
     }
     if (consent !== "granted" && consent !== "dismissed") setShowConsent(true)
+  }, [])
+
+  // ── Floating "Back to Search" button scroll logic ──
+  // Shows floating button when scrolled >400px and not near bottom.
+  // Near the bottom, shows a static inline button near pagination instead.
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY
+      const windowHeight = window.innerHeight
+      const documentHeight = document.documentElement.scrollHeight
+      const distanceFromBottom = documentHeight - scrollY - windowHeight
+
+      const nearBottom = distanceFromBottom <= 450
+      setShowFloatingButton(scrollY > 400 && !nearBottom)
+      setIsNearBottom(scrollY > 400 && nearBottom)
+    }
+    window.addEventListener("scroll", handleScroll)
+    handleScroll()
+    return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
   // ── Reverse geocode ──
@@ -524,7 +551,7 @@ export function HealthcareClient({ facilities}: Props) {
                     onClick={() => setShowConsent(true)}
                     className="shrink-0 text-base font-bold text-amber-700 dark:text-amber-400 underline underline-offset-2 hover:opacity-80"
                   >
-                    Enable
+                    {t.enable}
                   </button>
                 </div>
               )}
@@ -622,14 +649,14 @@ export function HealthcareClient({ facilities}: Props) {
             {filtered.length > 0 && totalPages > 1 && (
               <div className="flex flex-col items-center gap-4 pb-4">
 
-                {/* Scroll back to search — only show when there are many results */}
-                {filtered.length > ITEMS_PER_PAGE && (
+                {/* Static "Back to Search" button — shown near bottom instead of the floating one */}
+                {isNearBottom && (
                   <button
                     onClick={scrollToSearch}
-                    className="bg-primary text-primary-foreground px-6 py-3 rounded-full font-bold text-base shadow-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all"
+                    className="bg-primary text-primary-foreground px-6 py-3 rounded-full font-bold text-base shadow-lg flex items-center gap-2 active:scale-95 transition-all whitespace-nowrap hover:bg-primary/90"
                   >
                     <Search className="w-5 h-5" />
-                    Back to Search
+                    {t.back_to_search}
                   </button>
                 )}
 
@@ -638,7 +665,7 @@ export function HealthcareClient({ facilities}: Props) {
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className="flex items-center gap-1 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl text-base font-bold text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="flex items-center gap-1 sm:gap-1.5 md:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl text-base md:text-lg font-bold text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <ChevronLeft className="w-5 h-5" />
                     <span className="hidden sm:inline">{t.pagination_previous}</span>
@@ -649,7 +676,7 @@ export function HealthcareClient({ facilities}: Props) {
                       <button
                         key={i}
                         onClick={() => setCurrentPage(page)}
-                        className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl text-base font-semibold transition-colors ${
+                        className={`w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 rounded-xl md:rounded-full text-base md:text-lg font-semibold transition-colors ${
                           currentPage === page
                             ? "bg-primary text-primary-foreground"
                             : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -683,6 +710,17 @@ export function HealthcareClient({ facilities}: Props) {
                   {t.pagination_results}
                 </p>
               </div>
+            )}
+
+            {/* ── Floating "Back to Search" button — visible when scrolled down but not near the bottom ── */}
+            {showFloatingButton && (
+              <button
+                onClick={scrollToSearch}
+                className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-primary text-primary-foreground px-6 py-3 rounded-full font-bold text-base shadow-lg flex items-center gap-2 active:scale-95 transition-all whitespace-nowrap hover:bg-primary/90"
+              >
+                <Search className="w-5 h-5" />
+                {t.back_to_search}
+              </button>
             )}
 
             {/* ── Disclaimer ── */}
