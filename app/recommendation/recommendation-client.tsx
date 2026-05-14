@@ -121,7 +121,7 @@ const content = {
     // Panel navigation
     panel_upload: "Upload Photo",
     panel_results: "View Results",
-    try_another_photo: "Try Another Photo",
+    try_another_photo: "Add More Photo",
     view_your_results: "View Your Results",
   },
   ms: {
@@ -217,7 +217,7 @@ const content = {
     view_cart: "Lihat Pelan",
     panel_upload: "Muat Naik Foto",
     panel_results: "Lihat Keputusan",
-    try_another_photo: "Cuba Foto Lain",
+    try_another_photo: "Tambah Foto",
     view_your_results: "Lihat Keputusan Anda",
   },
   zh: {
@@ -296,7 +296,7 @@ const content = {
     scanning_steps: ["正在读取菜单...", "正在识别食物...", "正在计算营养值...", "即将完成..."],
     success_found: "个食物已找到！",
     success_none: "未检测到食物",
-    top3_disclaimer: "我们为您展示了食物��片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
+    top3_disclaimer: "我们为您展示了食物���片��发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
     analyze_new_food: "重新开始",
     back_to_category: "返回类别",
     best_choice_reason_label: "为何是最佳选择",
@@ -313,7 +313,7 @@ const content = {
     view_cart: "查看计划",
     panel_upload: "上传照片",
     panel_results: "查看结果",
-    try_another_photo: "尝试其他照片",
+    try_another_photo: "添加照片",
     view_your_results: "查看您的结果",
   },
 }
@@ -1192,7 +1192,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
           <>
           <div className="max-w-2xl mx-auto px-4 py-4 md:py-6 min-h-[calc(100vh-200px)]">
             {/* Simple Header - follows 5 second rule */}
-            <div className="text-center mb-6">
+            <div className="text-center mb-6 pt-10">
               <h1 className="text-3xl md:text-4xl font-extrabold mb-2 text-balance">{t.page_title}</h1>
               <p className="text-lg text-muted-foreground">{t.page_subtitle}</p>
             </div>
@@ -1610,7 +1610,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 </div>
 
                 {/* Try Another Photo / Start Over */}
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   <button
                     onClick={() => {
                       setCurrentPanel("upload")
@@ -1619,10 +1619,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         uploadPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
                       }, 100)
                     }}
-                    className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold text-lg py-4 rounded-2xl hover:opacity-90"
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-primary text-primary-foreground font-bold text-base py-3.5 rounded-2xl hover:opacity-90"
                   >
-                    <Camera className="w-5 h-5" />
-                    {t.try_another_photo}
+                    <Camera className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{t.try_another_photo}</span>
                   </button>
                   <button
                     onClick={() => {
@@ -1632,10 +1632,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         uploadPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
                       }, 100)
                     }}
-                    className="flex-none px-6 flex items-center justify-center gap-2 border-2 border-border text-foreground font-semibold py-4 rounded-2xl hover:bg-muted"
+                    className="flex-1 flex items-center justify-center gap-1.5 border-2 border-border text-foreground font-semibold text-base py-3.5 rounded-2xl hover:bg-muted"
                   >
-                    <Trash2 className="w-5 h-5" />
-                    {t.analyze_new_food}
+                    <Trash2 className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{t.analyze_new_food}</span>
                   </button>
                 </div>
               </div>
