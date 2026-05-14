@@ -14,8 +14,8 @@ import { DailyIntakePanel, type DailyIntakePanelStrings } from "@/components/dai
 
 import Image from "next/image"
 import {
-  Camera, Upload, X, Star, TrendingDown, TrendingUp, Minus, Split,
-  CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ImageIcon, ShoppingCart
+  Camera, Upload, X, Star, TrendingDown, TrendingUp, Minus,
+  CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ArrowLeft, ImageIcon, ShoppingCart, Type, ChevronLeft, ChevronRight
 } from "lucide-react"
 
 // Define language codes for multi-language support
@@ -27,8 +27,8 @@ type LangCode = "en" | "ms" | "zh"
 // Contains all UI text, labels, and messages for internationalization
 const content = {
   en: {
-    page_title: "Food Check & Recommendation",
-    page_subtitle: "Simple photos, smarter choices. Take control of your health today.",
+    page_title: "Check Your Food",
+    page_subtitle: "Snap a photo of your food to get health recommendations",
     guide_title: "How to Take a Good Photo",
     guide_steps: [
       { icon: "camera", text: "Hold your phone steady above the menu" },
@@ -36,8 +36,8 @@ const content = {
       { icon: "food", text: "If there is too much menu items in one photo, take it separately" },
       { icon: "clear", text: "Ensure the text is clearly visible" },
     ],
-    upload_title: "Upload or Take Photo",
-    upload_hint: "Tap to upload or take a photo of your menu",
+    upload_title: "Take or Upload a Photo",
+    upload_hint: "Tap to take a photo or upload from gallery",
     upload_btn: "Add Photo",
     camera_btn: "Take Photo",
     uploading: "Uploading...",
@@ -45,9 +45,11 @@ const content = {
     text_input_title: "Type Your Food Name",
     text_input_hint: "No photo? Type the dish name here instead. Separate each item with comma.",
     text_placeholder: "E.g., Nasi lemak, Roti canai, Teh tarik...",
-    analyze_btn: "Analyse & Recommend",
+    type_food_instead: "Or type food name instead",
+    back_to_photo: "Back to photo upload",
+    analyze_btn: "Analyse My Food",
     select_category: "Select Food Category",
-    select_category_hint: "Choose which type of food you want to analyse:",
+    select_category_hint: "Choose which type of food you want to view:",
     categories: {
       appetizer: "Appetizer",
       main: "Main Dish",
@@ -101,7 +103,7 @@ const content = {
     success_found: "items found!",
     success_none: "No items detected",
     top3_disclaimer: "We are showing you the Top 3 Healthiest Choices identified in your photo. These are the safest options for managing your blood sugar, blood pressure, and cholesterol.",
-    analyze_new_food: "Reset",
+    analyze_new_food: "Start Over",
     back_to_category: "Back to Categories",
     best_choice_reason_label: "Why we pick this as the Best Choice",
     add_to_meal_plan: "Add to Meal Plan",
@@ -116,10 +118,15 @@ const content = {
     sheet_gallery: "Choose from Gallery",
     sheet_cancel: "Cancel",
     view_cart: "View Plan",
+    // Panel navigation
+    panel_upload: "Upload Photo",
+    panel_results: "View Results",
+    try_another_photo: "Try Another Photo",
+    view_your_results: "View Your Results",
   },
   ms: {
-    page_title: "Semak & Cadangan Makanan",
-    page_subtitle: "Foto mudah, pilihan bijak. Urus kesihatan anda dengan lebih yakin.",
+    page_title: "Semak Makanan Anda",
+    page_subtitle: "Ambil foto makanan anda untuk dapatkan cadangan kesihatan",
     guide_title: "Cara Mengambil Foto yang Baik",
     guide_steps: [
       { icon: "camera", text: "Pegang telefon anda dengan stabil di atas makanan" },
@@ -127,8 +134,8 @@ const content = {
       { icon: "split", text: "Masukkan semua hidangan dalam satu foto" },
       { icon: "clear", text: "Pastikan makanan jelas kelihatan" },
     ],
-    upload_title: "Muat Naik atau Ambil Foto",
-    upload_hint: "Ketik untuk muat naik atau ambil foto makanan anda",
+    upload_title: "Ambil atau Muat Naik Foto",
+    upload_hint: "Ketik untuk ambil foto atau muat naik dari galeri",
     upload_btn: "Tambah Foto",
     camera_btn: "Ambil Foto",
     uploading: "Memuat naik...",
@@ -136,9 +143,11 @@ const content = {
     text_input_title: "Taip Nama Makanan Anda",
     text_input_hint: "Tiada foto? Taip nama hidangan di sini. Pisahkan setiap item dengan koma.",
     text_placeholder: "Cth., Nasi lemak, Roti canai, Teh tarik...",
-    analyze_btn: "Analisis & Cadangan",
+    type_food_instead: "Atau taip nama makanan",
+    back_to_photo: "Kembali ke muat naik foto",
+    analyze_btn: "Analisis Makanan Saya",
     select_category: "Pilih Kategori Makanan",
-    select_category_hint: "Pilih jenis makanan yang ingin anda analisis:",
+    select_category_hint: "Pilih jenis makanan yang ingin anda lihat:",
     categories: {
       appetizer: "Pembuka Selera",
       main: "Hidangan Utama",
@@ -192,7 +201,7 @@ const content = {
     success_found: "item dijumpai!",
     success_none: "Tiada item dikesan",
     top3_disclaimer: "Kami menunjukkan kepada anda 3 Pilihan Paling Sihat daripada apa yang dijumpai dalam foto makanan anda. Ini adalah pilihan paling selamat untuk gula darah anda.",
-    analyze_new_food: "Set Semula",
+    analyze_new_food: "Mula Semula",
     back_to_category: "Kembali ke Kategori",
     best_choice_reason_label: "Kenapa Pilihan Terbaik",
     add_to_meal_plan: "Tambah ke Pelan Makanan",
@@ -206,10 +215,14 @@ const content = {
     sheet_gallery: "Pilih dari Galeri",
     sheet_cancel: "Batal",
     view_cart: "Lihat Pelan",
+    panel_upload: "Muat Naik Foto",
+    panel_results: "Lihat Keputusan",
+    try_another_photo: "Cuba Foto Lain",
+    view_your_results: "Lihat Keputusan Anda",
   },
   zh: {
-    page_title: "食物检查与推荐",
-    page_subtitle: "简单拍照，智选三餐。掌控健康，就从今天开始。",
+    page_title: "检查您的食物",
+    page_subtitle: "拍摄食物照片以获取健康建议",
     guide_title: "如何拍摄好照片",
     guide_steps: [
       { icon: "camera", text: "将手机稳定地放在食物上方" },
@@ -217,8 +230,8 @@ const content = {
       { icon: "split", text: "将所有菜肴放在一张照片中" },
       { icon: "clear", text: "确保食物清晰可见" },
     ],
-    upload_title: "上传或拍照",
-    upload_hint: "点击上传或拍摄您的餐食照片",
+    upload_title: "拍摄或上传照片",
+    upload_hint: "点击拍照或从相册上传",
     upload_btn: "添加照片",
     camera_btn: "拍照",
     uploading: "上传中...",
@@ -226,9 +239,11 @@ const content = {
     text_input_title: "输入食物名称",
     text_input_hint: "没有照片？在这里输入菜名。用逗号分隔每个项目。",
     text_placeholder: "例如：椰浆饭、印度煎饼、拉茶...",
-    analyze_btn: "分析推荐",
+    type_food_instead: "或输入食物名称",
+    back_to_photo: "返回上传照片",
+    analyze_btn: "分析我的食物",
     select_category: "选择食物类别",
-    select_category_hint: "选择您想分析的食物类型：",
+    select_category_hint: "选择您想查看的食物类型：",
     categories: {
       appetizer: "前菜",
       main: "主食",
@@ -282,7 +297,7 @@ const content = {
     success_found: "个食物已找到！",
     success_none: "未检测到食物",
     top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
-    analyze_new_food: "重置",
+    analyze_new_food: "重新开始",
     back_to_category: "返回类别",
     best_choice_reason_label: "为何是最佳选择",
     add_to_meal_plan: "加入饮食计划",
@@ -296,6 +311,10 @@ const content = {
     sheet_gallery: "从相册选择",
     sheet_cancel: "取消",
     view_cart: "查看计划",
+    panel_upload: "上传照片",
+    panel_results: "查看结果",
+    try_another_photo: "尝试其他照片",
+    view_your_results: "查看您的结果",
   },
 }
 
@@ -484,7 +503,6 @@ function FoodResultCard({
   const bestReasonText = food.best_reason ? (food.best_reason[lang] || food.best_reason.en) : null
   const computedRisk = computeRiskFromIndicators(sugarValue, saltValue, fatValue, food.risk)
   const isHighRisk = computedRisk === "high"
-  const isMediumRisk = computedRisk === "medium"
   const mealPlanIndex = mealPlanFood ? cart.findIndex((item) => item.name.en === mealPlanFood.name.en) : -1
   const mealPlanAdded = mealPlanIndex !== -1
 
@@ -776,6 +794,12 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const [showImageModal, setShowImageModal] = useState(false)
   const [modalImage, setModalImage] = useState<string | null>(null)
 
+  // Panel navigation state - "upload" or "results"
+  const [currentPanel, setCurrentPanel] = useState<"upload" | "results">("upload")
+  
+  // Text input mode toggle (hidden by default, shown when user clicks the button)
+  const [showTextInput, setShowTextInput] = useState(false)
+
   // ─── REFS AND CONSTANTS ────────────────────────────────────────────────────────
   
   // Mobile action sheet state for touch devices
@@ -794,6 +818,9 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
   const MAX_IMAGES = 5 // Maximum number of images allowed
 
+  // Check if we have results to show
+  const hasResults = apiResultsCache && Object.values(apiResultsCache).some(arr => arr.length > 0)
+
   // ─── EFFECTS AND HOOKS ───────────────────────────────────────────────────────────
   
   /**
@@ -810,7 +837,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
    */
   useEffect(() => {
     const savedText = sessionStorage.getItem("rec-text")
-    if (savedText) setTextInput(savedText)
+    if (savedText) {
+      setTextInput(savedText)
+      setShowTextInput(true)
+    }
   }, [])
 
   /**
@@ -850,6 +880,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       setNewFiles([])
       setPreviousOcr("")
       setTextInput(storedSession?.userText ?? "")
+      if (storedSession?.userText) setShowTextInput(true)
       setAnalyzeError(null)
       setIsAnalyzing(false)
       setSuccessCount(null)
@@ -857,10 +888,12 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       setShowCategories(true)
       setSelectedCategory(firstCategory)
       setResults(cache[firstCategory])
+      // Auto-navigate to results panel when restoring
+      setCurrentPanel("results")
       if (scrollAfterRestoreRef.current) {
         scrollAfterRestoreRef.current = false
         setTimeout(() => {
-          document.getElementById("analysis-result-section")?.scrollIntoView({ behavior: "smooth", block: "start" })
+          window.scrollTo({ top: 0, behavior: "smooth" })
         }, 150)
       }
     } catch {
@@ -890,6 +923,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
         restoreSharedScanResults()
       } else if (recText) {
         setTextInput(recText)
+        setShowTextInput(true)
         setApiResultsCache(null)
         setShowCategories(false)
         setSelectedCategory(null)
@@ -899,7 +933,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       } else {
         // No new analysis — just scroll to whatever is already showing
         setTimeout(() => {
-          document.getElementById("analysis-result-section")?.scrollIntoView({ behavior: "smooth", block: "start" })
+          window.scrollTo({ top: 0, behavior: "smooth" })
         }, 50)
       }
     }
@@ -940,6 +974,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     console.log("[Recommendation] fromChatbot: no scan context, auto-analysing:", savedText)
     if (savedText) {
       setTextInput(savedText)
+      setShowTextInput(true)
       setApiResultsCache(null)
       setShowCategories(false)
       setSelectedCategory(null)
@@ -1004,6 +1039,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       setSelectedCategory(null)
       setResults(null)
       setAnalyzeError(null)
+      // Reset to upload panel when new photos are added
+      setCurrentPanel("upload")
     })
   }, [uploadedImages.length])
 
@@ -1097,10 +1134,12 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
         setSelectedCategory(firstCategory)
         setResults(cache[firstCategory])
       }
+      // Auto-navigate to results panel after successful analysis
+      setCurrentPanel("results")
       if (scrollAfterAnalyzeRef.current) {
         scrollAfterAnalyzeRef.current = false
         setTimeout(() => {
-          document.getElementById("analysis-result-section")?.scrollIntoView({ behavior: "smooth", block: "start" })
+          window.scrollTo({ top: 0, behavior: "smooth" })
         }, 150)
       }
     } catch (err: unknown) {
@@ -1129,11 +1168,13 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     setNewFiles([])
     setPreviousOcr("")
     setTextInput("")
+    setShowTextInput(false)
     setShowCategories(false)
     setSelectedCategory(null)
     setResults(null)
     setApiResultsCache(null)
     setAnalyzeError(null)
+    setCurrentPanel("upload")
     clearScanContext()
   }
 
@@ -1153,340 +1194,436 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
         const t = content[lang]
         return (
           <>
-          <div className="max-w-7xl mx-auto px-4 py-4 md:py-6 space-y-6">
-            {/* Header */}
-            <div className="text-center">
-              <h1 className="text-2xl md:text-5xl font-extrabold mb-4 text-balance">{t.page_title}</h1>
-              <p className="text-lg md:text-xl text-muted-foreground">{t.page_subtitle}</p>
+          <div className="max-w-2xl mx-auto px-4 py-4 md:py-6 min-h-[calc(100vh-200px)]">
+            {/* Simple Header - follows 5 second rule */}
+            <div className="text-center mb-6">
+              <h1 className="text-3xl md:text-4xl font-extrabold mb-2 text-balance">{t.page_title}</h1>
+              <p className="text-lg text-muted-foreground">{t.page_subtitle}</p>
             </div>
 
-            {/* Upload & Text Input Section */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-              {/* Left: Upload Area */}
-              <div className="bg-card rounded-2xl border border-border p-4 md:p-6 shadow-sm">
-                <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
-                  <Upload className="w-6 h-6 text-primary" />
-                  {t.upload_title}
-                </h3>
-                <div className="flex flex-wrap items-center gap-2 mb-4">
-                  <span className={`text-lg font-bold ${uploadedImages.length >= MAX_IMAGES ? "text-amber-600" : "text-muted-foreground"}`}>
-                    {t.max_photos} ({uploadedImages.length}/{MAX_IMAGES})
-                  </span>
-                  {uploadedImages.length >= MAX_IMAGES && (
-                    <span className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-base font-semibold px-3 py-1.5 rounded-full">
-                      <Info className="w-5 h-5" />
-                      {t.max_photos_warning}
-                    </span>
-                  )}
-                </div>
+            {/* Panel Navigation Indicator - only show when we have results */}
+            {hasResults && (
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <button
+                  onClick={() => setCurrentPanel("upload")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-base font-semibold transition-all ${
+                    currentPanel === "upload"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  <Camera className="w-4 h-4" />
+                  {t.panel_upload}
+                </button>
+                <button
+                  onClick={() => setCurrentPanel("results")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-base font-semibold transition-all ${
+                    currentPanel === "results"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  {t.panel_results}
+                </button>
+              </div>
+            )}
 
-                {isUploading ? (
-                  <div className="border-2 border-dashed border-primary/40 rounded-2xl p-8 flex flex-col items-center justify-center min-h-[250px]">
-                    <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
-                    <p className="text-lg font-semibold text-primary">{t.uploading}</p>
-                  </div>
-                ) : uploadedImages.length > 0 ? (
-                  <div>
-                    <div className="grid grid-cols-3 gap-2 mb-4">
-                      {uploadedImages.map((img, index) => (
-                        <div key={index} className="relative aspect-square rounded-xl overflow-hidden border-2 border-primary group">
-                          <Image src={img} alt={`Uploaded ${index + 1}`} fill className="object-cover cursor-pointer" onClick={() => openImageModal(img)} />
+            {/* ═══════════════════════════════════════════════════════════════════════════
+                UPLOAD PANEL - Primary screen for elderly users
+            ═══════════════════════════════════════════════════════════════════════════ */}
+            {currentPanel === "upload" && (
+              <div className="space-y-4">
+                {/* Main Upload Area */}
+                <div className="bg-card rounded-2xl border-2 border-primary/20 p-6 shadow-sm">
+                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-center justify-center">
+                    <Camera className="w-6 h-6 text-primary" />
+                    {t.upload_title}
+                  </h3>
+
+                  {isUploading ? (
+                    <div className="border-2 border-dashed border-primary/40 rounded-2xl p-8 flex flex-col items-center justify-center min-h-[280px]">
+                      <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
+                      <p className="text-lg font-semibold text-primary">{t.uploading}</p>
+                    </div>
+                  ) : uploadedImages.length > 0 ? (
+                    <div>
+                      {/* Photo count indicator */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                        <span className={`text-base font-bold ${uploadedImages.length >= MAX_IMAGES ? "text-amber-600" : "text-muted-foreground"}`}>
+                          {uploadedImages.length}/{MAX_IMAGES} {t.photos_count}
+                        </span>
+                        {uploadedImages.length > 1 && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); removeImage(index) }}
-                            className="absolute top-1 right-1 z-20 bg-foreground text-background rounded-full w-7 h-7 flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity shadow-md"
-                            aria-label="Remove image"
+                            onClick={removeAllImages}
+                            className="flex items-center gap-1 text-sm text-destructive hover:underline"
                           >
-                            <X className="w-4 h-4" />
+                            <Trash2 className="w-4 h-4" />
+                            {t.delete_all}
                           </button>
-                          <div className="absolute inset-0 z-10 bg-foreground/0 group-hover:bg-foreground/20 transition-colors flex items-center justify-center pointer-events-none">
-                            <ZoomIn className="w-6 h-6 text-background opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
+                        )}
+                      </div>
+
+                      {/* Max photos warning */}
+                      {uploadedImages.length >= MAX_IMAGES && (
+                        <div className="bg-amber-50 border border-amber-200 text-amber-700 text-base font-semibold px-4 py-3 rounded-xl mb-4 flex items-center gap-2">
+                          <Info className="w-5 h-5 shrink-0" />
+                          {t.max_photos_warning}
                         </div>
-                      ))}
+                      )}
+
+                      {/* Image grid */}
+                      <div className="grid grid-cols-3 gap-3 mb-4">
+                        {uploadedImages.map((img, index) => (
+                          <div key={index} className="relative aspect-square rounded-xl overflow-hidden border-2 border-primary group">
+                            <Image src={img} alt={`Uploaded ${index + 1}`} fill className="object-cover cursor-pointer" onClick={() => openImageModal(img)} />
+                            <button
+                              onClick={(e) => { e.stopPropagation(); removeImage(index) }}
+                              className="absolute top-1 right-1 z-20 bg-foreground text-background rounded-full w-8 h-8 flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity shadow-md"
+                              aria-label="Remove image"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                            <div className="absolute inset-0 z-10 bg-foreground/0 group-hover:bg-foreground/20 transition-colors flex items-center justify-center pointer-events-none">
+                              <ZoomIn className="w-6 h-6 text-background opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                          </div>
+                        ))}
+                        {/* Add more photo button in grid */}
+                        {uploadedImages.length < MAX_IMAGES && (
+                          <button
+                            onClick={handleAddPhotoClick}
+                            className="aspect-square rounded-xl border-2 border-dashed border-primary/40 flex flex-col items-center justify-center hover:border-primary hover:bg-primary/5 transition-colors"
+                          >
+                            <Plus className="w-10 h-10 text-primary mb-1" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Add Photo Button */}
                       {uploadedImages.length < MAX_IMAGES && (
                         <button
                           onClick={handleAddPhotoClick}
-                          className="aspect-square rounded-xl border-2 border-dashed border-primary/40 flex flex-col items-center justify-center hover:border-primary hover:bg-primary/5 transition-colors"
+                          className="w-full flex items-center justify-center gap-3 bg-primary/10 text-primary font-bold text-lg py-4 px-4 rounded-xl hover:bg-primary/20 border-2 border-primary/30"
                         >
-                          <Plus className="w-8 h-8 text-primary mb-1" />
-                          <span className="text-xs text-muted-foreground">Add</span>
+                          <Camera className="w-6 h-6" />
+                          {t.upload_btn}
                         </button>
                       )}
                     </div>
-                    <button
-                      onClick={handleAddPhotoClick}
-                      disabled={uploadedImages.length >= MAX_IMAGES}
-                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold text-lg py-4 px-4 rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Camera className="w-6 h-6 shrink-0" />
-                      <span>{t.upload_btn}</span>
-                    </button>
-                    {uploadedImages.length > 1 && (
-                      <button
-                        onClick={removeAllImages}
-                        className="mt-3 w-full flex items-center justify-center gap-2 border border-destructive text-destructive font-semibold py-3 rounded-xl hover:bg-destructive/10 transition-colors"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                        {t.delete_all}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div
-                      className="border-2 border-dashed border-primary/40 rounded-2xl p-8 text-center hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer min-h-[200px] flex flex-col items-center justify-center"
-                      onClick={handleAddPhotoClick}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => { e.preventDefault(); handleFileUpload(e.dataTransfer.files) }}
-                    >
-                      <Upload className="w-16 h-16 text-primary mx-auto mb-4" />
-                      <p className="text-lg font-semibold text-foreground mb-2">{t.upload_hint}</p>
-                      <p className="text-sm text-muted-foreground">JPG, PNG ({t.max_photos})</p>
-                    </div>
-                    <button
-                      onClick={handleAddPhotoClick}
-                      className="mt-4 w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold text-lg py-4 px-4 rounded-2xl hover:opacity-90"
-                    >
-                      <Camera className="w-6 h-6 shrink-0" />
-                      <span>{t.upload_btn}</span>
-                    </button>
-                  </>
-                )}
-
-                {/* Hidden inputs — always in DOM so refs are stable */}
-                {/* Gallery / desktop picker: no capture attribute → opens file explorer on desktop, photo library on mobile */}
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  suppressHydrationWarning
-                  className="hidden"
-                  onChange={(e) => { handleFileUpload(e.target.files); e.target.value = "" }}
-                />
-                {/* Camera-only input: capture="environment" → opens rear camera directly on mobile */}
-                <input
-                  ref={cameraRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  suppressHydrationWarning
-                  className="hidden"
-                  onChange={(e) => { handleFileUpload(e.target.files); e.target.value = "" }}
-                />
-              </div>
-
-              {/* Right: Text Input */}
-              <div className="bg-card rounded-2xl border border-border p-4 md:p-6 shadow-sm">
-                <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
-                  <Utensils className="w-6 h-6 text-primary" />
-                  {t.text_input_title}
-                </h3>
-                <p className="text-muted-foreground mb-4">{t.text_input_hint}</p>
-                <textarea
-                  value={textInput}
-                  suppressHydrationWarning
-                  onChange={(e) => {
-                    setTextInput(e.target.value)
-                    if (showCategories || results || apiResultsCache) {
-                      setShowCategories(false)
-                      setSelectedCategory(null)
-                      setResults(null)
-                      setApiResultsCache(null)
-                      setPreviousOcr("")
-                      setNewFiles([])
-                    }
-                  }}
-                  placeholder={t.text_placeholder}
-                  className="w-full h-[200px] md:h-[250px] p-4 rounded-xl border border-border bg-background text-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-                />
-              </div>
-            </div>
-
-            {/* Analyse Button */}
-            {showAnalyzeButton && (
-              <div className="flex flex-col items-center gap-4">
-                <button
-                  onClick={() => handleAnalyze(lang)}
-                  disabled={isAnalyzing}
-                  className="flex items-center justify-center gap-3 bg-accent text-accent-foreground font-bold text-xl px-12 py-5 rounded-2xl hover:opacity-90 transition-opacity shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <CheckCircle className="w-7 h-7" />
-                  {t.analyze_btn}
-                </button>
-              </div>
-            )}
-
-            
-            {/* Loading */}
-            {isAnalyzing && (
-              <div className="flex flex-col items-center gap-4 py-8">
-                <div className="relative w-20 h-20">
-                  <svg className="w-20 h-20 animate-spin" viewBox="0 0 80 80" fill="none">
-                    <circle cx="40" cy="40" r="34" stroke="var(--color-primary)" strokeOpacity="0.15" strokeWidth="8" />
-                    <circle cx="40" cy="40" r="34" stroke="var(--color-primary)" strokeWidth="8" strokeLinecap="round" strokeDasharray="53 160" />
-                  </svg>
-                </div>
-                <p className="text-base font-semibold text-primary">{t.scanning_steps[scanStep]}</p>
-                <div className="text-center text-sm text-muted-foreground">
-                  <span>OCR: {ocrItemCount} items</span>
-                  {textItemCount > 0 && (
+                  ) : (
                     <>
-                      <span className="mx-2">•</span>
-                      <span>Text: {textItemCount} items</span>
+                      {/* Empty state - Large upload area */}
+                      <div
+                        className="border-2 border-dashed border-primary/40 rounded-2xl p-8 text-center hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer min-h-[200px] flex flex-col items-center justify-center"
+                        onClick={handleAddPhotoClick}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => { e.preventDefault(); handleFileUpload(e.dataTransfer.files) }}
+                      >
+                        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                          <Camera className="w-10 h-10 text-primary" />
+                        </div>
+                        <p className="text-lg font-semibold text-foreground mb-2">{t.upload_hint}</p>
+                        <p className="text-sm text-muted-foreground">{t.max_photos}</p>
+                      </div>
+
+                      {/* Large Take Photo Button */}
+                      <button
+                        onClick={handleAddPhotoClick}
+                        className="mt-4 w-full flex items-center justify-center gap-3 bg-primary text-primary-foreground font-bold text-xl py-5 px-4 rounded-2xl hover:opacity-90 shadow-lg"
+                      >
+                        <Camera className="w-7 h-7" />
+                        {t.camera_btn}
+                      </button>
                     </>
                   )}
-                </div>
-              </div>
-            )}
 
-            {/* Error */}
-            {analyzeError && !isAnalyzing && (
-              <div className="bg-[var(--risk-high-bg)] border border-red-700/30 rounded-xl px-6 py-4 text-red-700 font-semibold text-base text-center max-w-lg mx-auto">
-                <Info className="inline w-5 h-5 mr-2 mb-0.5" />
-                {analyzeError}
-              </div>
-            )}
+                  {/* Hidden file inputs */}
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    suppressHydrationWarning
+                    className="hidden"
+                    onChange={(e) => { handleFileUpload(e.target.files); e.target.value = "" }}
+                  />
+                  <input
+                    ref={cameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    suppressHydrationWarning
+                    className="hidden"
+                    onChange={(e) => { handleFileUpload(e.target.files); e.target.value = "" }}
+                  />
+                </div>
 
-            {/* Success */}
-            {successCount !== null && (
-              <div className="flex flex-col items-center gap-3 py-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="w-20 h-20 rounded-full bg-[var(--risk-low-bg)] flex items-center justify-center shadow-md">
-                  <CheckCircle className="w-10 h-10 text-[var(--risk-low)]" />
-                </div>
-                <p className="text-2xl font-extrabold text-[var(--risk-low)]">
-                  {successCount > 0 ? `${successCount} ${t.success_found}` : t.success_none}
-                </p>
-                <div className="flex gap-1.5">
-                  {[0, 1, 2].map(i => (
-                    <div key={i} className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── Analysis Result Section (scroll target for chatbot deep-link) ── */}
-            <div id="analysis-result-section">
-
-            {/* Category Selection */}
-            {showCategoryTabs && (
-              <div ref={categoryTabsRef} className="bg-card rounded-2xl border border-border p-4 md:p-6 shadow-sm mb-8">
-                <h2 className="text-2xl font-bold mb-2 text-center">{t.select_category}</h2>
-                <p className="text-muted-foreground text-center mb-6">{t.select_category_hint}</p>
-                <div className={`grid gap-3 w-full ${getAvailableCategories(apiResultsCache).length === 1 ? "grid-cols-1" : getAvailableCategories(apiResultsCache).length === 2 ? "grid-cols-2 md:grid-cols-2" : "grid-cols-2 md:grid-cols-4"}`}>
-                  {getAvailableCategories(apiResultsCache).includes("appetizer") && (
-                    <button
-                      onClick={() => handleCategorySelect("appetizer")}
-                      className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
-                        selectedCategory === "appetizer"
-                          ? "border-primary bg-primary/10 text-primary shadow-sm"
-                          : "border-border hover:border-primary hover:bg-primary/5"
-                      }`}
-                    >
-                      <Salad className="w-5 h-5 text-primary" />
-                      <span className="text-base font-bold">{t.categories.appetizer}</span>
-                    </button>
-                  )}
-                  {getAvailableCategories(apiResultsCache).includes("main") && (
-                    <button
-                      onClick={() => handleCategorySelect("main")}
-                      className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
-                        selectedCategory === "main"
-                          ? "border-primary bg-primary/10 text-primary shadow-sm"
-                          : "border-border hover:border-primary hover:bg-primary/5"
-                      }`}
-                    >
-                      <Utensils className="w-5 h-5 text-primary" />
-                      <span className="text-base font-bold">{t.categories.main}</span>
-                    </button>
-                  )}
-                  {getAvailableCategories(apiResultsCache).includes("dessert") && (
-                    <button
-                      onClick={() => handleCategorySelect("dessert")}
-                      className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
-                        selectedCategory === "dessert"
-                          ? "border-primary bg-primary/10 text-primary shadow-sm"
-                          : "border-border hover:border-primary hover:bg-primary/5"
-                      }`}
-                    >
-                      <Cake className="w-5 h-5 text-primary" />
-                      <span className="text-base font-bold">{t.categories.dessert}</span>
-                    </button>
-                  )}
-                  {getAvailableCategories(apiResultsCache).includes("drink") && (
-                    <button
-                      onClick={() => handleCategorySelect("drink")}
-                      className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
-                        selectedCategory === "drink"
-                          ? "border-primary bg-primary/10 text-primary shadow-sm"
-                          : "border-border hover:border-primary hover:bg-primary/5"
-                      }`}
-                    >
-                      <GlassWater className="w-5 h-5 text-primary" />
-                      <span className="text-base font-bold">{t.categories.drink}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* No Results */}
-            {results && results.length === 0 && (
-              <div className="bg-[var(--cb-pink)] border border-[#8b3a62]/30 rounded-2xl p-4 md:p-8 text-center">
-                <div className="w-16 h-16 mx-auto mb-4 bg-[#8b3a62]/10 rounded-full flex items-center justify-center">
-                  <Info className="w-8 h-8 text-[#8b3a62]" />
-                </div>
-                <h3 className="text-xl font-bold mb-2 text-[#8b3a62]">No food detected</h3>
-                <p className="text-base text-foreground/80 mb-6">Please upload a clearer photo of the menu or describe your food.</p>
-                <button onClick={clearAll} className="w-full flex items-center justify-center gap-2 bg-[#8b3a62] text-white font-bold text-lg py-4 rounded-2xl hover:opacity-90">
-                  <Trash2 className="w-5 h-5" />
-                  {t.analyze_new_food}
-                </button>
-              </div>
-            )}
-
-            {/* Results */}
-            {results && results.length > 0 && (
-              <div>
-                <h2 className="text-3xl font-bold mb-3">{t.result_title} - {t.categories[selectedCategory as keyof typeof t.categories]}</h2>
-                                <div className="bg-slate-100 rounded-xl px-5 py-4 mb-4 flex items-start gap-3 border border-slate-200">
-                  <Info className="w-5 h-5 shrink-0 mt-0.5 text-slate-600" />
-                  <p className="text-lg font-semibold text-[var(--risk-low)] leading-relaxed">{t.disclaimer}</p>
-                </div>
-                <div className="bg-[var(--risk-low-bg)] border border-[var(--risk-low)]/30 rounded-2xl px-5 py-4 mb-6 flex items-start gap-3">
-                  <Star className="w-6 h-6 text-[var(--risk-low)] shrink-0 mt-0.5" />
-                  <p className="text-lg font-semibold text-[var(--risk-low)] leading-relaxed">{t.top3_disclaimer}</p>
-                </div>
-                <div className="space-y-4">
-                  {results.map((food, i) => (
-                    <FoodResultCard
-                      key={i}
-                      food={food}
-                      isBest={i === 0}
-                      t={t}
-                      lang={lang}
-                      mealPlanFood={findMealPlanFood(food.name, initialFoods)}
-                    />
-                  ))}
-                </div>
-                <div className="mt-8 flex gap-3">
-                  {/* Back button — scrolls to category tabs */}
+                {/* Text Input Toggle - Secondary feature */}
+                {!showTextInput ? (
                   <button
-                    onClick={() => {
-                      handleAnalyzeAnother()
-                      setTimeout(() => {
-                        categoryTabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-                      }, 50)
-                    }}
-                    className="flex-1 flex items-center justify-center gap-2 bg-[#ADD8E6] text-[#1a5276] font-bold text-lg py-4 rounded-2xl hover:bg-[#93c6d6] transition-colors border-2 border-[#ADD8E6]"
+                    onClick={() => setShowTextInput(true)}
+                    className="w-full flex items-center justify-center gap-2 py-3 text-primary font-semibold hover:bg-primary/5 rounded-xl transition-colors"
                   >
-                    <ArrowRight className="w-5 h-5 rotate-180" />
-                    {t.back_to_category}
+                    <Type className="w-5 h-5" />
+                    {t.type_food_instead}
                   </button>
-                  {/* Reset button — half width, right side */}
+                ) : (
+                  <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-bold flex items-center gap-2">
+                        <Utensils className="w-5 h-5 text-primary" />
+                        {t.text_input_title}
+                      </h3>
+                      <button
+                        onClick={() => { setShowTextInput(false); setTextInput("") }}
+                        className="text-muted-foreground hover:text-foreground p-1"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-3">{t.text_input_hint}</p>
+                    <textarea
+                      value={textInput}
+                      suppressHydrationWarning
+                      onChange={(e) => {
+                        setTextInput(e.target.value)
+                        if (showCategories || results || apiResultsCache) {
+                          setShowCategories(false)
+                          setSelectedCategory(null)
+                          setResults(null)
+                          setApiResultsCache(null)
+                          setPreviousOcr("")
+                          setNewFiles([])
+                        }
+                      }}
+                      placeholder={t.text_placeholder}
+                      className="w-full h-[120px] p-4 rounded-xl border border-border bg-background text-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                    />
+                  </div>
+                )}
+
+                {/* Analyse Button */}
+                {showAnalyzeButton && (
+                  <button
+                    onClick={() => handleAnalyze(lang)}
+                    disabled={isAnalyzing}
+                    className="w-full flex items-center justify-center gap-3 bg-accent text-accent-foreground font-bold text-xl px-8 py-5 rounded-2xl hover:opacity-90 transition-opacity shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <CheckCircle className="w-7 h-7" />
+                    {t.analyze_btn}
+                  </button>
+                )}
+
+                {/* Loading State */}
+                {isAnalyzing && (
+                  <div className="flex flex-col items-center gap-4 py-8">
+                    <div className="relative w-20 h-20">
+                      <svg className="w-20 h-20 animate-spin" viewBox="0 0 80 80" fill="none">
+                        <circle cx="40" cy="40" r="34" stroke="var(--color-primary)" strokeOpacity="0.15" strokeWidth="8" />
+                        <circle cx="40" cy="40" r="34" stroke="var(--color-primary)" strokeWidth="8" strokeLinecap="round" strokeDasharray="53 160" />
+                      </svg>
+                    </div>
+                    <p className="text-base font-semibold text-primary">{t.scanning_steps[scanStep]}</p>
+                  </div>
+                )}
+
+                {/* Error */}
+                {analyzeError && !isAnalyzing && (
+                  <div className="bg-[var(--risk-high-bg)] border border-red-700/30 rounded-xl px-6 py-4 text-red-700 font-semibold text-base text-center">
+                    <Info className="inline w-5 h-5 mr-2 mb-0.5" />
+                    {analyzeError}
+                  </div>
+                )}
+
+                {/* Success Count */}
+                {successCount !== null && (
+                  <div className="flex flex-col items-center gap-3 py-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="w-20 h-20 rounded-full bg-[var(--risk-low-bg)] flex items-center justify-center shadow-md">
+                      <CheckCircle className="w-10 h-10 text-[var(--risk-low)]" />
+                    </div>
+                    <p className="text-2xl font-extrabold text-[var(--risk-low)]">
+                      {successCount > 0 ? `${successCount} ${t.success_found}` : t.success_none}
+                    </p>
+                    <div className="flex gap-1.5">
+                      {[0, 1, 2].map(i => (
+                        <div key={i} className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Navigate to Results Button - Show when results exist */}
+                {hasResults && !isAnalyzing && successCount === null && (
+                  <button
+                    onClick={() => setCurrentPanel("results")}
+                    className="w-full flex items-center justify-center gap-3 bg-primary text-primary-foreground font-bold text-xl py-5 rounded-2xl hover:opacity-90 shadow-lg"
+                  >
+                    {t.view_your_results}
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
+
+                {/* Photo Tips - Simplified */}
+                <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4">
+                  <h3 className="text-base font-bold mb-3 flex items-center gap-2 text-primary">
+                    <Info className="w-5 h-5" />
+                    {t.guide_title}
+                  </h3>
+                  <ul className="space-y-2 text-sm text-foreground/80">
+                    {t.guide_steps.map((step, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <CheckCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                        {step.text}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* ═══════════════════════════════════════════════════════════════════════════
+                RESULTS PANEL - Shows after analysis
+            ═══════════════════════════════════════════════════════════════════════════ */}
+            {currentPanel === "results" && hasResults && (
+              <div className="space-y-4" id="analysis-result-section">
+                {/* Category Selection */}
+                {showCategoryTabs && (
+                  <div ref={categoryTabsRef} className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+                    <h2 className="text-xl font-bold mb-2 text-center">{t.select_category}</h2>
+                    <p className="text-muted-foreground text-center text-sm mb-4">{t.select_category_hint}</p>
+                    <div className={`grid gap-2 w-full ${getAvailableCategories(apiResultsCache).length === 1 ? "grid-cols-1" : getAvailableCategories(apiResultsCache).length === 2 ? "grid-cols-2" : "grid-cols-2"}`}>
+                      {getAvailableCategories(apiResultsCache).includes("appetizer") && (
+                        <button
+                          onClick={() => handleCategorySelect("appetizer")}
+                          className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
+                            selectedCategory === "appetizer"
+                              ? "border-primary bg-primary/10 text-primary shadow-sm"
+                              : "border-border hover:border-primary hover:bg-primary/5"
+                          }`}
+                        >
+                          <Salad className="w-5 h-5 text-primary" />
+                          <span className="text-base font-bold">{t.categories.appetizer}</span>
+                        </button>
+                      )}
+                      {getAvailableCategories(apiResultsCache).includes("main") && (
+                        <button
+                          onClick={() => handleCategorySelect("main")}
+                          className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
+                            selectedCategory === "main"
+                              ? "border-primary bg-primary/10 text-primary shadow-sm"
+                              : "border-border hover:border-primary hover:bg-primary/5"
+                          }`}
+                        >
+                          <Utensils className="w-5 h-5 text-primary" />
+                          <span className="text-base font-bold">{t.categories.main}</span>
+                        </button>
+                      )}
+                      {getAvailableCategories(apiResultsCache).includes("dessert") && (
+                        <button
+                          onClick={() => handleCategorySelect("dessert")}
+                          className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
+                            selectedCategory === "dessert"
+                              ? "border-primary bg-primary/10 text-primary shadow-sm"
+                              : "border-border hover:border-primary hover:bg-primary/5"
+                          }`}
+                        >
+                          <Cake className="w-5 h-5 text-primary" />
+                          <span className="text-base font-bold">{t.categories.dessert}</span>
+                        </button>
+                      )}
+                      {getAvailableCategories(apiResultsCache).includes("drink") && (
+                        <button
+                          onClick={() => handleCategorySelect("drink")}
+                          className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl border-2 transition-all ${
+                            selectedCategory === "drink"
+                              ? "border-primary bg-primary/10 text-primary shadow-sm"
+                              : "border-border hover:border-primary hover:bg-primary/5"
+                          }`}
+                        >
+                          <GlassWater className="w-5 h-5 text-primary" />
+                          <span className="text-base font-bold">{t.categories.drink}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* No Results */}
+                {results && results.length === 0 && (
+                  <div className="bg-[var(--cb-pink)] border border-[#8b3a62]/30 rounded-2xl p-6 text-center">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-[#8b3a62]/10 rounded-full flex items-center justify-center">
+                      <Info className="w-8 h-8 text-[#8b3a62]" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2 text-[#8b3a62]">{t.no_results}</h3>
+                    <p className="text-base text-foreground/80 mb-6">{t.no_results_hint}</p>
+                  </div>
+                )}
+
+                {/* Results List */}
+                {results && results.length > 0 && (
+                  <div>
+                    <h2 className="text-2xl font-bold mb-3">{t.result_title} - {t.categories[selectedCategory as keyof typeof t.categories]}</h2>
+                    
+                    {/* Disclaimer */}
+                    <div className="bg-slate-100 rounded-xl px-4 py-3 mb-3 flex items-start gap-2 border border-slate-200">
+                      <Info className="w-5 h-5 shrink-0 mt-0.5 text-slate-600" />
+                      <p className="text-sm text-slate-600">{t.disclaimer}</p>
+                    </div>
+
+                    {/* Top 3 explanation */}
+                    <div className="bg-[var(--risk-low-bg)] border border-[var(--risk-low)]/30 rounded-2xl px-4 py-3 mb-4 flex items-start gap-2">
+                      <Star className="w-5 h-5 text-[var(--risk-low)] shrink-0 mt-0.5" />
+                      <p className="text-sm font-semibold text-[var(--risk-low)]">{t.top3_disclaimer}</p>
+                    </div>
+
+                    {/* Food cards */}
+                    <div className="space-y-4">
+                      {results.map((food, i) => (
+                        <FoodResultCard
+                          key={i}
+                          food={food}
+                          isBest={i === 0}
+                          t={t}
+                          lang={lang}
+                          mealPlanFood={findMealPlanFood(food.name, initialFoods)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Navigation buttons at bottom of results */}
+                <div className="flex gap-3 pt-4">
+                  {/* Back to Category button */}
+                  {results && results.length > 0 && getAvailableCategories(apiResultsCache).length > 1 && (
+                    <button
+                      onClick={() => {
+                        handleAnalyzeAnother()
+                        setTimeout(() => {
+                          categoryTabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                        }, 50)
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 bg-muted text-foreground font-bold text-lg py-4 rounded-2xl hover:bg-muted/80 transition-colors"
+                    >
+                      <ArrowLeft className="w-5 h-5" />
+                      {t.back_to_category}
+                    </button>
+                  )}
+                </div>
+
+                {/* Try Another Photo / Start Over */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setCurrentPanel("upload")}
+                    className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold text-lg py-4 rounded-2xl hover:opacity-90"
+                  >
+                    <Camera className="w-5 h-5" />
+                    {t.try_another_photo}
+                  </button>
                   <button
                     onClick={clearAll}
-                    className="flex-none w-[calc(50%-6px)] flex items-center justify-center gap-2 border-2 border-border text-foreground font-bold text-lg py-4 rounded-2xl hover:bg-muted"
+                    className="flex-none px-6 flex items-center justify-center gap-2 border-2 border-border text-foreground font-semibold py-4 rounded-2xl hover:bg-muted"
                   >
                     <Trash2 className="w-5 h-5" />
                     {t.analyze_new_food}
@@ -1494,29 +1631,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 </div>
               </div>
             )}
-
-            </div>{/* end analysis-result-section */}
-
-            {/* Photo Guide */}
-            <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4 md:p-6">
-              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-primary">
-                <Camera className="w-7 h-7" />
-                {t.guide_title}
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {t.guide_steps.map((step, i) => (
-                  <div key={i} className="bg-card rounded-xl p-4 text-center border border-border">
-                    <div className="w-12 h-12 mx-auto mb-3 bg-primary/10 rounded-full flex items-center justify-center">
-                      {i === 0 && <Camera className="w-6 h-6 text-primary" />}
-                      {i === 1 && <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
-                      {i === 2 && <Utensils className="w-6 h-6 text-primary" />}
-                      {i === 3 && <CheckCircle className="w-6 h-6 text-primary" />}
-                    </div>
-                    <p className="text-base font-medium">{step.text}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
 
             {/* Image Modal */}
             {showImageModal && modalImage && (
@@ -1558,7 +1672,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                       <button
                         onClick={() => {
                           setShowUploadSheet(false)
-                          // Small delay so sheet finishes animating out before camera opens
                           setTimeout(() => cameraRef.current?.click(), 150)
                         }}
                         className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl bg-primary/5 hover:bg-primary/10 active:bg-primary/15 transition-colors text-left"
@@ -1584,7 +1697,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                       </button>
                     </div>
 
-                    {/* Cancel — visually separated */}
+                    {/* Cancel */}
                     <div className="px-4 pb-6 pt-1">
                       <button
                         onClick={() => setShowUploadSheet(false)}
