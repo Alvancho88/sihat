@@ -103,7 +103,7 @@ const content = {
     success_found: "items found!",
     success_none: "No items detected",
     top3_disclaimer: "We are showing you the Top 3 Healthiest Choices identified in your photo. These are the safest options for managing your blood sugar, blood pressure, and cholesterol.",
-    analyze_new_food: "Reset",
+    analyze_new_food: "Start Over",
     back_to_category: "Back to Categories",
     best_choice_reason_label: "Why we pick this as the Best Choice",
     add_to_meal_plan: "Add to Meal Plan",
@@ -201,7 +201,7 @@ const content = {
     success_found: "item dijumpai!",
     success_none: "Tiada item dikesan",
     top3_disclaimer: "Kami menunjukkan kepada anda 3 Pilihan Paling Sihat daripada apa yang dijumpai dalam foto makanan anda. Ini adalah pilihan paling selamat untuk gula darah anda.",
-    analyze_new_food: "Set Semula",
+    analyze_new_food: "Mula Semula",
     back_to_category: "Kembali ke Kategori",
     best_choice_reason_label: "Kenapa Pilihan Terbaik",
     add_to_meal_plan: "Tambah ke Pelan Makanan",
@@ -296,8 +296,8 @@ const content = {
     scanning_steps: ["正在读取菜单...", "正在识别食物...", "正在计算营养值...", "即将完成..."],
     success_found: "个食物已找到！",
     success_none: "未检测到食物",
-    top3_disclaimer: "我们为您展示了食物���片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
-    analyze_new_food: "重设",
+    top3_disclaimer: "我们为您展示了食物���片��发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
+    analyze_new_food: "重新开始",
     back_to_category: "返回类别",
     best_choice_reason_label: "为何是最佳选择",
     add_to_meal_plan: "加入饮食计划",
@@ -1632,10 +1632,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         uploadPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
                       }, 100)
                     }}
-                    className="flex-none px-4 flex items-center justify-center gap-1.5 border-2 border-border text-foreground font-semibold text-base py-3.5 rounded-2xl hover:bg-muted"
+                    className="flex-1 flex items-center justify-center gap-1.5 border-2 border-border text-foreground font-semibold text-base py-3.5 rounded-2xl hover:bg-muted"
                   >
                     <Trash2 className="w-4 h-4 shrink-0" />
-                    <span>{t.analyze_new_food}</span>
+                    <span className="truncate">{t.analyze_new_food}</span>
                   </button>
                 </div>
               </div>
