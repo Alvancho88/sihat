@@ -296,7 +296,7 @@ const content = {
     scanning_steps: ["正在读取菜单...", "正在识别食物...", "正在计算营养值...", "即将完成..."],
     success_found: "个食物已找到！",
     success_none: "未检测到食物",
-    top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
+    top3_disclaimer: "我们为您展示了食物��片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
     analyze_new_food: "重新开始",
     back_to_category: "返回类别",
     best_choice_reason_label: "为何是最佳选择",
@@ -810,11 +810,11 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const fileRef = useRef<HTMLInputElement>(null)       // gallery / desktop file picker
   const cameraRef = useRef<HTMLInputElement>(null)     // camera-only (mobile)
   const categoryTabsRef = useRef<HTMLDivElement>(null) // category tabs section (for scroll-back)
+  const uploadPanelRef = useRef<HTMLDivElement>(null)  // upload panel container (for scroll to upload)
+  const analyzeButtonRef = useRef<HTMLButtonElement>(null) // analyze button (for scroll after photo added)
+  const panelNavRef = useRef<HTMLDivElement>(null)     // panel navigation tabs (for scroll to results)
   const currentLangRef = useRef<LangCode>("en")        // latest lang from PageLayout render prop
   const [pendingAutoAnalyze, setPendingAutoAnalyze] = useState(false)
-  // Scroll flags — set before triggering restore/analyze so result section scrolls into view.
-  const scrollAfterRestoreRef = useRef(false)
-  const scrollAfterAnalyzeRef = useRef(false)
 
   const MAX_IMAGES = 5 // Maximum number of images allowed
 
@@ -890,12 +890,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       setResults(cache[firstCategory])
       // Auto-navigate to results panel when restoring
       setCurrentPanel("results")
-      if (scrollAfterRestoreRef.current) {
-        scrollAfterRestoreRef.current = false
-        setTimeout(() => {
-          window.scrollTo({ top: 0, behavior: "smooth" })
-        }, 150)
-      }
+      // Scroll to panel navigation after restore (shows category + results)
+      setTimeout(() => {
+        panelNavRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      }, 150)
     } catch {
       // Ignore malformed session data and let users analyse again normally.
     }
@@ -919,7 +917,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       const recText = sessionStorage.getItem("rec-text")
 
       if (hasScanCtx) {
-        scrollAfterRestoreRef.current = true
         restoreSharedScanResults()
       } else if (recText) {
         setTextInput(recText)
@@ -928,7 +925,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
         setShowCategories(false)
         setSelectedCategory(null)
         setResults(null)
-        scrollAfterAnalyzeRef.current = true
         setPendingAutoAnalyze(true)
       } else {
         // No new analysis — just scroll to whatever is already showing
@@ -964,7 +960,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
     if (hasScanContext) {
       console.log("[Recommendation] fromChatbot: scan context found, restoring full analysis")
-      scrollAfterRestoreRef.current = true
       restoreSharedScanResults()
       return
     }
@@ -979,7 +974,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       setShowCategories(false)
       setSelectedCategory(null)
       setResults(null)
-      scrollAfterAnalyzeRef.current = true
       setPendingAutoAnalyze(true)
     }
   }, [searchParams, restoreSharedScanResults])
@@ -1041,6 +1035,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       setAnalyzeError(null)
       // Reset to upload panel when new photos are added
       setCurrentPanel("upload")
+      // Scroll to show analyze button after photo is added (hide title/subtitle)
+      setTimeout(() => {
+        analyzeButtonRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+      }, 150)
     })
   }, [uploadedImages.length])
 
@@ -1136,12 +1134,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       }
       // Auto-navigate to results panel after successful analysis
       setCurrentPanel("results")
-      if (scrollAfterAnalyzeRef.current) {
-        scrollAfterAnalyzeRef.current = false
-        setTimeout(() => {
-          window.scrollTo({ top: 0, behavior: "smooth" })
-        }, 150)
-      }
+      // Scroll to panel navigation (hides title/subtitle, shows category + results)
+      setTimeout(() => {
+        panelNavRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      }, 150)
     } catch (err: unknown) {
       setAnalyzeError(err instanceof Error ? err.message : "Something went wrong. Please try again.")
     } finally {
@@ -1203,7 +1199,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
             {/* Panel Navigation Indicator - only show when we have results */}
             {hasResults && (
-              <div className="flex items-center justify-center gap-2 mb-6">
+              <div ref={panelNavRef} className="flex items-center justify-center gap-2 mb-6">
                 <button
                   onClick={() => setCurrentPanel("upload")}
                   className={`flex items-center gap-2 px-4 py-2 rounded-full text-base font-semibold transition-all ${
@@ -1233,7 +1229,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 UPLOAD PANEL - Primary screen for elderly users
             ═══════════════════════════════════════════════════════════════════════════ */}
             {currentPanel === "upload" && (
-              <div className="space-y-4">
+              <div ref={uploadPanelRef} className="space-y-4">
                 {/* Main Upload Area */}
                 <div className="bg-card rounded-2xl border-2 border-primary/20 p-6 shadow-sm">
                   <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-center justify-center">
@@ -1406,6 +1402,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 {/* Analyse Button */}
                 {showAnalyzeButton && (
                   <button
+                    ref={analyzeButtonRef}
                     onClick={() => handleAnalyze(lang)}
                     disabled={isAnalyzing}
                     className="w-full flex items-center justify-center gap-3 bg-accent text-accent-foreground font-bold text-xl px-8 py-5 rounded-2xl hover:opacity-90 transition-opacity shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
@@ -1615,14 +1612,26 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 {/* Try Another Photo / Start Over */}
                 <div className="flex gap-3">
                   <button
-                    onClick={() => setCurrentPanel("upload")}
+                    onClick={() => {
+                      setCurrentPanel("upload")
+                      // Scroll to upload panel so user can see the function to add photo
+                      setTimeout(() => {
+                        uploadPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      }, 100)
+                    }}
                     className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold text-lg py-4 rounded-2xl hover:opacity-90"
                   >
                     <Camera className="w-5 h-5" />
                     {t.try_another_photo}
                   </button>
                   <button
-                    onClick={clearAll}
+                    onClick={() => {
+                      clearAll()
+                      // Scroll to upload panel after clearing
+                      setTimeout(() => {
+                        uploadPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      }, 100)
+                    }}
                     className="flex-none px-6 flex items-center justify-center gap-2 border-2 border-border text-foreground font-semibold py-4 rounded-2xl hover:bg-muted"
                   >
                     <Trash2 className="w-5 h-5" />
