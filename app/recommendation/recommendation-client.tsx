@@ -1235,11 +1235,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               <div ref={uploadPanelRef} className="space-y-4">
                 {/* Main Upload Area */}
                 <div className="bg-card rounded-2xl border-2 border-primary/20 p-6 shadow-sm">
-                  <h3 className="text-xl md:text-2xl font-bold mb-2 flex items-center gap-2 text-center justify-center">
+                  <h3 className="text-xl md:text-2xl font-bold mb-4 flex items-center gap-2 text-center justify-center">
                     <Camera className="w-6 h-6 md:w-7 md:h-7 text-primary" />
                     {t.upload_title}
                   </h3>
-                  <p className="text-sm md:text-base text-muted-foreground text-center mb-4">{t.max_photos} ({uploadedImages.length}/{MAX_IMAGES})</p>
 
                   {isUploading ? (
                     <div className="border-2 border-dashed border-primary/40 rounded-2xl p-8 flex flex-col items-center justify-center min-h-[280px]">
@@ -1273,7 +1272,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                       )}
 
                       {/* Image grid */}
-                      <div className="grid grid-cols-3 gap-3 mb-4">
+                      <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-4">
                         {uploadedImages.map((img, index) => (
                           <div key={index} className="relative aspect-square rounded-xl overflow-hidden border-2 border-primary group">
                             <Image src={img} alt={`Uploaded ${index + 1}`} fill className="object-cover cursor-pointer" onClick={() => openImageModal(img)} />
@@ -1655,14 +1654,14 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               </div>
             )}
 
-            {/* Image Modal */}
-            {showImageModal && modalImage && (
-              <div className="fixed inset-0 bg-foreground/80 z-50 flex items-center justify-center p-4" onClick={() => setShowImageModal(false)}>
-                <div className="relative max-w-4xl w-full max-h-[90vh]">
-                  <button onClick={() => setShowImageModal(false)} className="absolute -top-12 right-0 text-background hover:text-muted p-2">
-                    <X className="w-8 h-8" />
-                  </button>
-                  <div className="relative w-full h-[80vh] rounded-2xl overflow-hidden">
+{/* Image Modal */}
+      {showImageModal && modalImage && (
+        <div className="fixed inset-0 bg-foreground/80 z-50 flex items-center justify-center p-4 pt-20" onClick={() => setShowImageModal(false)}>
+          <div className="relative max-w-4xl w-full max-h-[80vh]">
+            <button onClick={() => setShowImageModal(false)} className="absolute -top-14 right-0 text-background hover:text-muted p-2 z-10">
+              <X className="w-10 h-10" />
+            </button>
+            <div className="relative w-full h-[70vh] rounded-2xl overflow-hidden">
                     <Image src={modalImage} alt="Full size meal" fill className="object-contain bg-background" />
                   </div>
                 </div>
