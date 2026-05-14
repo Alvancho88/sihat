@@ -28,16 +28,16 @@ type LangCode = "en" | "ms" | "zh"
 const content = {
   en: {
     page_title: "Check Your Food",
-    page_subtitle: "Snap a photo of your food to get health recommendations",
+    page_subtitle: "Snap a photo of your menu or food to get health recommendations",
     guide_title: "How to Take a Good Photo",
     guide_steps: [
       { icon: "camera", text: "Hold your phone steady above the menu" },
       { icon: "light", text: "Make sure there is good lighting" },
-      { icon: "food", text: "If there is too much menu items in one photo, take it separately" },
+      { icon: "food", text: "Too many menu items in one photo? Take it separately" },
       { icon: "clear", text: "Ensure the text is clearly visible" },
     ],
     upload_title: "Take or Upload a Photo",
-    upload_hint: "Tap to take a photo or upload from gallery",
+    upload_hint: "Tap to take a photo or upload photos of menu or food",
     upload_format: "JPG, PNG (Maximum 5 Photos)",
     upload_btn: "Add Photo",
     camera_btn: "Take Photo",
@@ -112,7 +112,7 @@ const content = {
     added_to_meal_plan: "Added to your meal plan",
     removed_from_meal_plan: "Removed from your meal plan",
     meal_plan_unavailable: "AI-generated food analysis",
-    meal_plan_unavailable_hint: "This food is not currently in the SIHAT food database. The nutrition information and health advice shown here are estimated by AI and may not be fully accurate.",
+    meal_plan_unavailable_hint: "This food is not currently in the food database. The nutrition information and health advice are estimated by AI and may not be fully accurate.",
     // Action sheet
     sheet_title: "Add Photo",
     sheet_camera: "Take Photo",
@@ -127,16 +127,16 @@ const content = {
   },
   ms: {
     page_title: "Semak Makanan Anda",
-    page_subtitle: "Ambil foto makanan anda untuk dapatkan cadangan kesihatan",
+    page_subtitle: "Ambil foto menu atau makanan anda untuk dapatkan cadangan kesihatan",
     guide_title: "Cara Mengambil Foto yang Baik",
     guide_steps: [
       { icon: "camera", text: "Pegang telefon anda dengan stabil di atas makanan" },
       { icon: "light", text: "Pastikan pencahayaan yang baik" },
-      { icon: "split", text: "Masukkan semua hidangan dalam satu foto" },
+      { icon: "split", text: "Terlalu banyak item di satu foto? Ambil secara berasingan" },
       { icon: "clear", text: "Pastikan makanan jelas kelihatan" },
     ],
     upload_title: "Ambil atau Muat Naik Foto",
-    upload_hint: "Ketik untuk ambil foto atau muat naik dari galeri",
+    upload_hint: "Ketik untuk ambil foto atau muat naik foto menu atau makanan",
     upload_format: "JPG, PNG (Maksimum 5 Foto)",
     upload_btn: "Tambah Foto",
     camera_btn: "Ambil Foto",
@@ -224,16 +224,16 @@ const content = {
   },
   zh: {
     page_title: "检查您的食物",
-    page_subtitle: "拍摄食物照片以获取健康建议",
+    page_subtitle: "拍摄菜单或食物照片以获取健康建议",
     guide_title: "如何拍摄好照片",
     guide_steps: [
       { icon: "camera", text: "将手机稳定地放在食物上方" },
       { icon: "light", text: "确保光线充足" },
-      { icon: "split", text: "将所有菜肴放在一张照片中" },
+      { icon: "split", text: "照片中东西过多？请分别拍摄" },
       { icon: "clear", text: "确保食物清晰可见" },
     ],
     upload_title: "拍摄或上传照片",
-    upload_hint: "点击拍照或从相册上传",
+    upload_hint: "点击拍照或上传食物或菜单照片",
     upload_format: "JPG, PNG（最多5张照片）",
     upload_btn: "添加照片",
     camera_btn: "拍照",
@@ -299,7 +299,7 @@ const content = {
     scanning_steps: ["正在读取菜单...", "正在识别食物...", "正在计算营养值...", "即将完成..."],
     success_found: "个食物已找到！",
     success_none: "未检测到食物",
-    top3_disclaimer: "我们为您展示了食物����片��发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
+    top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
     analyze_new_food: "重新开始",
     back_to_category: "返回类别",
     best_choice_reason_label: "为何是最佳选择",
@@ -817,6 +817,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const analyzeButtonRef = useRef<HTMLButtonElement>(null) // analyze button (for scroll after photo added)
   const panelNavRef = useRef<HTMLDivElement>(null)     // panel navigation tabs (for scroll to results)
   const currentLangRef = useRef<LangCode>("en")        // latest lang from PageLayout render prop
+  const textInputRef = useRef<HTMLDivElement>(null);   // text input container (for scroll when user clicks "analyze" with text)
+  const typeInsteadButtonRef = useRef<HTMLButtonElement>(null);
   const [pendingAutoAnalyze, setPendingAutoAnalyze] = useState(false)
 
   const MAX_IMAGES = 5 // Maximum number of images allowed
@@ -1018,6 +1020,20 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     return () => window.removeEventListener("keydown", onKey)
   }, [showUploadSheet])
 
+  // Auto scroll to text input when it is shown
+  useEffect(() => {
+  if (showTextInput) {
+    // A small timeout ensures the element is fully rendered before scrolling
+    const timer = setTimeout(() => {
+      textInputRef.current?.scrollIntoView({ 
+        behavior: "smooth", 
+        block: "center" 
+      });
+    }, 100);
+    return () => clearTimeout(timer);
+  }
+}, [showTextInput]);
+
   const handleFileUpload = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return
     const remainingSlots = MAX_IMAGES - uploadedImages.length
@@ -1195,7 +1211,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
           <>
           <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 py-4 md:py-6 min-h-[calc(100vh-200px)]">
             {/* Simple Header - follows 5 second rule */}
-            <div className="text-center mb-6 pt-10">
+            <div className="text-center mb-6 pt-6">
               <h1 className="text-2xl md:text-5xl font-extrabold mb-4 text-balance">{t.page_title}</h1>
               <p className="text-lg md:text-xl text-muted-foreground">{t.page_subtitle}</p>
             </div>
@@ -1361,6 +1377,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 {/* Text Input Toggle - Secondary feature */}
                 {!showTextInput ? (
                   <button
+                    ref={typeInsteadButtonRef}
                     onClick={() => setShowTextInput(true)}
                     className="w-full flex items-center justify-center gap-3 py-4 px-6 text-lg md:text-xl font-bold text-primary bg-primary/10 hover:bg-primary/20 rounded-2xl border-2 border-primary/30 transition-colors"
                   >
@@ -1368,7 +1385,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     {t.type_food_instead}
                   </button>
                 ) : (
-                  <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
+                  <div ref={textInputRef} className="bg-card rounded-2xl border border-border p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg md:text-xl font-bold flex items-center gap-2">
                         <Utensils className="w-5 h-5 md:w-6 md:h-6 text-primary" />
@@ -1465,29 +1482,24 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 )}
 
                 {/* Photo Tips - Simplified */}
-                <div className="bg-primary/5 rounded-2xl border border-primary/20 p-5 md:p-6">
-                  <h3 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-2 text-primary">
-                    <Info className="w-5 h-5 md:w-6 md:h-6" />
+                <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4 md:p-6">
+                  <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-primary">
+                    <Info className="w-7 h-7" />
                     {t.guide_title}
-                  </h3>
-                  <ul className="space-y-3 text-base md:text-lg text-foreground/80">
-                    {t.guide_steps.map((step, i) => {
-                      // Map icons based on the icon key
-                      const iconMap: Record<string, React.ReactNode> = {
-                        camera: <Smartphone className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
-                        light: <Sun className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
-                        food: <Utensils className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
-                        split: <Utensils className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
-                        clear: <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
-                      }
-                      return (
-                        <li key={i} className="flex items-start gap-3">
-                          {iconMap[step.icon] || <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />}
-                          {step.text}
-                        </li>
-                      )
-                    })}
-                  </ul>
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {t.guide_steps.map((step, i) => (
+                      <div key={i} className="bg-card rounded-xl p-2 text-center border border-border">
+                        <div className="w-12 h-12 mx-auto mb-3 bg-primary/10 rounded-full flex items-center justify-center">
+                          {i === 0 && <Camera className="w-6 h-6 text-primary" />}
+                          {i === 1 && <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
+                          {i === 2 && <Utensils className="w-6 h-6 text-primary" />}
+                          {i === 3 && <CheckCircle className="w-6 h-6 text-primary" />}
+                        </div>
+                        <p className="text-base font-medium">{step.text}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
