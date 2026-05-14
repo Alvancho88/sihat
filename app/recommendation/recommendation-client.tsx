@@ -15,7 +15,7 @@ import { DailyIntakePanel, type DailyIntakePanelStrings } from "@/components/ui/
 import Image from "next/image"
 import {
   Camera, Upload, X, Star, TrendingDown, TrendingUp, Minus,
-  CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ArrowLeft, ImageIcon, ShoppingCart, Type, ChevronLeft, ChevronRight
+  CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ArrowLeft, ImageIcon, ShoppingCart, Type, ChevronLeft, ChevronRight, Sun, Smartphone
 } from "lucide-react"
 
 // Define language codes for multi-language support
@@ -38,6 +38,7 @@ const content = {
     ],
     upload_title: "Take or Upload a Photo",
     upload_hint: "Tap to take a photo or upload from gallery",
+    upload_format: "JPG, PNG (Maximum 5 Photos)",
     upload_btn: "Add Photo",
     camera_btn: "Take Photo",
     uploading: "Uploading...",
@@ -136,6 +137,7 @@ const content = {
     ],
     upload_title: "Ambil atau Muat Naik Foto",
     upload_hint: "Ketik untuk ambil foto atau muat naik dari galeri",
+    upload_format: "JPG, PNG (Maksimum 5 Foto)",
     upload_btn: "Tambah Foto",
     camera_btn: "Ambil Foto",
     uploading: "Memuat naik...",
@@ -232,6 +234,7 @@ const content = {
     ],
     upload_title: "拍摄或上传照片",
     upload_hint: "点击拍照或从相册上传",
+    upload_format: "JPG, PNG（最多5张照片）",
     upload_btn: "添加照片",
     camera_btn: "拍照",
     uploading: "上传中...",
@@ -296,7 +299,7 @@ const content = {
     scanning_steps: ["正在读取菜单...", "正在识别食物...", "正在计算营养值...", "即将完成..."],
     success_found: "个食物已找到！",
     success_none: "未检测到食物",
-    top3_disclaimer: "我们为您展示了食物���片��发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
+    top3_disclaimer: "我们为您展示了食物����片��发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
     analyze_new_food: "重新开始",
     back_to_category: "返回类别",
     best_choice_reason_label: "为何是最佳选择",
@@ -1190,11 +1193,11 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
         const t = content[lang]
         return (
           <>
-          <div className="max-w-2xl mx-auto px-4 py-4 md:py-6 min-h-[calc(100vh-200px)]">
+          <div className="max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto px-4 py-4 md:py-6 min-h-[calc(100vh-200px)]">
             {/* Simple Header - follows 5 second rule */}
             <div className="text-center mb-6 pt-10">
-              <h1 className="text-3xl md:text-4xl font-extrabold mb-2 text-balance">{t.page_title}</h1>
-              <p className="text-lg text-muted-foreground">{t.page_subtitle}</p>
+              <h1 className="text-2xl md:text-5xl font-extrabold mb-4 text-balance">{t.page_title}</h1>
+              <p className="text-lg md:text-xl text-muted-foreground">{t.page_subtitle}</p>
             </div>
 
             {/* Panel Navigation Indicator - only show when we have results */}
@@ -1202,24 +1205,24 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               <div ref={panelNavRef} className="flex items-center justify-center gap-2 mb-6">
                 <button
                   onClick={() => setCurrentPanel("upload")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-base font-semibold transition-all ${
+                  className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-full text-lg md:text-xl font-bold transition-all ${
                     currentPanel === "upload"
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                 >
-                  <Camera className="w-4 h-4" />
+                  <Camera className="w-5 h-5 md:w-6 md:h-6" />
                   {t.panel_upload}
                 </button>
                 <button
                   onClick={() => setCurrentPanel("results")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-base font-semibold transition-all ${
+                  className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-full text-lg md:text-xl font-bold transition-all ${
                     currentPanel === "results"
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                 >
-                  <CheckCircle className="w-4 h-4" />
+                  <CheckCircle className="w-5 h-5 md:w-6 md:h-6" />
                   {t.panel_results}
                 </button>
               </div>
@@ -1232,10 +1235,11 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               <div ref={uploadPanelRef} className="space-y-4">
                 {/* Main Upload Area */}
                 <div className="bg-card rounded-2xl border-2 border-primary/20 p-6 shadow-sm">
-                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-center justify-center">
-                    <Camera className="w-6 h-6 text-primary" />
+                  <h3 className="text-xl md:text-2xl font-bold mb-2 flex items-center gap-2 text-center justify-center">
+                    <Camera className="w-6 h-6 md:w-7 md:h-7 text-primary" />
                     {t.upload_title}
                   </h3>
+                  <p className="text-sm md:text-base text-muted-foreground text-center mb-4">{t.max_photos} ({uploadedImages.length}/{MAX_IMAGES})</p>
 
                   {isUploading ? (
                     <div className="border-2 border-dashed border-primary/40 rounded-2xl p-8 flex flex-col items-center justify-center min-h-[280px]">
@@ -1246,15 +1250,15 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     <div>
                       {/* Photo count indicator */}
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                        <span className={`text-base font-bold ${uploadedImages.length >= MAX_IMAGES ? "text-amber-600" : "text-muted-foreground"}`}>
-                          {uploadedImages.length}/{MAX_IMAGES} {t.photos_count}
+                        <span className={`text-base md:text-lg font-bold ${uploadedImages.length >= MAX_IMAGES ? "text-amber-600" : "text-muted-foreground"}`}>
+                          {t.max_photos} ({uploadedImages.length}/{MAX_IMAGES})
                         </span>
                         {uploadedImages.length > 1 && (
                           <button
                             onClick={removeAllImages}
-                            className="flex items-center gap-1 text-sm text-destructive hover:underline"
+                            className="flex items-center gap-2 px-4 py-2 text-base font-semibold text-destructive bg-destructive/10 hover:bg-destructive/20 rounded-xl border border-destructive/30 transition-colors"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-5 h-5" />
                             {t.delete_all}
                           </button>
                         )}
@@ -1319,8 +1323,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                           <Camera className="w-10 h-10 text-primary" />
                         </div>
-                        <p className="text-lg font-semibold text-foreground mb-2">{t.upload_hint}</p>
-                        <p className="text-sm text-muted-foreground">{t.max_photos}</p>
+                        <p className="text-lg md:text-xl font-semibold text-foreground mb-2">{t.upload_hint}</p>
+                        <p className="text-base md:text-lg text-muted-foreground">{t.upload_format}</p>
                       </div>
 
                       {/* Large Take Photo Button */}
@@ -1359,16 +1363,16 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 {!showTextInput ? (
                   <button
                     onClick={() => setShowTextInput(true)}
-                    className="w-full flex items-center justify-center gap-2 py-3 text-primary font-semibold hover:bg-primary/5 rounded-xl transition-colors"
+                    className="w-full flex items-center justify-center gap-3 py-4 px-6 text-lg md:text-xl font-bold text-primary bg-primary/10 hover:bg-primary/20 rounded-2xl border-2 border-primary/30 transition-colors"
                   >
-                    <Type className="w-5 h-5" />
+                    <Type className="w-6 h-6 md:w-7 md:h-7" />
                     {t.type_food_instead}
                   </button>
                 ) : (
                   <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-lg font-bold flex items-center gap-2">
-                        <Utensils className="w-5 h-5 text-primary" />
+                      <h3 className="text-lg md:text-xl font-bold flex items-center gap-2">
+                        <Utensils className="w-5 h-5 md:w-6 md:h-6 text-primary" />
                         {t.text_input_title}
                       </h3>
                       <button
@@ -1378,7 +1382,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         <X className="w-5 h-5" />
                       </button>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-3">{t.text_input_hint}</p>
+                    <p className="text-base md:text-lg text-muted-foreground mb-3">{t.text_input_hint}</p>
                     <textarea
                       value={textInput}
                       suppressHydrationWarning
@@ -1394,7 +1398,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         }
                       }}
                       placeholder={t.text_placeholder}
-                      className="w-full h-[120px] p-4 rounded-xl border border-border bg-background text-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                      className="w-full h-[120px] p-4 rounded-xl border border-border bg-background text-lg md:text-xl resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
                     />
                   </div>
                 )}
@@ -1421,13 +1425,13 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         <circle cx="40" cy="40" r="34" stroke="var(--color-primary)" strokeWidth="8" strokeLinecap="round" strokeDasharray="53 160" />
                       </svg>
                     </div>
-                    <p className="text-base font-semibold text-primary">{t.scanning_steps[scanStep]}</p>
+                    <p className="text-lg md:text-xl font-semibold text-primary">{t.scanning_steps[scanStep]}</p>
                   </div>
                 )}
 
                 {/* Error */}
                 {analyzeError && !isAnalyzing && (
-                  <div className="bg-[var(--risk-high-bg)] border border-red-700/30 rounded-xl px-6 py-4 text-red-700 font-semibold text-base text-center">
+                  <div className="bg-[var(--risk-high-bg)] border border-red-700/30 rounded-xl px-6 py-4 text-red-700 font-semibold text-lg md:text-xl text-center">
                     <Info className="inline w-5 h-5 mr-2 mb-0.5" />
                     {analyzeError}
                   </div>
@@ -1462,18 +1466,28 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 )}
 
                 {/* Photo Tips - Simplified */}
-                <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4">
-                  <h3 className="text-base font-bold mb-3 flex items-center gap-2 text-primary">
-                    <Info className="w-5 h-5" />
+                <div className="bg-primary/5 rounded-2xl border border-primary/20 p-5 md:p-6">
+                  <h3 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-2 text-primary">
+                    <Info className="w-5 h-5 md:w-6 md:h-6" />
                     {t.guide_title}
                   </h3>
-                  <ul className="space-y-2 text-sm text-foreground/80">
-                    {t.guide_steps.map((step, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                        {step.text}
-                      </li>
-                    ))}
+                  <ul className="space-y-3 text-base md:text-lg text-foreground/80">
+                    {t.guide_steps.map((step, i) => {
+                      // Map icons based on the icon key
+                      const iconMap: Record<string, React.ReactNode> = {
+                        camera: <Smartphone className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
+                        light: <Sun className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
+                        food: <Utensils className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
+                        split: <Utensils className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
+                        clear: <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />,
+                      }
+                      return (
+                        <li key={i} className="flex items-start gap-3">
+                          {iconMap[step.icon] || <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-primary shrink-0 mt-0.5" />}
+                          {step.text}
+                        </li>
+                      )
+                    })}
                   </ul>
                 </div>
               </div>
@@ -1487,8 +1501,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 {/* Category Selection */}
                 {showCategoryTabs && (
                   <div ref={categoryTabsRef} className="bg-card rounded-2xl border border-border p-4 shadow-sm">
-                    <h2 className="text-xl font-bold mb-2 text-center">{t.select_category}</h2>
-                    <p className="text-muted-foreground text-center text-sm mb-4">{t.select_category_hint}</p>
+                    <h2 className="text-xl md:text-2xl font-bold mb-2 text-center">{t.select_category}</h2>
+                    <p className="text-muted-foreground text-center text-base md:text-lg mb-4">{t.select_category_hint}</p>
                     <div className={`grid gap-2 w-full ${getAvailableCategories(apiResultsCache).length === 1 ? "grid-cols-1" : getAvailableCategories(apiResultsCache).length === 2 ? "grid-cols-2" : "grid-cols-2"}`}>
                       {getAvailableCategories(apiResultsCache).includes("appetizer") && (
                         <button
@@ -1500,7 +1514,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                           }`}
                         >
                           <Salad className="w-5 h-5 text-primary" />
-                          <span className="text-base font-bold">{t.categories.appetizer}</span>
+                          <span className="text-base md:text-lg font-bold">{t.categories.appetizer}</span>
                         </button>
                       )}
                       {getAvailableCategories(apiResultsCache).includes("main") && (
@@ -1513,7 +1527,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                           }`}
                         >
                           <Utensils className="w-5 h-5 text-primary" />
-                          <span className="text-base font-bold">{t.categories.main}</span>
+                          <span className="text-base md:text-lg font-bold">{t.categories.main}</span>
                         </button>
                       )}
                       {getAvailableCategories(apiResultsCache).includes("dessert") && (
@@ -1526,7 +1540,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                           }`}
                         >
                           <Cake className="w-5 h-5 text-primary" />
-                          <span className="text-base font-bold">{t.categories.dessert}</span>
+                          <span className="text-base md:text-lg font-bold">{t.categories.dessert}</span>
                         </button>
                       )}
                       {getAvailableCategories(apiResultsCache).includes("drink") && (
@@ -1539,7 +1553,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                           }`}
                         >
                           <GlassWater className="w-5 h-5 text-primary" />
-                          <span className="text-base font-bold">{t.categories.drink}</span>
+                          <span className="text-base md:text-lg font-bold">{t.categories.drink}</span>
                         </button>
                       )}
                     </div>
@@ -1552,26 +1566,26 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     <div className="w-16 h-16 mx-auto mb-4 bg-[#8b3a62]/10 rounded-full flex items-center justify-center">
                       <Info className="w-8 h-8 text-[#8b3a62]" />
                     </div>
-                    <h3 className="text-xl font-bold mb-2 text-[#8b3a62]">{t.no_results}</h3>
-                    <p className="text-base text-foreground/80 mb-6">{t.no_results_hint}</p>
+                    <h3 className="text-xl md:text-2xl font-bold mb-2 text-[#8b3a62]">{t.no_results}</h3>
+                    <p className="text-base md:text-lg text-foreground/80 mb-6">{t.no_results_hint}</p>
                   </div>
                 )}
 
                 {/* Results List */}
                 {results && results.length > 0 && (
                   <div>
-                    <h2 className="text-2xl font-bold mb-3">{t.result_title} - {t.categories[selectedCategory as keyof typeof t.categories]}</h2>
+                    <h2 className="text-2xl md:text-3xl font-bold mb-3">{t.result_title} - {t.categories[selectedCategory as keyof typeof t.categories]}</h2>
                     
                     {/* Disclaimer */}
                     <div className="bg-slate-100 rounded-xl px-4 py-3 mb-3 flex items-start gap-2 border border-slate-200">
                       <Info className="w-5 h-5 shrink-0 mt-0.5 text-slate-600" />
-                      <p className="text-sm text-slate-600">{t.disclaimer}</p>
+                      <p className="text-base md:text-lg text-slate-600">{t.disclaimer}</p>
                     </div>
 
                     {/* Top 3 explanation */}
                     <div className="bg-[var(--risk-low-bg)] border border-[var(--risk-low)]/30 rounded-2xl px-4 py-3 mb-4 flex items-start gap-2">
                       <Star className="w-5 h-5 text-[var(--risk-low)] shrink-0 mt-0.5" />
-                      <p className="text-sm font-semibold text-[var(--risk-low)]">{t.top3_disclaimer}</p>
+                      <p className="text-base md:text-lg font-semibold text-[var(--risk-low)]">{t.top3_disclaimer}</p>
                     </div>
 
                     {/* Food cards */}
