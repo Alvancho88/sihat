@@ -12,9 +12,9 @@ const navItems = [
   //{ href: "/recommendation", icon: Camera, label: { en: "Recommendation", ms: "Cadangan", zh: "推荐" } },
   //{ href: "/recommendation", icon: Camera, label: { en: "Recommendation", ms: "Cadangan", zh: "推荐" } },
   { href: "/food", icon: Utensils, label: { en: "Food", ms: "Makanan", zh: "食物" } },
+  { href: "/healthcare", icon: MapPin, label: { en: "Healthcare", ms: "Klinik", zh: "医疗" } },
   { href: "/statistics", icon: ChartNoAxesCombined, label: { en: "Statistics", ms: "Statistik", zh: "统计数据" } },
   { href: "/learn", icon: BookOpen, label: { en: "Learn", ms: "Belajar", zh: "学习" } },
-  { href: "/healthcare", icon: MapPin, label: { en: "Healthcare", ms: "Klinik", zh: "医疗" } },
 ]
 
 const languages = [
