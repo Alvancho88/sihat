@@ -40,7 +40,7 @@ const content = {
     upload_title: "Take or Upload a Photo",
     upload_hint: "Tap to take a photo or upload photos of menu or food",
     upload_format: "JPG, PNG (Maximum 5 Photos)",
-    upload_btn: "Add Photo",
+    upload_btn: "Take Photo",
     camera_btn: "Add Photo",
     uploading: "Uploading...",
     click_to_view: "Click to view full image",
@@ -124,7 +124,7 @@ const content = {
     chatbot_estimate_banner_body:
       "Sugar, sodium, fat, risk, and health tips below reuse the same AI estimates as in the chat. They are not verified against the SIHAT food database.",
     // Action sheet
-    sheet_title: "Add Photo",
+    sheet_title: "Take Photo",
     sheet_camera: "Add Photo",
     sheet_gallery: "Choose from Gallery",
     sheet_cancel: "Cancel",

@@ -1793,8 +1793,8 @@ export async function POST(req: NextRequest) {
     const foodQuestionQuery = extractFoodQueryCandidate(message);
     const foodMention = matchFoodQuery(foodQuestionQuery, foods);
 
-    const primaryKey = process.env.GROQ_API_KEY_3 ?? process.env.GROQ_API_KEY;
-    const backupKey = process.env.GROQ_API_KEY_4 ?? process.env.GROQ_API_KEY_2;
+    const primaryKey = process.env.GROQ_API_KEY_3;
+    const backupKey = process.env.GROQ_API_KEY_4;
 
     if (!primaryKey && !backupKey) {
       throw new Error("No GEMINI API keys configured");
