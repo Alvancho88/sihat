@@ -1597,14 +1597,13 @@ async function callGeminiChat(
   messages: ChatMessage[],
   apiKey: string
 ): Promise<string> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model: "gemma-4-eb-it",
       messages: [
         { role: "user", content: systemPrompt },
         ...messages.map((msg) => ({
@@ -1668,11 +1667,11 @@ tip: short ${langName} sentence`;
   const fallback = (n: string): EstimatedFoodCard => ({ name: n, category: null, risk: "medium", tip: "" });
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}", {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: {"Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: "gemma-4-eb-it",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
         max_tokens: isSingle ? 80 : 200,
@@ -1793,8 +1792,8 @@ export async function POST(req: NextRequest) {
     const foodQuestionQuery = extractFoodQueryCandidate(message);
     const foodMention = matchFoodQuery(foodQuestionQuery, foods);
 
-    const primaryKey = process.env.GROQ_API_KEY_3;
-    const backupKey = process.env.GROQ_API_KEY_4;
+    const primaryKey = process.env.GOOGLE_API_KEY_3 ?? process.env.GOOGLE_API_KEY_4;
+    const backupKey = process.env.GROQ_API_KEY_3 ?? process.env.GROQ_API_KEY_4;
 
     if (!primaryKey && !backupKey) {
       throw new Error("No GEMINI API keys configured");
