@@ -3,7 +3,8 @@
 // The content is localized in English, Malay, and Chinese.
 "use client"
 
-import { Heart, Activity, Smile } from "lucide-react"
+import { Heart, Activity, Smile, ArrowRight } from "lucide-react"
+import Link from "next/link"
 
 // The text content for each language
 const content = {
@@ -31,6 +32,7 @@ const content = {
         iconBg: "#E1F5EE",
         iconColor: "#0F6E56",
         body: "Managing one condition helps the others too. Eating better and moving more can lower blood sugar, reduce blood pressure, and improve cholesterol all at the same time.",
+        cta: { label: "Check the nutritional value of your food", href: "/food" },
       },
     ],
   },
@@ -58,6 +60,7 @@ const content = {
         iconBg: "#E1F5EE",
         iconColor: "#0F6E56",
         body: "Mengurus satu keadaan membantu yang lain juga. Makan lebih baik dan bergerak lebih banyak boleh menurunkan gula darah, mengurangkan tekanan darah, dan meningkatkan kolesterol — semuanya pada masa yang sama.",
+        cta: { label: "Semak nilai nutrisi makanan anda", href: "/food" },
       },
     ],
   },
@@ -85,6 +88,7 @@ const content = {
         iconBg: "#E1F5EE",
         iconColor: "#0F6E56",
         body: "控制一种疾病也有助于其他疾病。改善饮食和增加运动可以同时降低血糖、降低血压并改善胆固醇水平。",
+        cta: { label: "检查您的食物的营养价值", href: "/food" },
       },
     ],
   },
@@ -134,6 +138,17 @@ export function ThreeHighsInsights({ lang }: { lang: "en" | "ms" | "zh" }) {
               <p className="text-base md:text-lg text-muted-foreground leading-relaxed">
                 {card.body}
               </p>
+
+              {/* CTA — only shown on cards that have one (i.e. Good news) */}
+              {"cta" in card && card.cta && (
+                <Link
+                  href={card.cta.href}
+                  className="mt-auto flex items-center gap-1.5 text-base font-semibold"
+                  style={{ color: card.iconColor }}
+                >
+                  {card.cta.label} <ArrowRight className="w-4 h-4" />
+                </Link>
+              )}
             </div>
           )
         })}

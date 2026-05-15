@@ -5,11 +5,12 @@
 import { PageLayout } from "@/components/page-layout"
 import { useState, useEffect, useRef } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, Cell, LabelList } from "recharts"
-import { AlertCircle, Heart, Activity, Eye, X, ChevronDown, Users, TrendingUp, Skull, HeartPulse, TriangleAlert, CalendarCheck, CircleAlert } from "lucide-react"
+import { AlertCircle, Heart, Activity, Eye, X, ChevronDown, Users, TrendingUp, Skull, HeartPulse, TriangleAlert, CalendarCheck, CircleAlert, ArrowRight } from "lucide-react"
 import { MalaysiaChoroplethMap, type YearMapData } from "@/components/malaysia-choropleth-map"
 import { MenuScanCTA } from "@/components/menu-scan-cta"
 import Image from "next/image"
 import { ThreeHighsInsights } from "@/components/three-highs-insights"
+import Link from "next/link"
 
 // ─── Data types and content ───────────────────────────────────────────────
 export interface NationalTrendRow {
@@ -52,8 +53,17 @@ const STAT2_COLORS = [
 // Content for statistics page, organized by language for easy access in the component
 const content = {
   en: {
-    page_title: "The Big Picture: Diabetes in Malaysia",
-    page_subtitle: "Diabetes is a growing challenge for our nation, but understanding the facts is the first step toward a healthier life.",
+    page_title: "Malaysia's Three Highs: Why Diabetes Comes First",
+    page_subtitle: "Diabetes is at the heart of Malaysia's health challenge. Learn how it links to high blood pressure and cholesterol, and how small changes can make a big difference.",
+    summary_why: "Why this matters for you",
+    summary_body: "Malaysia has one of the highest diabetes rates in Asia, and it rarely comes alone; high blood pressure and cholesterol often follow. Scroll down to understand the picture, then take one small step today.",
+    summary_cta1: "Check your food choices",
+    summary_cta2: "Learn about three \"highs\"",
+    stat_nudge: [
+      { text: "That's someone at every dining table.", link: "Learn the warning signs →", href: "/learn" },
+      { text: "Regular screening is the best defence.", link: "Find a clinic near you →", href: "/healthcare" },
+      { text: "Behind every number is a family.", link: "See how food can help →", href: "/food" },
+    ],
     stats_eyebrow: "Diabetes in Malaysia",
     stats_heading: "The numbers are closer to home than you think",
     stats_title2: "The Three Highs in Malaysia",
@@ -102,10 +112,20 @@ const content = {
     click_state: "👇 Tap a state for more information",
     disclaimer_text_map: "For 2015 data, Labuan prevalence is represented by the pooled Sabah/Labuan regional data due to reporting constraints in the original NHMS datasets.",
     disclaimer_text: "These numbers represent real people who deserve support and accurate information. This is why understanding diabetes matters.",
+    good_news_cta: "See foods that help manage all three →",
   },
   ms: {
-    page_title: "Gambaran Keseluruhan: Diabetes di Malaysia",
-    page_subtitle: "Diabetes adalah cabaran yang semakin meningkat bagi negara kita, tetapi memahami fakta adalah langkah pertama menuju kehidupan yang lebih sihat.",
+    page_title: "Tiga Penyakit Tinggi Malaysia: Mengapa Diabetes Didahulukan",
+    page_subtitle: "Diabetes adalah teras cabaran kesihatan Malaysia. Ketahui bagaimana ia berkait dengan tekanan darah tinggi dan kolesterol, dan bagaimana perubahan kecil boleh membuat perbezaan besar.",
+    summary_why: "Mengapa ini penting untuk anda",
+    summary_body: "Malaysia mempunyai salah satu kadar diabetes tertinggi di Asia, dan ia jarang datang bersendirian; tekanan darah tinggi dan kolesterol sering mengikuti. Tatal ke bawah untuk memahami gambaran ini, kemudian ambil satu langkah kecil hari ini.",
+    summary_cta1: "Semak pilihan makanan anda",
+    summary_cta2: "Ketahui tentang tiga penyakit tinggi",
+    stat_nudge: [
+      { text: "Itu seseorang di hampir setiap meja makan.", link: "Ketahui tanda amaran →", href: "/learn" },
+      { text: "Saringan berkala adalah pertahanan terbaik.", link: "Cari klinik terdekat →", href: "/healthcare" },
+      { text: "Di sebalik setiap angka ada keluarga.", link: "Lihat bagaimana makanan dapat membantu →", href: "/food" },
+    ],
     stats_eyebrow: "Diabetes di Malaysia",
     stats_heading: "Angka-angka ini lebih dekat dari yang anda sangka",
     stats_title2: "Tiga Penyakit Tinggi di Malaysia",
@@ -154,10 +174,20 @@ const content = {
     click_state: "👇 Klik pada negeri untuk maklumat lanjut",
     disclaimer_text_map: "Untuk data 2015, prevalens Labuan diwakili oleh data regional Sabah/Labuan yang digabungkan kerana kekangan pelaporan dalam dataset NHMS asal.",
     disclaimer_text: "Nombor-nombor ini mewakili orang sebenar yang memerlukan sokongan dan maklumat yang tepat. Inilah sebabnya memahami diabetes penting.",
+    good_news_cta: "Lihat makanan yang membantu mengurus ketiga-tiga penyakit tinggi →",
   },
   zh: {
-    page_title: "全景：马来西亚的糖尿病",
-    page_subtitle: "糖尿病是我们国家日益增长的挑战，但了解事实是迈向更健康生活的第一步。",
+    page_title: "马来西亚三高：为何糖尿病最受关注",
+    page_subtitle: "糖尿病是马来西亚健康挑战的核心。了解它与高血压和胆固醇的关联，以及小小的改变如何带来大大的不同。",
+    summary_why: "为什么这对您很重要",
+    summary_body: "马来西亚是亚洲糖尿病发病率最高的国家之一，而且它很少单独出现；高血压和高胆固醇往往相伴而来。向下滚动了解全貌，然后今天迈出一小步。",
+    summary_cta1: "检查您的饮食选择",
+    summary_cta2: "了解三高",
+    stat_nudge: [
+      { text: "几乎每张餐桌上都有一个这样的人。", link: "了解警示信号 →", href: "/learn" },
+      { text: "定期筛查是最好的防御。", link: "找到附近的诊所 →", href: "/healthcare" },
+      { text: "每个数字背后都是一个家庭。", link: "了解饮食如何帮助 →", href: "/food" },
+    ],
     stats_eyebrow: "马来西亚的糖尿病",
     stats_heading: "这些数字比你想象的更贴近生活",
     stats_title2: "马来西亚的三高",
@@ -206,6 +236,7 @@ const content = {
     click_state: "👇 点击州属查看详情",
     disclaimer_text_map: "对于2015年的数据，由于原始NHMS数据集中的报告限制，纳闽的患病率由合并的沙巴/纳闽区域数据表示。",
     disclaimer_text: "这些数字代表真实的人，他们需要支持和准确的信息。这就是为什么了解糖尿病很重要。",
+    good_news_cta: "查看有助于管理三高的食物 →",
   },
 }
 
@@ -410,41 +441,101 @@ interface StatCardProps {
   icon?: React.ElementType
   image?: string
   colors: { accent: string; iconBg: string; valueCss: string }
+  nudge?: { text: string; link: string; href: string }
 }
 
-// A card component for displaying a summary statistic with an icon or image, styled according to the provided colors.
-function StatCard({ value, label, icon: Icon, image, colors }: StatCardProps) {
+function StatCard({ value, label, icon: Icon, image, colors, nudge }: StatCardProps) {
   return (
     <div
-      className="relative overflow-hidden rounded-2xl border border-border bg-background flex items-center gap-4 p-4 sm:p-5"
+      className="relative overflow-hidden rounded-2xl border border-border bg-background flex flex-col h-full"
       style={{ borderTop: `3px solid ${colors.accent}` }}
     >
-      {/* Icon circle */}
-      <div
-        className="shrink-0 flex items-center justify-center rounded-full w-16 h-16"
-        style={{ backgroundColor: colors.iconBg }}
-      >
-        {/* If an image URL is provided, show the image. Otherwise, if an icon component is provided, render the icon.*/}
-        {image ? (
-          <div className="relative w-16 h-12">
-            <Image src={image} alt={label} fill className="object-contain" />
+      {/* Main stat row */}
+      <div className="flex items-center gap-4 p-4 sm:p-5 flex-1">
+        <div
+          className="shrink-0 flex items-center justify-center rounded-full w-16 h-16"
+          style={{ backgroundColor: colors.iconBg }}
+        >
+          {image ? (
+            <div className="relative w-16 h-12">
+              <Image src={image} alt={label} fill className="object-contain" />
+            </div>
+          ) : Icon ? (
+            <Icon className="w-12 h-12" style={{ color: colors.valueCss }} />
+          ) : null}
+        </div>
+        <div className="min-w-0">
+          <div
+            className="text-3xl md:text-4xl font-extrabold leading-tight"
+            style={{ color: colors.valueCss }}
+          >
+            {value}
           </div>
-        ) : Icon ? (
-          <Icon className="w-12 h-12" style={{ color: colors.valueCss }} />
-        ) : null}
+          <div className="text-base md:text-lg text-muted-foreground font-medium leading-snug mt-0.5">
+            {label}
+          </div>
+        </div>
       </div>
 
-      {/* Text */}
-      <div className="min-w-0">
-        <div
-          className="text-3xl md:text-4xl font-extrabold leading-tight"
-          style={{ color: colors.valueCss }}
+      {/* ── NEW: Nudge strip ── */}
+      {nudge && (
+        <div className="border-t border-border px-4 sm:px-5 py-3 flex items-center justify-between gap-3 bg-muted/40 min-h-[72px]">
+          <p className="text-sm text-muted-foreground leading-snug">{nudge.text}</p>
+          <Link
+            href={nudge.href}
+            className="shrink-0 text-sm font-semibold whitespace-nowrap"
+            style={{ color: colors.valueCss }}
+          >
+            {nudge.link}
+          </Link>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Summary banner ──────────────────────────────────────────────────
+function SummaryBanner({ t }: { t: typeof content.en }) {
+  const stats = [
+    { value: "1 in 5", label: t.stats[0].label },
+    { value: "4.75M", label: t.stats[2].label },
+    { value: "3 in 4", label: t.stats2[0].label },
+  ]
+  return (
+    <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-5 sm:p-6 space-y-4">
+      {/* Why heading */}
+      <div className="flex items-start gap-3">
+        <AlertCircle className="w-6 h-6 shrink-0 mt-0.5 text-primary" />
+        <div>
+          <h2 className="text-xl md:text-2xl font-bold text-foreground mb-1">{t.summary_why}</h2>
+          <p className="text-base md:text-lg text-muted-foreground leading-relaxed">{t.summary_body}</p>
+        </div>
+      </div>
+
+      {/* Key stat pills — stacked on mobile, side by side on sm+ */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        {stats.map((s, i) => (
+          <div key={i} className="flex-1 bg-background rounded-xl border border-border p-3 text-center">
+            <div className="text-2xl md:text-4xl font-extrabold text-primary">{s.value}</div>
+            <div className="text-base md:text-lg text-muted-foreground mt-0.5 leading-snug">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* CTA buttons — full width on mobile */}
+      <div className="flex flex-col sm:flex-row gap-3 pt-1">
+        <Link
+          href="/recommendation"
+          className="flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-base font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          {value}
-        </div>
-        <div className="text-base md:text-lg text-muted-foreground font-medium leading-snug mt-0.5">
-          {label}
-        </div>
+          {t.summary_cta1} <ArrowRight className="w-4 h-4" />
+        </Link>
+        <Link
+          href="/learn"
+          className="flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-base font-semibold border border-border bg-background hover:bg-muted transition-colors"
+        >
+          {t.summary_cta2}
+        </Link>
       </div>
     </div>
   )
@@ -902,6 +993,8 @@ export default function StatisticsClient({ dataByYear, availableYears, nationalT
               <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto whitespace-normal">{t.page_subtitle}</p>
             </div>
 
+            <SummaryBanner t={t} />
+
             {/* ── Stats section ── */}
             <section className="py-8 md:py-10">
               {/* Eyebrow + heading */}
@@ -927,6 +1020,7 @@ export default function StatisticsClient({ dataByYear, availableYears, nationalT
                     icon={"icon" in stat ? stat.icon : undefined}
                     image={"image" in stat ? stat.image : undefined}
                     colors={STAT_COLORS[i % STAT_COLORS.length]}
+                    nudge={t.stat_nudge[i]}
                   />
                 ))}
               </div>
