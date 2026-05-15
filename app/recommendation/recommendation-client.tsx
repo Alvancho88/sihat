@@ -15,7 +15,7 @@ import { computeRiskFromIndicators, getLevelFromThresholds } from "@/lib/food-re
 
 import Image from "next/image"
 import {
-  Camera, Upload, X, Star, TrendingDown, TrendingUp, Minus,
+  Camera, Upload, X, Star, TrendingDown, TrendingUp, Minus, ArrowRightLeft,
   CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ArrowLeft, ImageIcon, ShoppingCart, Type, ChevronLeft, ChevronRight, Sun, Smartphone
 } from "lucide-react"
 
@@ -1876,7 +1876,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                             onClick={() => setShowAltByCategory(prev => ({ ...prev, [catKey]: !isAltVisible }))}
                             className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl border-2 border-amber-400 bg-amber-50 text-amber-900 font-bold text-base hover:bg-amber-100 transition-colors"
                           >
-                            <TrendingDown className="w-5 h-5 shrink-0" />
+                            <ArrowRightLeft className="w-5 h-5 shrink-0" />
                             {isAltVisible ? (t as any).hide_alternative_btn : (t as any).show_alternative_btn}
                           </button>
 
@@ -1884,7 +1884,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                           {isAltVisible && (
                             <div className="mt-2 rounded-2xl border-2 border-amber-400 bg-amber-50 shadow-sm overflow-hidden">
                               <div className="bg-amber-400 px-4 py-2 flex items-center gap-2">
-                                <TrendingDown className="w-5 h-5 text-amber-900" />
+                                <ArrowRightLeft className="w-5 h-5 text-amber-900" />
                                 <span className="text-amber-900 font-bold text-base">{t.alternative_label}</span>
                               </div>
                               <div className="p-5">
