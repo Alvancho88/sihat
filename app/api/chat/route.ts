@@ -1,6 +1,6 @@
 // app/api/chat/route.ts
 // Epic 9: AI Conversational Health Assistant
-// Uses Google Gemini API with Gemma 4 E4B (gemma-4-e4b-it)
+// Chat: Groq/Llama only (llama-3.3-70b-versatile). Gemma OCR stays in app/api/predict.
 // Supports context-aware advice from food scan sessionStorage data
 // Supports multi-language: English, Bahasa Malaysia, Simplified Chinese
 
@@ -79,11 +79,6 @@ interface ChatRequest {
   intakeSummary?: DailyIntakeSummary;
 }
 
-interface GeminiContent {
-  role: "user" | "model";
-  parts: { text: string }[];
-}
-
 // ─── QUICK FOOD GUIDANCE BUILDERS ─────────────────────────────────────────────
 
 function getLocalizedRiskLabel(risk: "low" | "medium" | "high", lang: LangCode): string {
@@ -153,6 +148,20 @@ ${notes.slice(0, 2).join("\n")}
 
 ${labels.tip}:
 ${tip}`);
+}
+
+/** Structured payload for a single database-matched food (frontend FoodSummaryCard + buttons). */
+function buildStructuredDatabaseFoodResponse(
+  food: FoodItem,
+  lang: LangCode,
+  openFullLabels: Record<LangCode, string>
+): ChatResponse {
+  return {
+    reply: buildQuickFoodSummary(food, lang),
+    suggestions: [food],
+    actionButton: { label: openFullLabels[lang], href: "/recommendation" },
+    isMultiFood: false,
+  };
 }
 
 // ─── CART MANAGEMENT ──────────────────────────────────────────────────────────
@@ -319,7 +328,12 @@ function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem
   return { reply: "Sorry, I didn't understand that." };
 }
 
-function formatFoodSuggestions(foods: FoodItem[], lang: LangCode, query?: string): ChatResponse {
+function formatFoodSuggestions(
+  foods: FoodItem[],
+  lang: LangCode,
+  query: string | undefined,
+  openFullLabels: Record<LangCode, string>
+): ChatResponse {
   const choose = {
     en: "Did you mean one of these? You can pick one below:",
     ms: "Adakah anda maksudkan salah satu berikut? Pilih di bawah:",
@@ -338,6 +352,8 @@ function formatFoodSuggestions(foods: FoodItem[], lang: LangCode, query?: string
       : choose[lang],
     suggestions: foods,
     unavailableFoodName: unavailableFoodName || undefined,
+    actionButton: foods.length > 0 ? { label: openFullLabels[lang], href: "/recommendation" } : undefined,
+    isMultiFood: foods.length > 1,
   };
 }
 
@@ -813,6 +829,42 @@ function extractFoodQueryCandidate(message: string): string {
   if (!normalized) return "";
 
   const leadingJunk = [
+    "help me analyze",
+    "help me analyse",
+    "help me check",
+    "help me",
+    "can you please analyze",
+    "can you please analyse",
+    "can you analyze",
+    "can you analyse",
+    "could you analyze",
+    "could you analyse",
+    "please analyze",
+    "please analyse",
+    "please check",
+    "analyze the",
+    "analyze my",
+    "analyze this",
+    "analyze",
+    "analyse the",
+    "analyse my",
+    "analyse this",
+    "analyse",
+    "check the",
+    "check my",
+    "check this",
+    "check",
+    "can you check",
+    "could you check",
+    "那帮我分析",
+    "那幫我分析",
+    "请帮我分析",
+    "請幫我分析",
+    "帮我分析",
+    "幫我分析",
+    "请分析",
+    "請分析",
+    "分析",
     "那帮我加",
     "那幫我加",
     "那请帮我加",
@@ -862,6 +914,9 @@ function extractFoodQueryCandidate(message: string): string {
   ].sort((a, b) => normalizeFoodText(b).length - normalizeFoodText(a).length);
 
   const trailingJunk = [
+    "not available though",
+    "not available",
+    "though",
     "健康吗",
     "健康嗎",
     "怎么样",
@@ -921,7 +976,716 @@ function extractFoodQueryCandidate(message: string): string {
     if (before === normalized) break;
   }
 
+  if (!hasCjk(normalized)) {
+    const commandTokens = new Set([
+      "help",
+      "me",
+      "analyze",
+      "analyse",
+      "analysis",
+      "check",
+      "please",
+      "can",
+      "could",
+      "you",
+      "the",
+      "my",
+      "this",
+      "that",
+      "food",
+    ]);
+    let tokens = normalized.split(" ").filter(Boolean);
+    while (tokens.length > 0 && commandTokens.has(tokens[0]!)) {
+      tokens = tokens.slice(1);
+    }
+    normalized = tokens.join(" ");
+  }
+
   return normalized.replace(/\s+/g, " ").trim();
+}
+
+const CONVERSATIONAL_PHRASES_EXACT = new Set(
+  [
+    "ok",
+    "okay",
+    "why",
+    "no",
+    "nope",
+    "wrong",
+    "thanks",
+    "thank you",
+    "try again",
+    "not available",
+    "not available though",
+    "that is wrong",
+    "thats wrong",
+    "what do you mean",
+    "what does this mean",
+    "never mind",
+    "nevermind",
+    "i see",
+    "got it",
+    "understood",
+    "tidak ada",
+    "tak ada",
+    "kenapa",
+    "salah",
+    "cuba lagi",
+    "好的",
+    "为什么",
+    "不对",
+    "再试",
+    "什么意思",
+    "dont talk to me",
+    "don't talk to me",
+    "pmg",
+  ].map(normalizeFoodText)
+);
+
+/** Follow-up about risk / meaning — not generic chit-chat; may use prior scan context. */
+function isFoodFollowUpQuestion(message: string): boolean {
+  const n = normalizeFoodText(message);
+  if (!n) return false;
+  if (
+    /\bwhy\b.*\b(risk|sugar|sodium|salt|fat|calorie|calories|high|low|gi|healthy|unhealthy)\b/u.test(n)
+  ) {
+    return true;
+  }
+  if (/\bwhy\b.*\b(so|is)\b.*\b(high|low|medium)\b/u.test(n)) return true;
+  if (/\bwhat (does|do) (this|that|it) mean\b/u.test(n)) return true;
+  if (/^what does this mean/u.test(n)) return true;
+  if (/\bhow (come|is)\b/u.test(n) && /\b(risk|high|low|sugar|sodium)\b/u.test(n)) return true;
+  if (/为什么.*(风险|糖|钠|盐|脂肪|高|低|意思)/u.test(n)) return true;
+  if (/什么意思/u.test(n) && n.length < 36) return true;
+  if (/kenapa.*(risiko|tinggi|gula|natrium)/u.test(n)) return true;
+  return false;
+}
+
+function isCasualAcknowledgement(message: string): boolean {
+  const n = normalizeFoodText(message);
+  if (!n || isFoodFollowUpQuestion(message)) return false;
+  const exact = new Set(
+    [
+      "ok",
+      "okay",
+      "k",
+      "kk",
+      "thanks",
+      "thank you",
+      "ty",
+      "thx",
+      "cheers",
+      "i see",
+      "got it",
+      "understood",
+      "fine",
+      "sure",
+      "cool",
+      "nice",
+      "great",
+      "good",
+      "yes",
+      "yep",
+      "yeah",
+      "好的",
+      "明白",
+      "谢谢",
+      "多谢",
+      "嗯",
+      "好",
+      "行",
+      "知道了",
+    ].map(normalizeFoodText)
+  );
+  if (exact.has(n)) return true;
+  if (/^(thanks|thank you|ty|thx)(\s+!)?$/u.test(n)) return true;
+  if (/^(thank you)( very much| so much)$/u.test(n)) return true;
+  return false;
+}
+
+function isComplaintOrClarification(message: string): boolean {
+  const n = normalizeFoodText(message);
+  if (!n || isFoodFollowUpQuestion(message) || isCasualAcknowledgement(message)) return false;
+  if (
+    /\b(not available|not working|not showing|not right|cannot see|cant see|doesnt work|don't work)\b/u.test(
+      n
+    )
+  ) {
+    return true;
+  }
+  if (/\b(wrong|error|broken|missing|bug)\b/u.test(n)) return true;
+  if (/\b(salah|tidak|rosak|tidak boleh)/u.test(n)) return true;
+  if (/\b(不对|不行|没有|故障|不显示)/u.test(n)) return true;
+  if (/\bthough$/u.test(n) && n.length < 48) return true;
+  return false;
+}
+
+/** Food-analysis intent but no dish named (this/that/healthy). */
+function isVagueFoodAnalysisIntent(message: string): boolean {
+  const n = normalizeFoodText(message);
+  if (!n || isFoodFollowUpQuestion(message) || isCasualAcknowledgement(message) || isComplaintOrClarification(message)) {
+    return false;
+  }
+  if (isVagueFoodQuestion(message)) return true;
+  if (
+    /\b(analyze this|analyse this|check this food|check this|this food|that food|these foods|is this healthy|is it healthy|is this okay|can you analyze|can you analyse|help me analyze|help me analyse)\b/u.test(
+      n
+    )
+  ) {
+    return true;
+  }
+  if (/分析(这个|那种)|检查(这个|这)|这个.*健康|可不可以吃/u.test(n)) return true;
+  if (/\b(boleh semak|analisis ini|semak ini)\b/u.test(n)) return true;
+  return false;
+}
+
+function scanContextSummaryLines(scanContext: NonNullable<ChatRequest["scanContext"]>): string {
+  const lines: string[] = [];
+  for (const cat of ["Appetizer", "Main Dish", "Dessert", "Drinks"] as const) {
+    const ranking = scanContext[cat]?.ranking;
+    if (!ranking?.length) continue;
+    for (const item of ranking) {
+      const tip =
+        typeof item.tip === "object" && item.tip !== null && "en" in item.tip
+          ? String((item.tip as { en?: string }).en ?? "").slice(0, 120)
+          : String(item.tip ?? "").slice(0, 120);
+      lines.push(
+        `- ${item.f} (${cat}): risk ${item.risk}. Sugar ${item.sugar}g, sodium ${item.salt}mg, fat ${item.fat}g.${tip ? ` Tip: ${tip}` : ""}`
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+function buildBriefChitChatSystemPrompt(language: LangCode): string {
+  const langInstructions: Record<LangCode, string> = {
+    en: "Respond entirely in English.",
+    ms: "Jawab sepenuhnya dalam Bahasa Malaysia.",
+    zh: "请完全使用简体中文回答。",
+  };
+  return `You are Siti, a friendly SIHAT health assistant.
+
+${langInstructions[language]}
+
+The user sent a very short message (for example okay, thanks, or never mind). It is NOT asking to analyze food by name.
+
+Reply in ONE short sentence, warm and natural. Do NOT ask which food or drink to check. Do NOT mention pizza, menus, or analysis unless the user did.`;
+}
+
+function buildFollowUpSystemPrompt(
+  language: LangCode,
+  scanContext: NonNullable<ChatRequest["scanContext"]>
+): string {
+  const langInstructions: Record<LangCode, string> = {
+    en: "Respond entirely in English.",
+    ms: "Jawab sepenuhnya dalam Bahasa Malaysia.",
+    zh: "请完全使用简体中文回答。",
+  };
+  const summary = scanContextSummaryLines(scanContext);
+  return `You are Siti, a friendly SIHAT health assistant for elderly users in Malaysia.
+
+${langInstructions[language]}
+
+The user previously viewed this food analysis (from their menu scan or full analysis). They are asking a FOLLOW-UP question — not naming a new dish.
+
+PREVIOUS ITEMS (only reference these; do not invent other foods):
+${summary}
+
+Instructions:
+- Answer in 2–3 short sentences, plain language.
+- Explain risk or wording they asked about using only the items above.
+- Do not repeat a full nutrition table.
+- Do not ask which food to check unless nothing is listed above (should not happen).
+- No medical diagnosis or medication advice.`;
+}
+
+function casualAcknowledgementReply(lang: LangCode, seed: string): string {
+  const en = ["No problem.", "Glad I could help.", "Okay.", "You're welcome.", "Happy to help."];
+  const ms = ["Tiada masalah.", "Senang dapat membantu.", "Okay.", "Sama-sama.", "Dengan senang hati."];
+  const zh = ["不客气。", "很高兴能帮到您。", "好的。", "没问题。", "很高兴为您服务。"];
+  const idx = Math.abs(seed.split("").reduce((a, c) => a + c.charCodeAt(0), 0)) % en.length;
+  if (lang === "ms") return ms[idx]!;
+  if (lang === "zh") return zh[idx]!;
+  return en[idx]!;
+}
+
+function complaintClarificationReply(lang: LangCode): string {
+  const labels: Record<LangCode, string> = {
+    en: "Could you tell me which food or part of the app you mean? I will try to help.",
+    ms: "Boleh beritahu saya makanan atau bahagian aplikasi yang dimaksudkan? Saya akan cuba membantu.",
+    zh: "您指的是哪种食物或哪个功能？请告诉我，我尽量帮您。",
+  };
+  return labels[lang];
+}
+
+function followUpWithoutContextReply(lang: LangCode): string {
+  const labels: Record<LangCode, string> = {
+    en: "Which food would you like me to explain?",
+    ms: "Makanan manakah yang anda mahu saya terangkan?",
+    zh: "您想让我解释哪一种食物？",
+  };
+  return labels[lang];
+}
+
+/** Meta / feedback — not food names; must not become food cards or AI estimates. */
+function isConversationalOnlyMessage(text: string): boolean {
+  if (isFoodFollowUpQuestion(text)) return false;
+  const n = normalizeFoodText(text);
+  if (!n) return true;
+  if (CONVERSATIONAL_PHRASES_EXACT.has(n)) return true;
+
+  const patterns = [
+    /^not available\b/u,
+    /\bthough$/u,
+    /^what do you mean/u,
+    /^what does this mean/u,
+    /^that is wrong/u,
+    /^thats wrong/u,
+    /^why though/u,
+    /^ok but/u,
+    /^but why/u,
+    /^still not/u,
+    /^it is wrong/u,
+    /^its wrong/u,
+    /^不对/u,
+    /^为什么/u,
+    /^什么意思/u,
+    /^再试/u,
+    /^没有/u,
+    /^不可用/u,
+    /^who am i\b/u,
+    /^what am i\b/u,
+    /^where am i\b/u,
+    /^what is this\b/u,
+    /^what is that\b/u,
+    /^can you help me\b/u,
+    /^dont talk\b/u,
+    /^don't talk\b/u,
+    /\bdont talk to me\b/u,
+    /\bdon't talk to me\b/u,
+    /^leave me alone\b/u,
+    /^stop talking\b/u,
+    /^go away\b/u,
+  ];
+  if (patterns.some((p) => p.test(n))) return true;
+
+  const tokens = n.split(" ").filter(Boolean);
+  if (
+    tokens.length <= 4 &&
+    /\b(why|wrong|available|mean|again|though|help)\b/u.test(n) &&
+    !/\b(nasi|teh|milo|rice|lemak|tarik|makanan|cendol|pizza)\b/u.test(n)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Message tokens that are never a food/dish name by themselves — used to reject
+ * “who am i”, “ok thanks”, etc. from bare short-text food inference.
+ */
+const GENERIC_NON_FOOD_TOKENS = new Set(
+  [
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "was",
+    "were",
+    "am",
+    "be",
+    "been",
+    "being",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "can",
+    "may",
+    "might",
+    "must",
+    "i",
+    "im",
+    "you",
+    "u",
+    "we",
+    "they",
+    "it",
+    "me",
+    "my",
+    "your",
+    "yours",
+    "this",
+    "that",
+    "these",
+    "those",
+    "who",
+    "whom",
+    "whose",
+    "what",
+    "which",
+    "why",
+    "how",
+    "when",
+    "where",
+    "there",
+    "here",
+    "not",
+    "no",
+    "yes",
+    "ok",
+    "okay",
+    "thanks",
+    "thank",
+    "sorry",
+    "hello",
+    "hi",
+    "hey",
+    "bye",
+    "good",
+    "morning",
+    "afternoon",
+    "evening",
+    "night",
+    "fine",
+    "well",
+  ].map(normalizeFoodText)
+);
+
+function tokensAreOnlyGenericNonFood(phrase: string): boolean {
+  const tokens = normalizeFoodText(phrase)
+    .split(" ")
+    .filter(Boolean);
+  return tokens.length > 0 && tokens.every((tok) => GENERIC_NON_FOOD_TOKENS.has(tok));
+}
+
+const TYPED_FOOD_STOPWORDS = new Set(
+  [
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "was",
+    "were",
+    "this",
+    "that",
+    "it",
+    "my",
+    "your",
+    "please",
+    "help",
+    "me",
+    "you",
+    "can",
+    "could",
+    "should",
+    "would",
+    "do",
+    "does",
+    "did",
+    "how",
+    "why",
+    "what",
+    "when",
+    "where",
+    "which",
+    "about",
+    "for",
+    "with",
+    "and",
+    "or",
+    "not",
+    "available",
+    "though",
+    "again",
+    "wrong",
+    "mean",
+    "tell",
+    "explain",
+    "compare",
+    "versus",
+    "vs",
+    "boleh",
+    "saya",
+    "tolong",
+    "请",
+    "帮",
+    "幫",
+  ].map(normalizeFoodText)
+);
+
+/** Gate AI-estimated cards: only when the extracted string plausibly names food/drink. */
+function looksLikePlausibleFoodName(name: string): boolean {
+  const n = normalizeFoodText(name);
+  if (!n || isConversationalOnlyMessage(n)) return false;
+  if (tokensAreOnlyGenericNonFood(n)) return false;
+
+  if (/\b(help|analyze|analyse|check|scan|menu|please|boleh|tambah|compare)\b/u.test(n)) {
+    return false;
+  }
+
+  if (isFoodFollowUpQuestion(n)) return false;
+
+  if (hasCjk(n)) {
+    return n.length >= 2 && n.length <= 16;
+  }
+
+  const tokens = n.split(" ").filter(Boolean);
+  if (tokens.length === 0 || tokens.length > 6) return false;
+  if (tokens.every((t) => TYPED_FOOD_STOPWORDS.has(t))) return false;
+  if (tokens.length === 1 && TYPED_FOOD_STOPWORDS.has(tokens[0]!)) return false;
+
+  return n.length >= 2 && n.length <= 48;
+}
+
+/** 3-letter (or shorter) tokens that are still credible dishes/drinks alone. */
+const SHORT_REAL_FOOD_TOKENS = new Set(
+  ["teh", "mee", "kui", "egg", "pis", "bao", "tau", "rot", "pho"].map(normalizeFoodText)
+);
+
+/**
+ * Strict gate for AI-generated food cards only (DB matches use matchFoodQuery only).
+ * Uncertain → false (no card; caller may send clarification).
+ */
+const REAL_FOOD_LEXEME_RE =
+  /\b(pizza|burger|fried\s*rice|chicken\s*rice|hainanese|rice|fried|cendol|chendol|teh\s*o|teh\s*tarik|tarik|limau|bandung|kopi|roti|canai|mee|maggie|maggi|curry|soup|sate|satay|laksa|porridge|noodle|wonton|wantan|dumpling|chicken|beef|fish|shrimp|prawn|crab|cake|bread|toast|sandwich|salad|pasta|steak|sushi|ramen|pho|pie|dim\s*sum|char\s*kuey|kuey\s*teow|kuay\s*teow|bee\s*hoon|bihun|rendang|ketupat|lemang|biryani|dhal|dhall|idli|thosai|milo|horlicks|juice|cola|soda|coffee|tea|tea\s*o|latte|espresso|bubble|boba|cheese|nasi|lemak|nasi\s*lemak|porridge|congee|goreng|kaya|popiah|rojak|ais\s*kacang|ice\s*kacang|murtabak|pisang|tahu|tauhu|daging|ayam|ikan|sotong|udang|nugget|wings|waffle|pancake|croissant|donut|doughnut|muffin|smoothie|milkshake|yogurt|yoghurt|cereal|oats|granola|spring\s*roll|egg\s*tart|custard|custard\s*bun|bao\s*pau|mantou|longan|lychee|rambutan|durian|mango|papaya|coconut|tempeh|tofu|quinoa|couscous|burrito|taco|quesadilla|nacho|falafel|hummus|wrap|bagel|pretzel|cracker|biscuit|cookie|brownie|muffin|macaron|macaroon|gelato|sorbet|churro|kimchi|bibimbap|bulgogi|gyoza|edamame|poke|poutine|bruschetta|ravioli|gnocchi|lasagna|paella|couscous|frittata|omelette|omelet|frittata|crepe|scone|bap|roll|sub|hoagie|kebab|shawarma|falafel|samosa|pakora|biryani|pulut|ketupat|lontong|nasi\s*kandar|nasi\s*dagang|nasi\s*kerabu|ketupat|ketupat\s*palas|lemper|kuih|kuih-muih|pulut|tapai|tapai\s*ubi|cincau|soya|soy\s*milk|almond\s*milk|oat\s*milk|grass\s*jelly|bubble\s*tea|bbt|milk\s*tea|fruit\s*juice|orange\s*juice|apple\s*juice|celery\s*juice|carrot\s*juice|barley|barley\s*water|chrysanthemum|wintermelon|sugarcane|sugar\s*cane|air\s*tebu|sirap\s*bandung|three\s*layer\s*tea|teh\s*ping|ais\s*limau|teh\s*ais)\b/iu;
+
+function latinLettersOnly(s: string): string {
+  return s.replace(/[^a-z]/gi, "");
+}
+
+function latinTokenHasVowelLetters(s: string): boolean {
+  return /[aeiouy]/i.test(latinLettersOnly(s));
+}
+
+function looksLikeLatinGibberishToken(token: string): boolean {
+  if (hasCjk(token)) return false;
+  const letters = latinLettersOnly(token);
+  if (letters.length < 2) return false;
+  if (letters.length <= 5 && !latinTokenHasVowelLetters(token)) return true;
+  if (letters.length >= 3 && /^(.)\1{2,}$/i.test(letters)) return true;
+  return false;
+}
+
+function looksLikeRandomLetterGibberishPhrase(n: string): boolean {
+  const tokens = n.split(/\s+/).filter(Boolean);
+  return tokens.some((tok) => looksLikeLatinGibberishToken(tok));
+}
+
+const COMMAND_ONLY_CANDIDATE_PHRASES = new Set(
+  [
+    "help me",
+    "analyze this",
+    "analyse this",
+    "check this",
+    "help me analyze",
+    "help me analyse",
+    "help me check",
+  ].map(normalizeFoodText)
+);
+
+/**
+ * Before AI fallback: true only when the candidate is likely a real food/drink name.
+ */
+function isLikelyRealFoodName(candidate: string, _originalMessage: string): boolean {
+  const n = normalizeFoodText(candidate);
+  if (!n) return false;
+  if (isConversationalOnlyMessage(n)) return false;
+  if (tokensAreOnlyGenericNonFood(n)) return false;
+
+  if (COMMAND_ONLY_CANDIDATE_PHRASES.has(n)) return false;
+
+  const tokens = n.split(/\s+/).filter(Boolean);
+  if (tokens.length > 0 && tokens.every((t) => GENERIC_NON_FOOD_TOKENS.has(t))) {
+    return false;
+  }
+
+  if (/\b(who|whom|what|which|why|how|when|where)\b/i.test(n) && !REAL_FOOD_LEXEME_RE.test(n)) {
+    return false;
+  }
+  if (/\b(am i|are you|is this|was i)\b/i.test(n)) return false;
+
+  if (hasCjk(n)) {
+    return n.length >= 2 && n.length <= 24;
+  }
+
+  if (REAL_FOOD_LEXEME_RE.test(n)) return true;
+
+  if (looksLikeRandomLetterGibberishPhrase(n)) return false;
+
+  const compact = n.replace(/\s+/g, "");
+  if (compact.length < 4) {
+    return tokens.length === 1 && SHORT_REAL_FOOD_TOKENS.has(tokens[0]!);
+  }
+
+  const latinTokens = tokens.filter((t) => /[a-z]/i.test(t) && !hasCjk(t));
+  if (latinTokens.length > 0 && !latinTokens.some((t) => latinTokenHasVowelLetters(t))) {
+    return false;
+  }
+
+  return true;
+}
+
+type ChatIntent = "food_analysis_request" | "normal_chat" | "follow_up_question";
+
+const NON_FOOD_CHAT_TOKENS = new Set(
+  ["dont", "don't", "talk", "stop", "leave", "alone", "away", "pmg", "abc", "qwe"].map(normalizeFoodText)
+);
+
+/** Social / meta phrases that must never enter food-analysis (default is normal_chat). */
+function isExplicitNormalChatMessage(message: string): boolean {
+  const n = normalizeFoodText(message);
+  if (!n) return true;
+
+  const patterns = [
+    /^dont talk\b/u,
+    /^don't talk\b/u,
+    /\bdont talk to me\b/u,
+    /\bdon't talk to me\b/u,
+    /^leave me alone\b/u,
+    /^stop talking\b/u,
+    /^go away\b/u,
+    /^talk to me\b/u,
+    /^who am i\b/u,
+    /^what am i\b/u,
+    /^where am i\b/u,
+    /^pmg$/u,
+    /^abc$/u,
+    /^qwe$/u,
+  ];
+  if (patterns.some((p) => p.test(n))) return true;
+
+  const tokens = n.split(/\s+/).filter(Boolean);
+  if (tokens.length === 1 && looksLikeLatinGibberishToken(tokens[0]!) && !REAL_FOOD_LEXEME_RE.test(n)) {
+    return true;
+  }
+  if (
+    tokens.length >= 2 &&
+    tokens.length <= 6 &&
+    tokens.every((t) => GENERIC_NON_FOOD_TOKENS.has(t) || NON_FOOD_CHAT_TOKENS.has(t))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+const FOOD_ANALYSIS_VERB_RE =
+  /\b(analyze|analyse|analysis|check|compare|contrast|scan|menu|versus|vs\b|healthy|unhealthier|unhealthy|nutrition|nutrient|calorie|calories|\bgi\b|glycemic|sugar|sodium|salt|\bfat\b|cholesterol|fiber|fibre|eat|drink|makan|minum|makanan|minuman|meal|snack|dish|食物|分析|健康|营养|热量|糖|钠|脂肪|可以吃|能不能吃|可不可以吃|能吃吗|安全吗|boleh makan|semak|analisis)\b/iu;
+
+const DISH_OR_DRINK_HINT_RE =
+  /\b(nasi|lemak|pizza|cendol|teh|tarik|kopi|roti|canai|mee|maggie|maggi|rice|fried|cake|bread|egg|curry|soup|sate|satay|burger|cola|juice|ais|limau|bandung|laksa|porridge|noodle|wonton|dumpling|tahu|tauhu|rendang|ketupat|lemang|biryani|hainanese|toast|sandwich|ramen|pho|sushi|steak|pasta|salad|oats|milo|horlicks|soya|soy|char\s+kuey|dim\s*sum)\b/iu;
+
+/** Positive food-analysis intent only — never default true for unknown text. */
+function isFoodAnalysisRequestIntent(message: string): boolean {
+  const n = normalizeFoodText(message);
+  if (!n || n.length > 120) return false;
+  if (isExplicitNormalChatMessage(message)) return false;
+
+  const dishLexeme = REAL_FOOD_LEXEME_RE.test(n) || DISH_OR_DRINK_HINT_RE.test(n);
+  const analysisVerb = FOOD_ANALYSIS_VERB_RE.test(n);
+
+  if (
+    /\b(is|are|can i|should i|boleh|adakah)\b/iu.test(n) &&
+    /\b(healthy|safe|okay|ok|eat|makan|吃|营养|健康)\b/iu.test(n) &&
+    dishLexeme
+  ) {
+    return true;
+  }
+
+  if (analysisVerb && dishLexeme) return true;
+
+  if (analysisVerb && /\b(this|that|it)\b/u.test(n) && n.split(/\s+/).filter(Boolean).length <= 5) {
+    return false;
+  }
+
+  const tokens = n.split(/\s+/).filter(Boolean);
+  if (dishLexeme && tokens.length >= 1 && tokens.length <= 5) {
+    if (/^(who|whom|what|why|how|when|where|which|dont|don't|stop)\b/i.test(n)) return false;
+    if (tokens.every((t) => GENERIC_NON_FOOD_TOKENS.has(t))) return false;
+    if (tokens.length === 1 && looksLikeLatinGibberishToken(tokens[0]!) && !REAL_FOOD_LEXEME_RE.test(n)) {
+      return false;
+    }
+    if (hasCjk(n) && !REAL_FOOD_LEXEME_RE.test(n) && !DISH_OR_DRINK_HINT_RE.test(n)) {
+      return /[\u4e00-\u9fff]{1,}(面|饭|茶|汤|肉|菜|糕|饼|粥|饺|包|饮|奶|糖)/u.test(n);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Classify user message before any food extraction or AI food cards.
+ * Default is normal_chat — food analysis is opt-in via positive signals only.
+ */
+function classifyChatIntent(message: string): ChatIntent {
+  if (isFoodFollowUpQuestion(message)) return "follow_up_question";
+  if (isConversationalOnlyMessage(message)) return "normal_chat";
+  if (isCasualAcknowledgement(message)) return "normal_chat";
+  if (isComplaintOrClarification(message)) return "normal_chat";
+  if (isExplicitNormalChatMessage(message)) return "normal_chat";
+  if (isFoodAnalysisRequestIntent(message)) return "food_analysis_request";
+  return "normal_chat";
+}
+
+function messageIndicatesFoodRelatedQuery(message: string): boolean {
+  return classifyChatIntent(message) === "food_analysis_request";
+}
+
+/**
+ * STEP 1 — Pull dish/drink names from typed text (never return raw full sentences).
+ * Caller must only invoke when classifyChatIntent === food_analysis_request.
+ */
+function extractFoodNamesFromMessage(message: string): string[] {
+  if (classifyChatIntent(message) !== "food_analysis_request") return [];
+
+  const candidate = extractFoodQueryCandidate(message);
+  if (!candidate) return [];
+
+  const multi = resolveMultiFoodParts(message, candidate);
+  if (multi.length > 1) {
+    return multi
+      .map((part) => extractFoodQueryCandidate(part))
+      .filter((part) => part.length >= 2 && looksLikePlausibleFoodName(part));
+  }
+
+  if (!looksLikePlausibleFoodName(candidate)) return [];
+  return [candidate];
+}
+
+function whichFoodClarificationReply(lang: LangCode): string {
+  const labels: Record<LangCode, string> = {
+    en: "Which food or drink would you like me to check?",
+    ms: "Makanan atau minuman apa yang anda mahu saya semak?",
+    zh: "您想让我分析哪一种食物或饮料？",
+  };
+  return labels[lang];
+}
+
+/** When extraction looked food-like but the term is not a credible dish/drink name for AI. */
+function couldYouSpecifyFoodNameReply(lang: LangCode): string {
+  const labels: Record<LangCode, string> = {
+    en: "Could you tell me the food or drink name you want me to check?",
+    ms: "Boleh beritahu nama makanan atau minuman yang anda mahu saya semak?",
+    zh: "请告诉我您希望我来分析的食物或饮料名称好吗？",
+  };
+  return labels[lang];
+}
+
+function isVagueFoodQuestion(message: string): boolean {
+  const n = normalizeFoodText(message);
+  if (!n || isConversationalOnlyMessage(n)) return false;
+  return (
+    /\b(healthy|health|safe|eat|drink|food|nutrition|compare|makanan|minuman|营养|健康|可以吃|能不能吃)\b/u.test(
+      n
+    ) || /(is|are|can i|should i|boleh|adakah).{0,40}(eat|makan|吃)/u.test(n)
+  );
 }
 
 function stripFoodQuestionIntent(message: string): string {
@@ -1556,6 +2320,7 @@ Recommend Low-risk items. For High-risk items, suggest practical modifications.
 ${langInstruction}
 
 YOUR ROLE:
+- Only discuss foods the user names in their CURRENT message. Do not repeat food analysis from earlier turns unless they name that food again.
 - Answer questions about diabetes, high blood pressure, and high cholesterol in simple, easy-to-understand language.
 - Provide dietary guidance based on sugar, salt, and fat (the Three Highs framework).
 - Help users understand their food choices and make healthier decisions.
@@ -1585,34 +2350,56 @@ TONE & PERSONALITY:
 `;
 }
 
-// ─── GEMINI API CALL ──────────────────────────────────────────────────────────
+// ─── GROQ LLAMA (CHATBOT ONLY) ────────────────────────────────────────────────
 
-/**
- * Calls Google Gemini API with Gemma 4 E4B (gemma-4-e4b-it).
- * Uses REST endpoint directly — no SDK required, works in Next.js API routes.
- * Gemma 4 natively supports system_instruction role (unlike older Gemma versions).
- */
-async function callGeminiChat(
+const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
+const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+function getGroqChatKeys(): string[] {
+  const keys = [
+    process.env.GROQ_API_KEY_3,
+    process.env.GROQ_API_KEY_4,
+    process.env.GROQ_API_KEY,
+    process.env.GROQ_API_KEY_2,
+  ].filter((k): k is string => Boolean(k?.trim()));
+  return [...new Set(keys)];
+}
+
+function hasGroqChatKey(): boolean {
+  return getGroqChatKeys().length > 0;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function parseGroqChatText(data: unknown): string {
+  const payload = data as { choices?: Array<{ message?: { content?: string } }> };
+  return payload?.choices?.[0]?.message?.content?.trim() ?? "";
+}
+
+async function callGroqChat(
   systemPrompt: string,
   messages: ChatMessage[],
-  apiKey: string
+  apiKey: string,
+  options: { temperature?: number; max_tokens?: number } = {}
 ): Promise<string> {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}", {
+  if (!apiKey) throw new Error("Groq API key is undefined or empty");
+
+  const res = await fetch(GROQ_CHAT_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gemma-4-eb-it",
+      model: GROQ_CHAT_MODEL,
       messages: [
-        { role: "user", content: systemPrompt },
-        ...messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        })),
+        { role: "system", content: systemPrompt },
+        ...messages.map((m) => ({ role: m.role, content: m.content })),
       ],
-      temperature: 0.4,
-      max_tokens: 150,
+      temperature: options.temperature ?? 0.4,
+      max_tokens: options.max_tokens ?? 150,
     }),
   });
 
@@ -1622,18 +2409,35 @@ async function callGeminiChat(
   }
 
   const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content?.trim() ?? "";
+  const text = parseGroqChatText(data);
   if (!text) throw new Error("Empty response from Groq");
   return text;
 }
 
+async function generateGroqChatReply(
+  systemPrompt: string,
+  messages: ChatMessage[],
+  options: { temperature?: number; max_tokens?: number } = {}
+): Promise<string> {
+  const keys = getGroqChatKeys();
+  if (!keys.length) {
+    throw new Error("No Groq API keys configured (GROQ_API_KEY_3/4 or GROQ_API_KEY/GROQ_API_KEY_2)");
+  }
+
+  for (const key of keys) {
+    try {
+      return await callGroqChat(systemPrompt, messages, key, options);
+    } catch (err) {
+      console.warn(`[chat] Groq/Llama failed: ${errorMessage(err)}`);
+    }
+  }
+
+  throw new Error("Groq/Llama failed for all keys");
+}
+
 // ─── AI FOOD CARD ESTIMATION ──────────────────────────────────────────────────
 
-async function getEstimatedFoodCards(
-  names: string[],
-  lang: LangCode,
-  apiKey: string
-): Promise<EstimatedFoodCard[]> {
+async function getEstimatedFoodCards(names: string[], lang: LangCode): Promise<EstimatedFoodCard[]> {
   if (!names.length) return [];
 
   const langName = lang === "zh" ? "Simplified Chinese" : lang === "ms" ? "Bahasa Malaysia" : "English";
@@ -1667,19 +2471,11 @@ tip: short ${langName} sentence`;
   const fallback = (n: string): EstimatedFoodCard => ({ name: n, category: null, risk: "medium", tip: "" });
 
   try {
-    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}", {
-      method: "POST",
-      headers: {"Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gemma-4-eb-it",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-        max_tokens: isSingle ? 80 : 200,
-      }),
-    });
-    if (!res.ok) return names.map(fallback);
-    const data = await res.json();
-    const text: string = data?.choices?.[0]?.message?.content?.trim() ?? "";
+    const text = await generateGroqChatReply(
+      "You are a health assistant. Reply only with valid JSON.",
+      [{ role: "user", content: prompt }],
+      { temperature: 0.1, max_tokens: isSingle ? 80 : 200 }
+    );
 
     if (isSingle) {
       const m = text.match(/\{[\s\S]*?\}/);
@@ -1735,6 +2531,146 @@ tip: short ${langName} sentence`;
   }
 }
 
+/**
+ * STEP 2–3 — Match SIHAT database first; AI estimate only for plausible non-DB foods.
+ */
+async function processExtractedFoodNames(
+  message: string,
+  foodNames: string[],
+  foods: FoodItem[],
+  requestLang: LangCode,
+  openFullLabels: Record<LangCode, string>
+): Promise<Response | null> {
+  if (!foodNames.length) return null;
+
+  console.log(`[chat] extracted food names: ${JSON.stringify(foodNames)}`);
+
+  const matchedFoods: FoodItem[] = [];
+  const unmatchedForAi: string[] = [];
+  const declinedRealFood: string[] = [];
+  const ambiguousGroups: FoodItem[][] = [];
+
+  for (const part of foodNames) {
+    const m = matchFoodQuery(part, foods);
+    if (m.status === "matched") {
+      matchedFoods.push(m.food);
+      console.log(`[chat] database match found: "${part}" → "${m.food.name.en}"`);
+    } else if (m.status === "ambiguous" && m.foods.length > 0) {
+      console.log(`[chat] database match ambiguous: "${part}" (${m.foods.length} candidates)`);
+      if (foodNames.length === 1) {
+        ambiguousGroups.push(m.foods);
+      } else {
+        matchedFoods.push(pickShortestCandidateFood(m.foods));
+      }
+    } else if (looksLikePlausibleFoodName(part) && isLikelyRealFoodName(part, message)) {
+      console.log(`[chat] database match not found: "${part}" (AI estimate)`);
+      unmatchedForAi.push(part);
+    } else if (looksLikePlausibleFoodName(part)) {
+      declinedRealFood.push(part);
+      console.log(`[chat] rejected AI food card (not a credible food name): "${part}"`);
+    } else {
+      console.log(`[chat] skipped non-food fragment: "${part}"`);
+    }
+  }
+
+  if (foodNames.length === 1 && ambiguousGroups.length === 1) {
+    console.log("[chat] Llama called: no (ambiguous database suggestions)");
+    return NextResponse.json(
+      formatFoodSuggestions(ambiguousGroups[0]!, requestLang, foodNames[0], openFullLabels)
+    );
+  }
+
+  const uniqueMatched = uniqueFoods(matchedFoods);
+
+  if (
+    uniqueMatched.length === 0 &&
+    ambiguousGroups.length === 0 &&
+    unmatchedForAi.length === 0 &&
+    declinedRealFood.length > 0
+  ) {
+    console.log("[chat] clarification: term(s) do not look like real food/drink names");
+    return NextResponse.json({ reply: couldYouSpecifyFoodNameReply(requestLang) });
+  }
+
+  const estimatedFoods =
+    unmatchedForAi.length > 0 && hasGroqChatKey()
+      ? await getEstimatedFoodCards(unmatchedForAi, requestLang)
+      : [];
+
+  if (uniqueMatched.length === 0 && estimatedFoods.length === 0) {
+    console.log("[chat] Llama called: no (no database or AI food result)");
+    return null;
+  }
+
+  if (foodNames.length === 1 && uniqueMatched.length === 1 && estimatedFoods.length === 0) {
+    console.log("[chat] Llama called: no (structured database food card)");
+    return NextResponse.json(
+      buildStructuredDatabaseFoodResponse(uniqueMatched[0]!, requestLang, openFullLabels)
+    );
+  }
+
+  if (foodNames.length === 1 && uniqueMatched.length === 0 && estimatedFoods.length === 1) {
+    console.log("[chat] Llama called: yes (AI food estimate only)");
+    return NextResponse.json({
+      reply: buildMultiFoodIntro(1, requestLang),
+      estimatedFood: estimatedFoods[0],
+      actionButton: { label: openFullLabels[requestLang], href: "/recommendation" },
+      isMultiFood: false,
+    });
+  }
+
+  if (estimatedFoods.length > 0) {
+    console.log(`[chat] Llama called: yes (AI estimate for: ${JSON.stringify(unmatchedForAi)})`);
+  } else {
+    console.log("[chat] Llama called: no (structured database food cards only)");
+  }
+
+  const totalCount = uniqueMatched.length + estimatedFoods.length;
+  return NextResponse.json({
+    reply: buildMultiFoodIntro(totalCount, requestLang),
+    suggestions: uniqueMatched.length > 0 ? uniqueMatched : undefined,
+    estimatedFoods: estimatedFoods.length > 0 ? estimatedFoods : undefined,
+    actionButton:
+      totalCount > 0 ? { label: openFullLabels[requestLang], href: "/recommendation" } : undefined,
+    isMultiFood: totalCount > 1,
+  });
+}
+
+/** Normal chat path — no food extraction, cards, or View Detailed Analysis. */
+async function respondNormalChat(
+  message: string,
+  history: ChatMessage[],
+  requestLang: LangCode
+): Promise<Response> {
+  if (isCasualAcknowledgement(message)) {
+    console.log("[chat] casual acknowledgement (no food card)");
+    return NextResponse.json({ reply: casualAcknowledgementReply(requestLang, message) });
+  }
+
+  if (isComplaintOrClarification(message)) {
+    console.log("[chat] complaint / clarification (no food card)");
+    return NextResponse.json({ reply: complaintClarificationReply(requestLang) });
+  }
+
+  if (isConversationalOnlyMessage(message)) {
+    console.log("[chat] conversational chit-chat — Llama one-liner, no food prompt");
+    const reply = await generateGroqChatReply(
+      buildBriefChitChatSystemPrompt(requestLang),
+      [...history.slice(-6), { role: "user", content: message }],
+      { max_tokens: 80, temperature: 0.35 }
+    );
+    return NextResponse.json({ reply });
+  }
+
+  console.log("[chat] Llama called: yes (normal chat, current message only)");
+  const systemPrompt = buildSystemPrompt(requestLang, null);
+  const reply = await generateGroqChatReply(systemPrompt, [
+    ...history.slice(-6),
+    { role: "user", content: message },
+  ]);
+  return NextResponse.json({ reply });
+}
+
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -1788,115 +2724,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(buildBestChoiceResponse(scanCategory, analysedScanContext, foods, requestLang));
     }
 
-    // Check for food mention in user message (strip wrappers + multilingual command chatter)
-    const foodQuestionQuery = extractFoodQueryCandidate(message);
-    const foodMention = matchFoodQuery(foodQuestionQuery, foods);
-
-    const primaryKey = process.env.GOOGLE_API_KEY_3 ?? process.env.GOOGLE_API_KEY_4;
-    const backupKey = process.env.GROQ_API_KEY_3 ?? process.env.GROQ_API_KEY_4;
-
-    if (!primaryKey && !backupKey) {
-      throw new Error("No GEMINI API keys configured");
+    if (!hasGroqChatKey()) {
+      throw new Error("No Groq API keys configured (GROQ_API_KEY_3/4 or GROQ_API_KEY/GROQ_API_KEY_2)");
     }
 
-    const openFullLabels = { en: "Open Full Analysis", ms: "Buka Analisis Penuh", zh: "打开完整分析" };
-    let reply = "";
-
-    // ── Helper: run multi-food logic for a list of name parts ──────────────────
-    const handleMultiFoodParts = async (parts: string[]): Promise<Response | null> => {
-      const matchedFoods: FoodItem[] = [];
-      const unmatchedNames: string[] = [];
-      for (const part of parts) {
-        const m = matchFoodQuery(part, foods);
-        if (m.status === "matched") {
-          matchedFoods.push(m.food);
-        } else if (m.status === "ambiguous" && m.foods.length > 0) {
-          matchedFoods.push(pickShortestCandidateFood(m.foods));
-        } else {
-          const displayName = formatUnavailableFoodName(part, requestLang);
-          if (displayName) unmatchedNames.push(displayName);
-        }
-      }
-      const uniqueMatched = uniqueFoods(matchedFoods);
-      if (uniqueMatched.length === 0 && unmatchedNames.length === 0) return null;
-
-      const estimatedFoods = unmatchedNames.length > 0 && primaryKey
-        ? await getEstimatedFoodCards(unmatchedNames, requestLang, primaryKey)
-        : [];
-
-      const totalCount = uniqueMatched.length + estimatedFoods.length;
-      return NextResponse.json({
-        reply: buildMultiFoodIntro(totalCount, requestLang),
-        suggestions: uniqueMatched.length > 0 ? uniqueMatched : undefined,
-        estimatedFoods: estimatedFoods.length > 0 ? estimatedFoods : undefined,
-        actionButton:
-          totalCount > 0 ? { label: openFullLabels[requestLang], href: "/recommendation" } : undefined,
-        isMultiFood: true,
-      });
+    const openFullLabels: Record<LangCode, string> = {
+      en: "Open Full Analysis",
+      ms: "Buka Analisis Penuh",
+      zh: "打开完整分析",
     };
 
-    if (foodMention.status === "matched") {
-      reply = buildQuickFoodSummary(foodMention.food, requestLang);
-      return NextResponse.json({
-        reply,
-        suggestions: [foodMention.food],
-        actionButton: { label: openFullLabels[requestLang], href: "/recommendation" },
-      });
-    } else if (foodMention.status === "ambiguous") {
-      // Before showing disambiguation UI, check if this is a multi-food query.
-      const foodNameParts = resolveMultiFoodParts(message, foodQuestionQuery);
-      if (foodNameParts.length > 1) {
-        const result = await handleMultiFoodParts(foodNameParts);
-        if (result) return result;
-      }
-      return NextResponse.json(formatFoodSuggestions(foodMention.foods, requestLang, foodQuestionQuery));
-    } else {
-      // Multi-food: split by conjunctions/commas/separators.
-      const foodNameParts = resolveMultiFoodParts(message, foodQuestionQuery);
-      if (foodNameParts.length > 1) {
-        const result = await handleMultiFoodParts(foodNameParts);
-        if (result) return result;
-      }
+    const intent = classifyChatIntent(message);
+    console.log(`[chat] intent: ${intent}`);
 
-      // Single non-DB food: if query looks like a food name, get AI-estimated card.
-      const queryWords = foodQuestionQuery.trim().split(/\s+/).filter(Boolean);
-      const isLikelyFoodName =
-        queryWords.length >= 1 &&
-        queryWords.length <= 5 &&
-        !/\b(how|why|what|when|where|who|which|does|do|is|are|can|should|help|explain|tell|diabetes|hypertension|blood|cholesterol|medication|exercise|stress|sleep)\b/i.test(foodQuestionQuery);
-
-      if (isLikelyFoodName && primaryKey) {
-        const displayName = formatUnavailableFoodName(foodQuestionQuery, requestLang) || foodQuestionQuery;
-        const [estimated] = await getEstimatedFoodCards([displayName], requestLang, primaryKey);
-        if (estimated) {
-          return NextResponse.json({
-            reply: buildMultiFoodIntro(1, requestLang),
-            estimatedFood: estimated,
-            actionButton: { label: openFullLabels[requestLang], href: "/recommendation" },
-          });
-        }
+    if (intent === "follow_up_question") {
+      if (hasAnalysedFoods(scanContext)) {
+        console.log("[chat] follow-up question — using scan context, Llama brief explanation");
+        const systemPrompt = buildFollowUpSystemPrompt(requestLang, scanContext!);
+        const reply = await generateGroqChatReply(systemPrompt, [
+          ...history.slice(-4),
+          { role: "user", content: message },
+        ]);
+        return NextResponse.json({ reply });
       }
-
-      // Normal AI conversation flow
-      const systemPrompt = buildSystemPrompt(requestLang, scanContext);
-      const conversationMessages: ChatMessage[] = [
-        ...history.slice(-6),
-        { role: "user", content: message },
-      ];
-
-      try {
-        if (!primaryKey) throw new Error("No primary key");
-        reply = await callGeminiChat(systemPrompt, conversationMessages, primaryKey);
-        console.log("[chat] ✅ Response OK (primary key)");
-      } catch (err) {
-        console.warn("[chat] ⚠️ Primary key failed, trying backup...", err);
-        if (!backupKey) throw err;
-        reply = await callGeminiChat(systemPrompt, conversationMessages, backupKey);
-        console.log("[chat] ✅ Response OK (backup key)");
-      }
+      console.log("[chat] follow-up question — no scan context");
+      return NextResponse.json({ reply: followUpWithoutContextReply(requestLang) });
     }
 
-    return NextResponse.json({ reply });
+    if (intent !== "food_analysis_request") {
+      return respondNormalChat(message, history, requestLang);
+    }
+
+    // food_analysis_request only: extract → DB match → AI estimate (strict gates inside)
+    const extractedFoodNames = extractFoodNamesFromMessage(message);
+    if (extractedFoodNames.length > 0) {
+      const foodResult = await processExtractedFoodNames(
+        message,
+        extractedFoodNames,
+        foods,
+        requestLang,
+        openFullLabels
+      );
+      if (foodResult) return foodResult;
+    }
+
+    if (isVagueFoodAnalysisIntent(message)) {
+      return NextResponse.json({ reply: whichFoodClarificationReply(requestLang) });
+    }
+
+    console.log("[chat] food_analysis_request but no valid dish extracted — ask for food name");
+    return NextResponse.json({ reply: couldYouSpecifyFoodNameReply(requestLang) });
 
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);

@@ -9,7 +9,7 @@
 // - Safety: disclaimer on every message, no medical diagnosis
 // - Fallback handling for API errors
 
-import { Fragment, useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from "react";
+import { Fragment, useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bot,
@@ -34,6 +34,19 @@ import { useCart } from "@/components/cart-context";
 import { buildDailyIntakeSummary, type Gender, type DailyIntakeSummary } from "@/lib/daily-intake-summary";
 import { type FoodItem as CartFoodItem } from "@/lib/food-functions";
 import { computeRiskFromIndicators, parseNutrientNumber } from "@/lib/food-recognition-risk";
+import {
+  ANALYSIS_READY_EVENT,
+  ANALYSIS_SESSION_KEY as SHARED_ANALYSIS_SESSION_KEY,
+  buildStableAnalysisSessionId,
+  extractFoodNamesFromPredictResults,
+  notifyAnalysisReady,
+  readAcknowledgedAnalysisHintId,
+  markAnalysisHintAcknowledged,
+  clearAcknowledgedAnalysisHintId,
+  readAnalysisIdFromSession,
+  type AnalysisReadyDetail,
+  type AnalysisReadySource,
+} from "@/lib/analysis-hint-sync";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -168,6 +181,7 @@ interface FoodItem {
   risk: "Low" | "Medium" | "High";
   tip?: string | Partial<Record<LangCode, string>>;
   best_reason?: string | Partial<Record<LangCode, string>>;
+  db_matched?: boolean;
 }
 
 interface ChatMessage {
@@ -254,7 +268,8 @@ const t = {
     disclaimer: "General guidance only — please consult your doctor for personal medical advice.",
     welcome:
       "Hello! I'm Siti, your SIHAT health assistant. Ask me about food choices, diabetes, or the Three Highs.",
-    scanFound: "💡 I can see you've scanned a menu! Ask me about your food choices and I'll give you personalised advice.",
+    scanFound:
+      "💡 I can see your food analysis is ready. Ask me about your food choices and I'll give you personalised advice.",
     noScan: "No food scan found. Try scanning a menu first for personalised advice!",
     analysisReset: "Analysis reset. You can upload a new photo or type another food.",
     thinking: "Thinking...",
@@ -324,7 +339,8 @@ const t = {
     disclaimer: "Panduan umum sahaja — sila berjumpa doktor untuk nasihat perubatan peribadi.",
     welcome:
       "Helo! Saya Siti, pembantu kesihatan SIHAT anda. Tanya saya tentang pilihan makanan, diabetes, atau Tiga Tinggi.",
-    scanFound: "💡 Saya nampak anda telah mengimbas menu! Tanya saya tentang pilihan makanan anda untuk nasihat peribadi.",
+    scanFound:
+      "💡 Analisis makanan anda sudah sedia. Tanya saya tentang pilihan makanan untuk nasihat peribadi.",
     noScan: "Tiada imbasan makanan ditemui. Cuba imbas menu dahulu untuk nasihat peribadi!",
     analysisReset: "Analisis telah dikosongkan. Anda boleh muat naik gambar baharu atau taip makanan lain.",
     thinking: "Sedang berfikir...",
@@ -394,7 +410,7 @@ const t = {
     disclaimer: "仅供一般健康参考，个人医疗建议请咨询医生。",
     welcome:
       "您好！我是 Siti，您的 SIHAT 健康助手。您可以询问食物选择、糖尿病或三高相关问题。",
-    scanFound: "💡 我看到您已扫描了菜单！向我询问您的食物选择，我将为您提供个性化建议。",
+    scanFound: "💡 我看到您的食物分析已准备好。向我询问您的食物选择，我将为您提供个性化建议。",
     noScan: "未找到食物扫描记录。请先扫描菜单以获取个性化建议！",
     analysisReset: "分析已重置。您可以上传新的照片或输入其他食物。",
     thinking: "思考中…",
@@ -435,11 +451,17 @@ function readScanContext(): ScanContext | null {
 /** Generates a simple unique ID for messages */
 const STORAGE_KEY = "sihat_assistant_messages";
 const SCAN_CONTEXT_KEY = "sihat_scan_results";
-const ANALYSIS_SESSION_KEY = "sihat_analysis_session";
+const ANALYSIS_SESSION_KEY = SHARED_ANALYSIS_SESSION_KEY;
 /** Session payload when opening /recommendation from chatbot for non-database (AI-estimated) foods */
 const CHATBOT_ESTIMATED_ANALYSIS_KEY = "sihat_chatbot_estimated_analysis";
 const SCAN_CONTEXT_EVENT = "sihat_scan_results_changed";
 const MAX_CHAT_UPLOAD_IMAGES = 5;
+
+const ANALYSIS_HINT_EVENT_SOURCES = new Set<AnalysisReadySource>([
+  "food-recognition",
+  "chatbot-view-detail",
+  "recommendation-restore",
+]);
 
 type AnalysisSessionCategory = "main" | "appetizer" | "dessert" | "drink";
 
@@ -457,17 +479,45 @@ function notifyScanContextChanged() {
   window.dispatchEvent(new CustomEvent(SCAN_CONTEXT_EVENT, { detail: { source: "chatbot" } }));
 }
 
-function saveScanContext(raw: string, session?: { imagePreviews?: string[]; userText?: string; selectedCategory?: AnalysisSessionCategory | null }) {
+function saveScanContext(
+  raw: string,
+  session?: { imagePreviews?: string[]; userText?: string; selectedCategory?: AnalysisSessionCategory | null }
+) {
+  const result = JSON.parse(raw) as ScanContext;
+  const foodNames = extractFoodNamesFromPredictResults(result as Record<string, unknown>);
+  const prevScan = typeof window !== "undefined" ? sessionStorage.getItem(SCAN_CONTEXT_KEY) : null;
+  let analysisId: string | undefined;
+  let createdAt: number | undefined;
+  try {
+    const prevSessRaw = typeof window !== "undefined" ? sessionStorage.getItem(ANALYSIS_SESSION_KEY) : null;
+    if (prevScan === raw && prevSessRaw) {
+      const prevSess = JSON.parse(prevSessRaw) as { analysisId?: string; createdAt?: number };
+      if (prevSess.analysisId && typeof prevSess.createdAt === "number") {
+        analysisId = prevSess.analysisId;
+        createdAt = prevSess.createdAt;
+      }
+    }
+  } catch {
+    /* use fresh id below */
+  }
+  if (analysisId === undefined || createdAt === undefined) {
+    createdAt = Date.now();
+    analysisId = buildStableAnalysisSessionId("chatbot", foodNames, createdAt);
+  }
   sessionStorage.setItem(SCAN_CONTEXT_KEY, raw);
   if (session) {
-    sessionStorage.setItem(ANALYSIS_SESSION_KEY, JSON.stringify({
-      result: JSON.parse(raw) as ScanContext,
-      imagePreviews: session.imagePreviews ?? [],
-      userText: session.userText ?? "",
-      selectedCategory: session.selectedCategory ?? null,
-      createdAt: Date.now(),
-      source: "chatbot",
-    }));
+    sessionStorage.setItem(
+      ANALYSIS_SESSION_KEY,
+      JSON.stringify({
+        result,
+        analysisId,
+        imagePreviews: session.imagePreviews ?? [],
+        userText: session.userText ?? "",
+        selectedCategory: session.selectedCategory ?? null,
+        createdAt,
+        source: "chatbot",
+      })
+    );
   }
   notifyScanContextChanged();
 }
@@ -475,7 +525,72 @@ function saveScanContext(raw: string, session?: { imagePreviews?: string[]; user
 function clearStoredScanContext() {
   sessionStorage.removeItem(SCAN_CONTEXT_KEY);
   sessionStorage.removeItem(ANALYSIS_SESSION_KEY);
+  sessionStorage.removeItem(CHATBOT_ESTIMATED_ANALYSIS_KEY);
+  clearAcknowledgedAnalysisHintId();
   notifyScanContextChanged();
+}
+
+function readAnalysisSessionMeta(): { source?: string; imagePreviews?: string[] } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(ANALYSIS_SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as { source?: string; imagePreviews?: string[] };
+  } catch {
+    return null;
+  }
+}
+
+/** Analysis hint only for Food Recognition (/recommendation) or chatbot photo/menu scan — not typed-only chat cards. */
+function sessionQualifiesForAnalysisHintBanner(): boolean {
+  const m = readAnalysisSessionMeta();
+  if (!m) return false;
+  if (m.source === "recommendation") return true;
+  if (m.source === "chatbot" && (m.imagePreviews?.length ?? 0) > 0) return true;
+  return false;
+}
+
+/** Typed-food analysis saved for View Detailed Analysis — not menu photo scans. */
+function clearChatbotTypedFoodScanContext(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const sessionRaw = sessionStorage.getItem(ANALYSIS_SESSION_KEY);
+    if (!sessionRaw) return false;
+    const session = JSON.parse(sessionRaw) as {
+      source?: string;
+      imagePreviews?: string[];
+    };
+    if (session.source !== "chatbot") return false;
+    if ((session.imagePreviews?.length ?? 0) > 0) return false;
+    clearStoredScanContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isConversationalClientMessage(text: string): boolean {
+  const n = text.trim().toLowerCase();
+  const exact = new Set([
+    "ok",
+    "okay",
+    "why",
+    "no",
+    "nope",
+    "wrong",
+    "thanks",
+    "thank you",
+    "try again",
+    "not available",
+    "not available though",
+    "that is wrong",
+    "thats wrong",
+    "what do you mean",
+    "never mind",
+    "nevermind",
+  ]);
+  if (exact.has(n)) return true;
+  return /^(not available|why though|ok but|but why|what do you mean)/i.test(n);
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -779,6 +894,62 @@ function localizedRiskFromKey(risk: "low" | "medium" | "high", lang: LangCode): 
   }[risk][lang];
 }
 
+/** Title Case for AI-estimated names; DB names already use canonical casing. */
+function formatFoodDisplayName(name: string, lang: LangCode): string {
+  const trimmed = name.trim();
+  if (!trimmed) return trimmed;
+  if (lang === "zh" || /\p{Script=Han}/u.test(trimmed)) return trimmed;
+  return trimmed
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function foodCardTipHeader(lang: LangCode): string {
+  return lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health tip";
+}
+
+/** Shared typography for database + AI-estimated food cards (matches single DB card). */
+function FoodCardBody({
+  displayName,
+  riskLabel,
+  tip,
+  lang,
+  footer,
+}: {
+  displayName: string;
+  riskLabel: string;
+  tip: string;
+  lang: LangCode;
+  footer?: ReactNode;
+}) {
+  const tipHeader = foodCardTipHeader(lang);
+  return (
+    <div
+      className="text-gray-800"
+      style={{ whiteSpace: "normal", fontSize: "18px", lineHeight: "1.7" }}
+    >
+      <p className="font-bold mb-1" style={{ fontSize: "20px" }}>
+        {displayName}
+      </p>
+      <p className="mb-2" style={{ fontSize: "17px", lineHeight: "1.65" }}>
+        {riskLabel}
+      </p>
+      {tip ? (
+        <>
+          <p className="font-semibold mb-1" style={{ fontSize: "17px", lineHeight: "1.65" }}>
+            {tipHeader}
+            {lang === "zh" ? "：" : ":"}
+          </p>
+          <p style={{ fontSize: "17px", lineHeight: "1.65" }}>{tip}</p>
+        </>
+      ) : null}
+      {footer}
+    </div>
+  );
+}
+
 function foodItemToScanSummary(item: FoodItem, ctx: ScanContext, messageLang: LangCode): ScanFoodSummary {
   const tip =
     typeof item.tip === "object" && item.tip
@@ -798,22 +969,13 @@ function foodItemToScanSummary(item: FoodItem, ctx: ScanContext, messageLang: La
 function FoodScanSummary({ scanFood, lang }: { scanFood: ScanFoodSummary; lang: LangCode }) {
   const rk = computeRiskFromIndicators(scanFood.sugarG, scanFood.sodiumMg, scanFood.fatG, scanFood.risk);
   const riskLabel = localizedRiskFromKey(rk, lang);
-  const tipHeader = lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health tip";
-
   return (
-    <div className="text-gray-800" style={{ whiteSpace: "normal", fontSize: "18px", lineHeight: "1.7" }}>
-      <p className="font-bold mb-1" style={{ fontSize: "20px" }}>{scanFood.name}</p>
-      <p className="mb-2" style={{ fontSize: "17px", lineHeight: "1.65" }}>{riskLabel}</p>
-      {scanFood.tip ? (
-        <>
-          <p className="font-semibold mb-1" style={{ fontSize: "17px", lineHeight: "1.65" }}>
-            {tipHeader}
-            {lang === "zh" ? "：" : ":"}
-          </p>
-          <p style={{ fontSize: "17px", lineHeight: "1.65" }}>{scanFood.tip}</p>
-        </>
-      ) : null}
-    </div>
+    <FoodCardBody
+      displayName={scanFood.name}
+      riskLabel={riskLabel}
+      tip={scanFood.tip}
+      lang={lang}
+    />
   );
 }
 
@@ -834,23 +996,15 @@ function FoodSummaryCard({ content, food, scanFood, lang }: {
     const fatN = parseNutrientNumber(food.fat);
     const rk = computeRiskFromIndicators(sugarN, sodiumN, fatN, food.risk);
     const riskLabel = localizedRiskFromKey(rk, lang);
-    const tipHeader = lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health tip";
     const tip = food.tip[lang] || food.tip.en || "";
 
     return (
-      <div className="text-gray-800" style={{ whiteSpace: "normal", fontSize: "18px", lineHeight: "1.7" }}>
-        <p className="font-bold mb-1" style={{ fontSize: "20px" }}>{foodName}</p>
-        <p className="mb-2" style={{ fontSize: "17px", lineHeight: "1.65" }}>{riskLabel}</p>
-        {tip ? (
-          <>
-            <p className="font-semibold mb-1" style={{ fontSize: "17px", lineHeight: "1.65" }}>
-              {tipHeader}
-              {lang === "zh" ? "：" : ":"}
-            </p>
-            <p style={{ fontSize: "17px", lineHeight: "1.65" }}>{tip}</p>
-          </>
-        ) : null}
-      </div>
+      <FoodCardBody
+        displayName={foodName}
+        riskLabel={riskLabel}
+        tip={tip}
+        lang={lang}
+      />
     );
   }
 
@@ -866,22 +1020,14 @@ function FoodItemCard({ food, lang }: { food: CartFoodItem; lang: LangCode }) {
   const fatN = parseNutrientNumber(food.fat);
   const rk = computeRiskFromIndicators(sugarN, sodiumN, fatN, food.risk);
   const riskLabel = localizedRiskFromKey(rk, lang);
-  const tipHeader = lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health tip";
 
   return (
-    <div className="text-gray-800" style={{ fontSize: "17px", lineHeight: "1.65" }}>
-      <p className="font-bold mb-1">{foodName}</p>
-      <p className="mb-2" style={{ lineHeight: "1.65" }}>{riskLabel}</p>
-      {tip ? (
-        <>
-          <p className="font-semibold mb-1" style={{ lineHeight: "1.65" }}>
-            {tipHeader}
-            {lang === "zh" ? "：" : ":"}
-          </p>
-          <p style={{ lineHeight: "1.65" }}>{tip}</p>
-        </>
-      ) : null}
-    </div>
+    <FoodCardBody
+      displayName={foodName}
+      riskLabel={riskLabel}
+      tip={tip}
+      lang={lang}
+    />
   );
 }
 
@@ -892,7 +1038,6 @@ function AiFoodCard({ food, lang }: { food: EstimatedFoodCard; lang: LangCode })
   const hasAllNums = Number.isFinite(sugarN) && Number.isFinite(sodiumN) && Number.isFinite(fatN);
   const rk = hasAllNums ? computeRiskFromIndicators(sugarN, sodiumN, fatN, food.risk) : food.risk;
   const riskLabel = localizedRiskFromKey(rk, lang);
-  const tipHeader  = lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health tip";
   const noDbLabel      = { en: "AI-generated food analysis", ms: "Analisis makanan jana AI", zh: "AI生成的食物分析" }[lang];
   const noDbDisclaimer = {
     en: "This food is not currently in the SIHAT food database. The nutrition information and health advice shown here are estimated by AI and may not be fully accurate.",
@@ -901,63 +1046,120 @@ function AiFoodCard({ food, lang }: { food: EstimatedFoodCard; lang: LangCode })
   }[lang];
 
   return (
-    <div className="text-gray-800" style={{ fontSize: "17px", lineHeight: "1.65" }}>
-      <p className="font-bold mb-1">{food.name}</p>
-      <p className="mb-2" style={{ lineHeight: "1.65" }}>{riskLabel}</p>
-      {food.tip ? (
+    <FoodCardBody
+      displayName={formatFoodDisplayName(food.name, lang)}
+      riskLabel={riskLabel}
+      tip={food.tip ?? ""}
+      lang={lang}
+      footer={
         <>
-          <p className="font-semibold mb-1" style={{ lineHeight: "1.65" }}>
-            {tipHeader}
-            {lang === "zh" ? "：" : ":"}
+          <p className="mt-2 font-semibold text-gray-500" style={{ fontSize: "12px" }}>
+            {noDbLabel}
           </p>
-          <p style={{ lineHeight: "1.65" }}>{food.tip}</p>
+          <p className="mt-1 text-gray-400" style={{ fontSize: "12px" }}>
+            {noDbDisclaimer}
+          </p>
         </>
-      ) : null}
-      <p className="mt-2 font-semibold text-gray-500" style={{ fontSize: "12px" }}>{noDbLabel}</p>
-      <p className="mt-1 text-gray-400" style={{ fontSize: "12px" }}>{noDbDisclaimer}</p>
-    </div>
+      }
+    />
   );
 }
 
+function scanBucketForEstimatedCategory(
+  category: EstimatedFoodCategory | null
+): keyof Omit<ScanContext, "uniqueFoodCount"> {
+  if (category === "Drink") return "Drinks";
+  if (category === "Appetizer") return "Appetizer";
+  if (category === "Dessert") return "Dessert";
+  return "Main Dish";
+}
+
+function cartFoodToScanItem(food: CartFoodItem, uiLang: LangCode): FoodItem {
+  const sugarN = parseNutrientNumber(food.sugar);
+  const sodiumN = parseNutrientNumber(food.sodium);
+  const fatN = parseNutrientNumber(food.fat);
+  const rk = computeRiskFromIndicators(sugarN, sodiumN, fatN, food.risk);
+  const risk: FoodItem["risk"] = rk === "high" ? "High" : rk === "low" ? "Low" : "Medium";
+  return {
+    f: getCartFoodName(food, uiLang),
+    sugar: sugarN,
+    salt: sodiumN,
+    fat: fatN,
+    risk,
+    tip: { en: food.tip.en, ms: food.tip.ms, zh: food.tip.zh },
+    db_matched: true,
+  };
+}
+
+function estimatedCardToScanItem(card: EstimatedFoodCard): FoodItem {
+  const sugar = card.sugar ?? 0;
+  const sodium = card.sodium ?? 0;
+  const fat = card.fat ?? 0;
+  const rk = computeRiskFromIndicators(sugar, sodium, fat, card.risk);
+  const risk: FoodItem["risk"] = rk === "high" ? "High" : rk === "low" ? "Low" : "Medium";
+  const tip = card.tip ?? "";
+  return {
+    f: card.name,
+    sugar,
+    salt: sodium,
+    fat,
+    risk,
+    tip: { en: tip, ms: tip, zh: tip },
+    db_matched: false,
+  };
+}
+
+/** Build /api/predict-shaped scan context from chatbot DB + AI-estimated cards (no re-analysis). */
+function buildScanContextFromChatbotMessage(msg: Message, uiLang: LangCode): ScanContext | null {
+  const ctx: ScanContext = { uniqueFoodCount: 0 };
+
+  const push = (bucket: keyof Omit<ScanContext, "uniqueFoodCount">, item: FoodItem) => {
+    if (!ctx[bucket]) ctx[bucket] = { ranking: [] };
+    ctx[bucket]!.ranking!.push(item);
+    ctx.uniqueFoodCount = (ctx.uniqueFoodCount ?? 0) + 1;
+  };
+
+  for (const food of msg.suggestions ?? []) {
+    push("Main Dish", cartFoodToScanItem(food, uiLang));
+  }
+
+  for (const card of msg.estimatedFood ? [msg.estimatedFood] : msg.estimatedFoods ?? []) {
+    push(scanBucketForEstimatedCategory(card.category), estimatedCardToScanItem(card));
+  }
+
+  return ctx.uniqueFoodCount ? ctx : null;
+}
+
+function buildRecTextFromMessage(msg: Message, uiLang: LangCode): string {
+  const names = [
+    ...(msg.suggestions ?? []).map((f) => getCartFoodName(f, uiLang)),
+    ...(msg.estimatedFood ? [msg.estimatedFood.name] : (msg.estimatedFoods ?? []).map((f) => f.name)),
+  ];
+  return names.filter(Boolean).join(", ");
+}
+
 /**
- * Prepares sessionStorage before navigating to /recommendation.
- * Returns true if photo scan context keys were cleared (caller should sync scanContext state).
+ * Saves analysed food to sessionStorage so /recommendation renders instantly (no /api/predict).
+ * Returns true when scan context was written (caller should sync scanContext state).
  */
 function prepareRecommendationNavigationForMessage(msg: Message, uiLang: LangCode): boolean {
-  const hasDb = Boolean(msg.suggestions?.length);
-  const est = msg.estimatedFood ? [msg.estimatedFood] : (msg.estimatedFoods ?? []);
-  const hasEst = est.length > 0;
-
-  if (!hasDb && !hasEst) {
+  const scanCtx = buildScanContextFromChatbotMessage(msg, uiLang);
+  if (!scanCtx) {
     sessionStorage.removeItem(CHATBOT_ESTIMATED_ANALYSIS_KEY);
     return false;
   }
 
-  sessionStorage.removeItem(SCAN_CONTEXT_KEY);
-  sessionStorage.removeItem(ANALYSIS_SESSION_KEY);
-
-  if (!hasDb && hasEst) {
-    sessionStorage.setItem(
-      CHATBOT_ESTIMATED_ANALYSIS_KEY,
-      JSON.stringify({ v: 1, foods: est, lang: uiLang })
-    );
-    sessionStorage.setItem("rec-text", est.map((f) => f.name).join(", "));
-    return true;
-  }
-
   sessionStorage.removeItem(CHATBOT_ESTIMATED_ANALYSIS_KEY);
-
-  if (hasDb && hasEst) {
-    const matchedNames = msg.suggestions!.map((f) => getCartFoodName(f, uiLang));
-    const estimatedNames = est.map((f) => f.name);
-    sessionStorage.setItem("rec-text", [...matchedNames, ...estimatedNames].join(", "));
-    return true;
-  }
-
-  if (hasDb) {
-    const matchedNames = msg.suggestions!.map((f) => getCartFoodName(f, uiLang));
-    sessionStorage.setItem("rec-text", matchedNames.join(", "));
-  }
+  const recLine = buildRecTextFromMessage(msg, uiLang);
+  saveScanContext(
+    JSON.stringify(scanCtx),
+    {
+      userText: recLine,
+      selectedCategory: getFirstAnalysisCategory(scanCtx),
+    }
+  );
+  if (recLine) sessionStorage.setItem("rec-text", recLine);
+  console.log("[Chatbot] Saved scan context for instant detailed analysis:", recLine);
   return true;
 }
 
@@ -976,6 +1178,12 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isPhotoAnalyzing, setIsPhotoAnalyzing] = useState(false);
   const [scanContext, setScanContext] = useState<ScanContext | null>(null);
+  // Sticky flag: true whenever a valid food/menu context has been established.
+  // Only cleared by explicit user actions (Clear chat / Reset analysis / recommendation reset).
+  // Normal chat turns do NOT clear this — the badge must persist while food context exists.
+  const [hasActiveFoodContext, setHasActiveFoodContext] = useState<boolean>(
+    () => typeof window !== "undefined" && hasScanContextItems(readScanContext())
+  );
   const [hasInitialised, setHasInitialised] = useState(false);
   const [supportsVoiceInput, setSupportsVoiceInput] = useState(false);
   const [supportsImageUpload, setSupportsImageUpload] = useState(false);
@@ -1004,11 +1212,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const imagePreviewUrlsRef = useRef<Set<string>>(new Set());
   const pendingVoiceTranscriptRef = useRef("");
   const lastScanContextRawRef = useRef<string | null>(null);
-  // Raw JSON of the scan context whose hint was last appended in chat.
-  // Used to avoid duplicating the "I can see you've scanned" message.
-  const lastAcknowledgedScanRef = useRef<string | null>(null);
-  // Set when a new scan arrives while chatbot is closed; consumed on open.
-  const pendingScanHintRef = useRef<string | null>(null);
+  // Last analysis id we processed for the scan/menu hint (dedupes events, session flush, and welcome).
+  const lastHandledAnalysisHintIdRef = useRef<string | null>(null);
+  // Set when analysis completes while chatbot is closed; consumed on open.
+  const pendingAnalysisHintIdRef = useRef<string | null>(null);
   // Ref mirrors of volatile state so stable callbacks can read current values.
   const isOpenRef = useRef(false);
   const txRef = useRef<typeof tx>(tx);
@@ -1082,12 +1289,18 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     return () => clearTimeout(t);
   }, [messages.length, isOpen, scrollChatToBottom]);
 
-  // Append the scan-context hint message once per unique scan.
-  // Uses refs so the callback is stable and event listeners can call the latest version.
-  const appendScanHintIfNew = useCallback((raw: string) => {
-    if (!raw || raw === lastAcknowledgedScanRef.current) return;
-    lastAcknowledgedScanRef.current = raw;
-    pendingScanHintRef.current = null;
+  // Append the scan/menu hint once per unique analysis result id.
+  const appendScanHintIfNew = useCallback((analysisId: string) => {
+    if (!analysisId || analysisId === lastHandledAnalysisHintIdRef.current) return;
+    const storedAck = readAcknowledgedAnalysisHintId();
+    if (analysisId === storedAck) {
+      lastHandledAnalysisHintIdRef.current = analysisId;
+      pendingAnalysisHintIdRef.current = null;
+      return;
+    }
+    lastHandledAnalysisHintIdRef.current = analysisId;
+    markAnalysisHintAcknowledged(analysisId);
+    pendingAnalysisHintIdRef.current = null;
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: txRef.current.scanFound, id: uid() },
@@ -1115,6 +1328,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
   // Restore chat history for the current browser session
   useEffect(() => {
+    const storedAck = readAcknowledgedAnalysisHintId();
+    if (storedAck) lastHandledAnalysisHintIdRef.current = storedAck;
+
     const storedMessages = readMessageHistory();
     if (storedMessages?.length) {
       setMessages(storedMessages);
@@ -1181,21 +1397,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         id: uid(),
       };
 
-      const msgs: Message[] = [welcomeMsg];
-
-      // If scan context found, add a hint message and mark it acknowledged.
-      if (ctx) {
-        const raw = sessionStorage.getItem(SCAN_CONTEXT_KEY);
-        lastAcknowledgedScanRef.current = raw;
-        pendingScanHintRef.current = null;
-        msgs.push({
-          role: "assistant",
-          content: tx.scanFound,
-          id: uid(),
-        });
-      }
-
-      setMessages(msgs);
+      setMessages([welcomeMsg]);
       setHasInitialised(true);
       conversationLangRef.current = lang;
       setConversationLang(lang);
@@ -1206,22 +1408,55 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     }
   }, [isOpen, hasInitialised, tx]);
 
-  // Re-read scan context when chat opens; flush any pending scan hint.
+  // Re-read scan context when chat opens; flush pending event or session-based hint (single deduped path).
   useEffect(() => {
     if (!isOpen) return;
     const raw = typeof window === "undefined" ? null : sessionStorage.getItem(SCAN_CONTEXT_KEY);
-    setScanContext(readScanContext());
+    const ctx = readScanContext();
+    setScanContext(ctx);
+    if (hasScanContextItems(ctx)) setHasActiveFoodContext(true);
     lastScanContextRawRef.current = raw;
 
-    // If a new scan arrived while the chatbot was closed, show the hint now.
-    const pending = pendingScanHintRef.current;
-    if (pending && pending !== lastAcknowledgedScanRef.current) {
+    const pending = pendingAnalysisHintIdRef.current;
+    if (pending) {
       appendScanHintIfNew(pending);
+      return;
+    }
+    const analysisId = readAnalysisIdFromSession();
+    if (analysisId && sessionQualifiesForAnalysisHintBanner()) {
+      appendScanHintIfNew(analysisId);
     }
   }, [isOpen, appendScanHintIfNew]);
 
-  // Keep chatbot scan context in sync with the recommendation page's session storage.
-  // When a NEW scan arrives, immediately show the hint in chat (or queue it if closed).
+  // Analysis completed or opened elsewhere → append hint (deduped by analysis id).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleAnalysisReady = (event: Event) => {
+      const detail = (event as CustomEvent<AnalysisReadyDetail>).detail;
+      const analysisId = detail?.analysisId;
+      const src = detail?.source;
+      if (!analysisId || !src || !ANALYSIS_HINT_EVENT_SOURCES.has(src)) return;
+      if (analysisId === lastHandledAnalysisHintIdRef.current) return;
+
+      const raw = sessionStorage.getItem(SCAN_CONTEXT_KEY);
+      lastScanContextRawRef.current = raw;
+      const ctx = readScanContext();
+      setScanContext(ctx);
+      if (hasScanContextItems(ctx)) setHasActiveFoodContext(true);
+
+      if (isOpenRef.current) {
+        appendScanHintIfNew(analysisId);
+      } else {
+        pendingAnalysisHintIdRef.current = analysisId;
+      }
+    };
+
+    window.addEventListener(ANALYSIS_READY_EVENT, handleAnalysisReady);
+    return () => window.removeEventListener(ANALYSIS_READY_EVENT, handleAnalysisReady);
+  }, [appendScanHintIfNew]);
+
+  // Keep chatbot scan context state in sync with session storage.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -1229,23 +1464,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       const raw = sessionStorage.getItem(SCAN_CONTEXT_KEY);
       if (raw === lastScanContextRawRef.current) return;
       lastScanContextRawRef.current = raw;
-      setScanContext(readScanContext());
-
-      if (!raw) {
-        // Scan was cleared — discard any queued hint.
-        pendingScanHintRef.current = null;
-        return;
-      }
-
-      if (raw === lastAcknowledgedScanRef.current) return;
-
-      if (isOpenRef.current) {
-        // Chatbot is visible: show hint immediately.
-        appendScanHintIfNew(raw);
-      } else {
-        // Chatbot is closed: remember so we show hint on next open.
-        pendingScanHintRef.current = raw;
-      }
+      const ctx = readScanContext();
+      setScanContext(ctx);
+      if (hasScanContextItems(ctx)) setHasActiveFoodContext(true);
+      if (!raw) pendingAnalysisHintIdRef.current = null;
     };
 
     const handleStorage = (event: StorageEvent) => {
@@ -1265,8 +1487,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       if (!label || !resetLabels.some((resetLabel) => label.includes(resetLabel))) return;
       clearStoredScanContext();
       lastScanContextRawRef.current = null;
-      pendingScanHintRef.current = null;
+      lastHandledAnalysisHintIdRef.current = null;
+      pendingAnalysisHintIdRef.current = null;
       setScanContext(null);
+      setHasActiveFoodContext(false);
     };
 
     syncScanContext();
@@ -1279,7 +1503,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       window.removeEventListener(SCAN_CONTEXT_EVENT, syncScanContext);
       document.removeEventListener("click", handleRecommendationResetClick, true);
     };
-  }, [pathname, appendScanHintIfNew]);
+  }, [pathname]);
 
   // ─── SEND MESSAGE ───────────────────────────────────────────────────────────
 
@@ -1313,20 +1537,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       },
     ];
 
-    if (ctx) {
-      const raw = sessionStorage.getItem(SCAN_CONTEXT_KEY);
-      lastAcknowledgedScanRef.current = raw;
-      pendingScanHintRef.current = null;
-      freshMessages.push({
-        role: "assistant",
-        content: tx.scanFound,
-        id: uid(),
-      });
-    }
-
     setScanContext(ctx);
     return freshMessages;
-  }, [tx.scanFound, tx.suggestedQ, tx.welcome]);
+  }, [tx.suggestedQ, tx.welcome]);
 
   // Page language changed: refresh welcome + starters when no real chat yet; otherwise append switch notice.
   useEffect(() => {
@@ -1343,6 +1556,12 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       setConversationLang(lang);
       const fresh = getFreshWelcomeMessages();
       setMessages(fresh);
+      queueMicrotask(() => {
+        if (sessionQualifiesForAnalysisHintBanner()) {
+          const id = readAnalysisIdFromSession();
+          if (id) appendScanHintIfNew(id);
+        }
+      });
       requestAnimationFrame(() => scrollChatToBottom());
       setTimeout(() => scrollChatToBottom(), 50);
       setTimeout(() => scrollChatToBottom(), 150);
@@ -1367,7 +1586,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     setTimeout(() => scrollChatToBottom(), 50);
     setTimeout(() => scrollChatToBottom(), 150);
     setTimeout(() => scrollChatToBottom(false), 300);
-  }, [lang, isOpen, hasInitialised, getFreshWelcomeMessages, tx.languageSwitched, scrollChatToBottom]);
+  }, [lang, isOpen, hasInitialised, getFreshWelcomeMessages, tx.languageSwitched, scrollChatToBottom, appendScanHintIfNew]);
 
   const clearConversation = useCallback(() => {
     if (typeof window !== "undefined" && !window.confirm(tx.clearConfirm)) return;
@@ -1385,6 +1604,13 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     conversationLangRef.current = lang;
     setConversationLang(lang);
     lastRequestedLangRef.current = lang;
+    // Explicitly clear food context on clear-chat
+    clearStoredScanContext();
+    lastScanContextRawRef.current = null;
+    lastHandledAnalysisHintIdRef.current = null;
+    pendingAnalysisHintIdRef.current = null;
+    setScanContext(null);
+    setHasActiveFoodContext(false);
     const freshMessages = getFreshWelcomeMessages();
     setMessages(freshMessages);
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(freshMessages));
@@ -1454,10 +1680,22 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   );
 
   const openFullAnalysis = useCallback((href: string) => {
+    const emitViewDetailAnalysisHint = () => {
+      const analysisId = readAnalysisIdFromSession();
+      const ctx = readScanContext();
+      if (!analysisId || !ctx || !hasScanContextItems(ctx)) return;
+      notifyAnalysisReady({
+        analysisId,
+        source: "chatbot-view-detail",
+        foodNames: extractFoodNamesFromPredictResults(ctx as Record<string, unknown>),
+      });
+    };
+
     // If the user is already on the recommendation page, avoid a full navigation.
     // Instead dispatch a custom event that tells the page to sync the latest
     // chatbot result and smooth-scroll to the analysis result section.
     if (pathname === "/recommendation") {
+      emitViewDetailAnalysisHint();
       setIsOpen(false);
       window.dispatchEvent(new CustomEvent("sihat_view_analysis"));
       return;
@@ -1469,6 +1707,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       hasAnalysisSession: !!sessionRaw,
       sessionSource: sessionRaw ? (JSON.parse(sessionRaw) as { source?: string }).source : null,
     });
+    emitViewDetailAnalysisHint();
     const separator = href.includes("?") ? "&" : "?";
     const url = `${href}${separator}fromChatbot=1&ts=${Date.now()}`;
     // Push first so the navigation is committed before the component re-renders
@@ -1578,6 +1817,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           clearStoredScanContext();
           lastScanContextRawRef.current = null;
           setScanContext(null);
+          setHasActiveFoodContext(false);
           setMessages((prev) => [
             ...prev,
             { role: "assistant", content: txPhoto.noFoodDetected, id: uid(), locale: photoMsgLang },
@@ -1586,13 +1826,17 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         }
 
         const raw = JSON.stringify(data);
-        saveScanContext(raw, {
-          imagePreviews,
-          userText: text.trim(),
-          selectedCategory: getFirstAnalysisCategory(data),
-        });
+        saveScanContext(
+          raw,
+          {
+            imagePreviews,
+            userText: text.trim(),
+            selectedCategory: getFirstAnalysisCategory(data),
+          }
+        );
         lastScanContextRawRef.current = raw;
         setScanContext(data);
+        setHasActiveFoodContext(true);
 
         const scannedFoods = getScanFoodItems(data);
         const scanFood: ScanFoodSummary | undefined =
@@ -1750,9 +1994,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         const userMsg: Message = { role: "user", content: trimmed, id: uid() };
         clearStoredScanContext();
         lastScanContextRawRef.current = null;
-        lastAcknowledgedScanRef.current = null;
-        pendingScanHintRef.current = null;
+        lastHandledAnalysisHintIdRef.current = null;
+        pendingAnalysisHintIdRef.current = null;
         setScanContext(null);
+        setHasActiveFoodContext(false);
         window.dispatchEvent(new Event(ANALYSIS_RESET_EVENT));
         setMessages((prev) => [
           ...prev,
@@ -1809,13 +2054,19 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         chatAbortRef.current = abortController;
         const gender = readGenderPreference();
         const intakeSummary = buildDailyIntakeSummary(cart, gender, messageLang);
-        const latestScanContext = readScanContext();
-        setScanContext(latestScanContext);
+        let scanContextForRequest = readScanContext();
+        if (isConversationalClientMessage(trimmed)) {
+          if (clearChatbotTypedFoodScanContext()) {
+            scanContextForRequest = null;
+            setScanContext(null);
+          }
+        }
+        setScanContext(scanContextForRequest);
         const requestBody: ChatRequestBody = {
           message: trimmed,
           history: historyMessages,
           language: messageLang,
-          scanContext: latestScanContext,
+          scanContext: scanContextForRequest,
           cart,
           intakeSummary,
         };
@@ -1829,12 +2080,22 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
         const data = (await res.json()) as ChatResponse;
         const apiReply = data.reply || tx.errorRetry;
-        const categoryPrompt = isManualCategoryPrompt(apiReply, data.quickReplies) && hasScanContextItems(latestScanContext);
-        const reply = categoryPrompt ? buildAutomaticBestChoiceSummary(latestScanContext!, messageLang) : apiReply;
+        const categoryPrompt =
+          isManualCategoryPrompt(apiReply, data.quickReplies) && hasScanContextItems(scanContextForRequest);
+        const reply = categoryPrompt
+          ? buildAutomaticBestChoiceSummary(scanContextForRequest!, messageLang)
+          : apiReply;
         const quickReplies = categoryPrompt ? undefined : data.quickReplies;
-        const actionButton = categoryPrompt
-          ? { label: t[messageLang].openFullAnalysis, href: "/recommendation" }
-          : undefined;
+        const hasAnalysableFoodPayload = Boolean(
+          data.suggestions?.length || data.estimatedFood || data.estimatedFoods?.length
+        );
+        const defaultRecommendationButton =
+          hasAnalysableFoodPayload && !categoryPrompt
+            ? ({ label: t[messageLang].openFullAnalysis, href: "/recommendation" as const } as const)
+            : undefined;
+        const mergedActionButton = categoryPrompt
+          ? { label: t[messageLang].openFullAnalysis, href: "/recommendation" as const }
+          : data.actionButton ?? defaultRecommendationButton;
 
         if (data.action?.type === "add" && data.action.food) {
           // Guard against stale cart snapshot: don't add if already present
@@ -1857,26 +2118,45 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           lastUnavailableRequestRef.current = null;
         }
 
-        // When the chat API directs the user to the recommendation page via a text
-        // query (data.actionButton from API, not the locally-built categoryPrompt one),
-        // write rec-text and clear any stale photo-scan context so the recommendation
-        // page auto-analyzes the text query instead of restoring old scan results.
+        // This turn has a food card — record active food context for the badge.
+        if (hasAnalysableFoodPayload) {
+          setHasActiveFoodContext(true);
+        }
+
+        // Current turn has no food payload — drop typed-food scan cache so stale data
+        // cannot leak into the next API call. Intentionally does NOT clear hasActiveFoodContext
+        // so the badge persists while food context is still valid.
+        if (
+          !data.suggestions?.length &&
+          !data.estimatedFood &&
+          !data.estimatedFoods?.length &&
+          !data.actionButton
+        ) {
+          if (clearChatbotTypedFoodScanContext()) setScanContext(null);
+        }
+
+        // Pre-save analysis for instant detailed view (no /api/predict re-run on recommendation page).
         if (
           typeof window !== "undefined" &&
           !categoryPrompt &&
-          data.actionButton?.href?.includes("/recommendation") &&
-          (data.suggestions?.length || data.estimatedFood || data.estimatedFoods?.length)
+          mergedActionButton?.href?.includes("/recommendation") &&
+          hasAnalysableFoodPayload
         ) {
-          const matchedNames = (data.suggestions ?? []).map((f) => getCartFoodName(f, messageLang));
-          const estimatedSingleName = data.estimatedFood ? [data.estimatedFood.name] : [];
-          const estimatedNames = (data.estimatedFoods ?? []).map((f) => f.name);
-          const allNames = [...matchedNames, ...estimatedSingleName, ...estimatedNames].join(", ");
-          sessionStorage.setItem("rec-text", allNames);
-          sessionStorage.removeItem(CHATBOT_ESTIMATED_ANALYSIS_KEY);
-          sessionStorage.removeItem(SCAN_CONTEXT_KEY);
-          sessionStorage.removeItem(ANALYSIS_SESSION_KEY);
-          setScanContext(null);
-          console.log("[Chatbot] Text query — pre-filled rec-text and cleared scan context:", allNames);
+          const prepared = prepareRecommendationNavigationForMessage(
+            {
+              role: "assistant",
+              content: reply,
+              id: "pending",
+              suggestions: data.suggestions,
+              estimatedFood: data.estimatedFood,
+              estimatedFoods: data.estimatedFoods,
+            },
+            messageLang
+          );
+          if (prepared) {
+            setScanContext(readScanContext());
+            setHasActiveFoodContext(true);
+          }
         }
 
         setMessages((prev) => [
@@ -1887,7 +2167,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
             suggestions: data.suggestions,
             unavailableFoodName: data.unavailableFoodName,
             quickReplies,
-            actionButton: actionButton ?? data.actionButton,
+            actionButton: mergedActionButton,
             isMultiFood: data.isMultiFood,
             estimatedFood: data.estimatedFood,
             estimatedFoods: data.estimatedFoods,
@@ -2127,7 +2407,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
               </button>
             </div>
             <div className="ml-[52px] mt-2 flex flex-wrap items-center gap-2">
-              {hasScanContextItems(scanContext) && (
+              {hasActiveFoodContext && (
                 <span className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-emerald-100/70 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-900">
                   <Utensils className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {ctx.foodDetected}
@@ -2287,8 +2567,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                             router.push("/food");
                             setIsOpen(false);
                           } else if (href.includes("/recommendation")) {
-                            const clearedScan = prepareRecommendationNavigationForMessage(msg, cardLang);
-                            if (clearedScan) setScanContext(null);
+                            const saved = prepareRecommendationNavigationForMessage(msg, cardLang);
+                            if (saved) setScanContext(readScanContext());
                             openFullAnalysis(href);
                           } else {
                             openFullAnalysis(href);

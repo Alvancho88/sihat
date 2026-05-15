@@ -12,6 +12,14 @@ import { useSearchParams } from "next/navigation"
 import type { FoodItem as MealPlanFoodItem } from "@/lib/food-functions"
 import { DailyIntakePanel, type DailyIntakePanelStrings } from "@/components/ui/daily-intake-panel"
 import { computeRiskFromIndicators, getLevelFromThresholds } from "@/lib/food-recognition-risk"
+import {
+  ANALYSIS_SESSION_KEY as SHARED_ANALYSIS_SESSION_KEY,
+  buildStableAnalysisSessionId,
+  extractFoodNamesFromPredictResults,
+  notifyAnalysisReady,
+  clearAcknowledgedAnalysisHintId,
+  type AnalysisReadySource,
+} from "@/lib/analysis-hint-sync"
 
 import Image from "next/image"
 import {
@@ -746,7 +754,7 @@ type PredictResults = Record<string, { ranking?: PredictFoodItem[]; all_high_ris
 }
 
 const SCAN_CONTEXT_KEY = "sihat_scan_results"
-const ANALYSIS_SESSION_KEY = "sihat_analysis_session"
+const ANALYSIS_SESSION_KEY = SHARED_ANALYSIS_SESSION_KEY
 const SCAN_CONTEXT_EVENT = "sihat_scan_results_changed"
 /** Populated by AI chatbot when user opens full analysis for non-database (estimated) foods */
 const CHATBOT_ESTIMATED_ANALYSIS_KEY = "sihat_chatbot_estimated_analysis"
@@ -809,6 +817,7 @@ type AnalysisSessionCategory = "main" | "appetizer" | "dessert" | "drink"
 
 type AnalysisSession = {
   result: PredictResults
+  analysisId?: string
   imagePreviews?: string[]
   userText?: string
   selectedCategory?: AnalysisSessionCategory | null
@@ -825,22 +834,41 @@ function getAvailableCategories(cache: ApiResultsCache | null): AnalysisSessionC
   return (["main", "appetizer", "dessert", "drink"] as const).filter((category) => cache[category]?.length > 0)
 }
 
-function saveScanContext(data: PredictResults, session?: Omit<AnalysisSession, "result" | "createdAt" | "source">) {
+function saveScanContext(
+  data: PredictResults,
+  session?: Omit<AnalysisSession, "result" | "createdAt" | "source" | "analysisId">,
+  options?: { source?: AnalysisReadySource; analysisId?: string; notifyAnalysisReady?: boolean }
+) {
+  const foodNames = extractFoodNamesFromPredictResults(data as Record<string, unknown>)
+  const createdAt = Date.now()
+  const analysisId =
+    options?.analysisId ??
+    buildStableAnalysisSessionId(options?.source ?? "food-recognition", foodNames, createdAt)
+  const readySource = options?.source ?? "food-recognition"
   sessionStorage.setItem(SCAN_CONTEXT_KEY, JSON.stringify(data))
   sessionStorage.setItem(ANALYSIS_SESSION_KEY, JSON.stringify({
     result: data,
+    analysisId,
     imagePreviews: session?.imagePreviews ?? [],
     userText: session?.userText ?? "",
     selectedCategory: session?.selectedCategory ?? null,
-    createdAt: Date.now(),
+    createdAt,
     source: "recommendation",
   } satisfies AnalysisSession))
   notifyScanContextChanged()
+  if (options?.notifyAnalysisReady !== false) {
+    notifyAnalysisReady({
+      analysisId,
+      source: readySource,
+      foodNames: extractFoodNamesFromPredictResults(data as Record<string, unknown>),
+    })
+  }
 }
 
 function clearScanContext() {
   sessionStorage.removeItem(SCAN_CONTEXT_KEY)
   sessionStorage.removeItem(ANALYSIS_SESSION_KEY)
+  clearAcknowledgedAnalysisHintId()
   notifyScanContextChanged()
 }
 
@@ -893,6 +921,58 @@ function normalizeFoodName(value: string): string {
   return value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim()
 }
 
+function isPageRefreshNavigation(): boolean {
+  if (typeof window === "undefined") return false
+  const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+  return navEntries.length > 0 && navEntries[0].type === "reload"
+}
+
+type RecommendationBootstrap = {
+  cache: ApiResultsCache
+  firstCategory: AnalysisSessionCategory
+  userText: string
+  showTextInput: boolean
+  uploadedImages: string[]
+  showChatbotAiEstimateBanner: boolean
+}
+
+/** Reads SCAN_CONTEXT + ANALYSIS_SESSION when present (caller avoids calling on full reload). */
+function parseSessionToBootstrap(): RecommendationBootstrap | null {
+  try {
+    const sessionRaw = sessionStorage.getItem(ANALYSIS_SESSION_KEY)
+    const raw = sessionStorage.getItem(SCAN_CONTEXT_KEY)
+    if (!raw) return null
+    const storedSession = sessionRaw ? (JSON.parse(sessionRaw) as AnalysisSession) : null
+    const data = storedSession?.result ?? (JSON.parse(raw) as PredictResults)
+    const cache = buildApiResultsCache(data)
+    const selectedSessionCategory = storedSession?.selectedCategory
+    const firstCategory =
+      selectedSessionCategory && cache[selectedSessionCategory]?.length
+        ? selectedSessionCategory
+        : getFirstAnalysisCategory(cache)
+    if (!firstCategory) return null
+
+    const hasAiEstimatedItems = (["main", "appetizer", "dessert", "drink"] as const).some((key) =>
+      (cache[key] ?? []).some((item) => item.db_matched !== true)
+    )
+    return {
+      cache,
+      firstCategory,
+      userText: storedSession?.userText ?? "",
+      showTextInput: Boolean(storedSession?.userText?.trim()),
+      uploadedImages: storedSession?.imagePreviews ?? [],
+      showChatbotAiEstimateBanner: hasAiEstimatedItems,
+    }
+  } catch {
+    return null
+  }
+}
+
+function readRecommendationBootstrap(): RecommendationBootstrap | null {
+  if (typeof window === "undefined" || isPageRefreshNavigation()) return null
+  return parseSessionToBootstrap()
+}
+
 function findMealPlanFood(foodName: string, foods: MealPlanFoodItem[]): MealPlanFoodItem | null {
   const target = normalizeFoodName(foodName)
   if (!target) return null
@@ -914,9 +994,10 @@ function findMealPlanFood(foodName: string, foods: MealPlanFoodItem[]): MealPlan
  */
 export default function RecommendationClient({ initialFoods }: { initialFoods: MealPlanFoodItem[] }) {
   // ─── STATE MANAGEMENT ────────────────────────────────────────────────────────
-  
+  const [initialBootstrap] = useState(() => readRecommendationBootstrap())
+
   // Image and file management
-  const [uploadedImages, setUploadedImages] = useState<string[]>([])
+  const [uploadedImages, setUploadedImages] = useState<string[]>(() => initialBootstrap?.uploadedImages ?? [])
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [newFiles, setNewFiles] = useState<File[]>([])
   
@@ -930,14 +1011,22 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   
   // Results and error handling
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
-  const [apiResultsCache, setApiResultsCache] = useState<ApiResultsCache | null>(null)
+  const [apiResultsCache, setApiResultsCache] = useState<ApiResultsCache | null>(
+    () => initialBootstrap?.cache ?? null
+  )
   const [previousOcr, setPreviousOcr] = useState<string>("")
   
   // User input and navigation
-  const [textInput, setTextInput] = useState("")
-  const [showCategories, setShowCategories] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [results, setResults] = useState<FoodItem[] | null>(null)
+  const [textInput, setTextInput] = useState(() => initialBootstrap?.userText ?? "")
+  const [showCategories, setShowCategories] = useState(() => Boolean(initialBootstrap?.firstCategory))
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(
+    () => initialBootstrap?.firstCategory ?? null
+  )
+  const [results, setResults] = useState<FoodItem[] | null>(() => {
+    const b = initialBootstrap
+    if (!b?.firstCategory) return null
+    return b.cache[b.firstCategory] ?? null
+  })
   
   // Modal and mobile UI state
   const [cartOpen, setCartOpen] = useState(false)
@@ -948,10 +1037,12 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const [showAltByCategory, setShowAltByCategory] = useState<Record<string, boolean>>({})
 
   // Panel navigation state - "upload" or "results"
-  const [currentPanel, setCurrentPanel] = useState<"upload" | "results">("upload")
+  const [currentPanel, setCurrentPanel] = useState<"upload" | "results">(() =>
+    initialBootstrap ? "results" : "upload"
+  )
   
   // Text input mode toggle (hidden by default, shown when user clicks the button)
-  const [showTextInput, setShowTextInput] = useState(false)
+  const [showTextInput, setShowTextInput] = useState(() => initialBootstrap?.showTextInput ?? false)
 
   // ─── REFS AND CONSTANTS ────────────────────────────────────────────────────────
   
@@ -971,7 +1062,9 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const typeInsteadButtonRef = useRef<HTMLButtonElement>(null);
   const [pendingAutoAnalyze, setPendingAutoAnalyze] = useState(false)
   /** True when results were loaded from chatbot AI estimates (not DB / not fresh /api/predict) */
-  const [showChatbotAiEstimateBanner, setShowChatbotAiEstimateBanner] = useState(false)
+  const [showChatbotAiEstimateBanner, setShowChatbotAiEstimateBanner] = useState(
+    () => initialBootstrap?.showChatbotAiEstimateBanner ?? false
+  )
 
   const MAX_IMAGES = 5 // Maximum number of images allowed
 
@@ -1008,15 +1101,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
   const restoreSharedScanResults = useCallback(() => {
     try {
-      const sessionRaw = sessionStorage.getItem(ANALYSIS_SESSION_KEY)
-      const storedSession = sessionRaw ? (JSON.parse(sessionRaw) as AnalysisSession) : null
-      const raw = sessionStorage.getItem(SCAN_CONTEXT_KEY)
-      console.log("[Recommendation] restoreSharedScanResults:", {
-        hasScanResult: !!raw,
-        hasAnalysisSession: !!sessionRaw,
-        source: storedSession?.source ?? null,
-      })
-      if (!raw) {
+      const bootstrap = parseSessionToBootstrap()
+      if (!bootstrap) {
         setShowChatbotAiEstimateBanner(false)
         setApiResultsCache(null)
         setShowCategories(false)
@@ -1025,31 +1111,21 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
         return
       }
 
-      const data = storedSession?.result ?? JSON.parse(raw) as PredictResults
-      const cache = buildApiResultsCache(data)
-      const selectedSessionCategory = storedSession?.selectedCategory
-      const firstCategory = selectedSessionCategory && cache[selectedSessionCategory]?.length
-        ? selectedSessionCategory
-        : getFirstAnalysisCategory(cache)
-      if (!firstCategory) return
-
-      setShowChatbotAiEstimateBanner(false)
-      setUploadedImages(storedSession?.imagePreviews ?? [])
+      setShowChatbotAiEstimateBanner(bootstrap.showChatbotAiEstimateBanner)
+      setUploadedImages(bootstrap.uploadedImages)
       setUploadedFiles([])
       setNewFiles([])
       setPreviousOcr("")
-      setTextInput(storedSession?.userText ?? "")
-      if (storedSession?.userText) setShowTextInput(true)
+      setTextInput(bootstrap.userText)
+      if (bootstrap.showTextInput) setShowTextInput(true)
       setAnalyzeError(null)
       setIsAnalyzing(false)
       setSuccessCount(null)
-      setApiResultsCache(cache)
+      setApiResultsCache(bootstrap.cache)
       setShowCategories(true)
-      setSelectedCategory(firstCategory)
-      setResults(cache[firstCategory])
-      // Auto-navigate to results panel when restoring
+      setSelectedCategory(bootstrap.firstCategory)
+      setResults(bootstrap.cache[bootstrap.firstCategory] ?? null)
       setCurrentPanel("results")
-      // Scroll to panel navigation after restore (shows category + results)
       setTimeout(() => {
         panelNavRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
       }, 150)
@@ -1092,6 +1168,11 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       setTextInput(recLine)
       setShowTextInput(true)
 
+      saveScanContext(predictData, {
+        userText: recLine,
+        selectedCategory: firstCategory,
+      }, { source: "chatbot-view-detail", notifyAnalysisReady: false })
+
       setTimeout(() => {
         panelNavRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
       }, 150)
@@ -1124,15 +1205,17 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       return
     }
     
-    // On navigation (not refresh), restore previous results
-    restoreSharedScanResults()
+    // On navigation (not refresh), restore previous results if not already hydrated from session on first paint.
+    if (!initialBootstrap) {
+      restoreSharedScanResults()
+    }
     const handleSharedScanUpdate = (event: Event) => {
       if (event instanceof CustomEvent && event.detail?.source === "recommendation") return
       restoreSharedScanResults()
     }
     window.addEventListener(SCAN_CONTEXT_EVENT, handleSharedScanUpdate)
     return () => window.removeEventListener(SCAN_CONTEXT_EVENT, handleSharedScanUpdate)
-  }, [restoreSharedScanResults])
+  }, [restoreSharedScanResults, initialBootstrap])
 
   // Chatbot fires "sihat_view_analysis" when user is already on this page and
   // clicks "View Detailed Analysis". Instead of navigating, we sync state and scroll.
@@ -1146,6 +1229,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       if (hasScanCtx) {
         restoreSharedScanResults()
       } else if (recText) {
+        console.warn("[Recommendation] sihat_view_analysis: rec-text only, legacy auto-analyse")
         setShowChatbotAiEstimateBanner(false)
         setTextInput(recText)
         setShowTextInput(true)
@@ -1189,14 +1273,14 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     const hasScanContext = !!sessionStorage.getItem(SCAN_CONTEXT_KEY)
 
     if (hasScanContext) {
-      console.log("[Recommendation] fromChatbot: scan context found, restoring full analysis")
+      console.log("[Recommendation] fromChatbot: scan context found, restoring full analysis (no re-run)")
       restoreSharedScanResults()
       return
     }
 
-    // No photo scan — load the food name pre-filled by the chatbot and auto-analyse it
+    // Legacy fallback only — chatbot should save scan context before navigation
     const savedText = sessionStorage.getItem("rec-text")
-    console.log("[Recommendation] fromChatbot: no scan context, auto-analysing:", savedText)
+    console.log("[Recommendation] fromChatbot: no scan context, legacy auto-analyse:", savedText)
     if (savedText) {
       setShowChatbotAiEstimateBanner(false)
       setTextInput(savedText)
