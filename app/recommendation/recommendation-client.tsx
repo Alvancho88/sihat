@@ -41,7 +41,7 @@ const content = {
     upload_hint: "Tap to take a photo or upload photos of menu or food",
     upload_format: "JPG, PNG (Maximum 5 Photos)",
     upload_btn: "Add Photo",
-    camera_btn: "Take Photo",
+    camera_btn: "Add Photo",
     uploading: "Uploading...",
     click_to_view: "Click to view full image",
     text_input_title: "Type Your Food Name",
@@ -60,13 +60,13 @@ const content = {
     },
     result_title: "Analysis Result",
     best_choice: "Best Choice",
-    disclaimer: "Ranking based on estimated Sugar, Salt, and Saturated Fat levels. Results are for general guidance only and should not replace professional medical advice.",
+    disclaimer: "Ranking based on estimated Sugar, Salt, and Fat levels. Results are for general guidance only and should not replace professional medical advice.",
     tip_label: "Health Tip",
     risk_low: "Low Risk",
     risk_medium: "Medium Risk",
     risk_high: "High Risk",
     nutrition_sugar: "Sugar",
-    nutrition_salt: "Salt/Sodium",
+    nutrition_salt: "Sodium",
     nutrition_fat: "Fat",
     analyze_another: "Back",
     back_to_upload: "Upload New Photo",
@@ -110,6 +110,8 @@ const content = {
     all_high_risk_warning: "All options in this category are High Risk. Consider this healthier alternative:",
     alternative_label: "Suggested Alternative",
     alternative_why: "Why this alternative?",
+    show_alternative_btn: "Show me an alternative",
+    hide_alternative_btn: "Hide alternative",
     best_choice_reason_label: "Why we pick this as the Best Choice",
     add_to_meal_plan: "Add to Meal Plan",
     in_meal_plan: "In Meal Plan",
@@ -123,7 +125,7 @@ const content = {
       "Sugar, sodium, fat, risk, and health tips below reuse the same AI estimates as in the chat. They are not verified against the SIHAT food database.",
     // Action sheet
     sheet_title: "Add Photo",
-    sheet_camera: "Take Photo",
+    sheet_camera: "Add Photo",
     sheet_gallery: "Choose from Gallery",
     sheet_cancel: "Cancel",
     view_cart: "View Plan",
@@ -216,6 +218,8 @@ const content = {
     all_high_risk_warning: "Semua pilihan dalam kategori ini berisiko Tinggi. Pertimbangkan alternatif yang lebih sihat ini:",
     alternative_label: "Alternatif Dicadangkan",
     alternative_why: "Mengapa alternatif ini?",
+    show_alternative_btn: "Tunjukkan alternatif",
+    hide_alternative_btn: "Sembunyikan alternatif",
     best_choice_reason_label: "Kenapa Pilihan Terbaik",
     add_to_meal_plan: "Tambah ke Pelan Makanan",
     in_meal_plan: "Dalam Pelan Makanan",
@@ -320,6 +324,8 @@ const content = {
     all_high_risk_warning: "此类别中所有选项均为高风险。建议考虑以下更健康的替代选择：",
     alternative_label: "建议替代食物",
     alternative_why: "为什么选择这个替代品？",
+    show_alternative_btn: "显示替代选择",
+    hide_alternative_btn: "隐藏替代选择",
     best_choice_reason_label: "为何是最佳选择",
     add_to_meal_plan: "加入饮食计划",
     in_meal_plan: "已在饮食计划中",
@@ -590,12 +596,7 @@ function FoodResultCard({
             </button>
           ) : (
             <div>
-              {food.db_matched ? (
-                <div className="w-full rounded-xl px-4 py-3 flex items-center justify-center gap-2 bg-emerald-50 border-2 border-emerald-200">
-                  <CheckCircle className="w-5 h-5 text-emerald-600" />
-                  <span className="text-base font-semibold text-emerald-700">{t.db_verified}</span>
-                </div>
-              ) : (
+              {!food.db_matched && (
                 <>
                   <button
                     type="button"
@@ -687,12 +688,12 @@ const CLIENT_FALLBACK_ALTERNATIVES: Record<string, AlternativeSuggestion> = {
   main: {
     f: "Steamed Fish with Vegetables",
     tip: {
-      en: "A light steamed fish with vegetables is significantly lower in saturated fat and sodium than most Malaysian main dishes.",
+      en: "A light steamed fish with vegetables is significantly lower in fat and sodium than most Malaysian main dishes.",
       ms: "Ikan kukus dengan sayur-sayuran mengandungi lemak tepu dan natrium yang jauh lebih rendah berbanding kebanyakan hidangan utama Malaysia.",
       zh: "清蒸鱼配蔬菜的饱和脂肪和钠含量远低于大多数马来西亚主食。",
     },
     reason: {
-      en: "All available main dishes are high risk. Steamed fish with vegetables is a healthier alternative with low saturated fat, low sodium, and no added sugar.",
+      en: "All available main dishes are high risk. Steamed fish with vegetables is a healthier alternative with low fat, low sodium, and no added sugar.",
       ms: "Semua hidangan utama yang tersedia berisiko tinggi. Ikan kukus dengan sayur-sayuran adalah alternatif yang lebih sihat dengan lemak tepu rendah, natrium rendah, dan tiada gula tambahan.",
       zh: "所有可选主菜均属高风险。清蒸鱼配蔬菜是更健康的选择，饱和脂肪低、钠含量低且无添加糖。",
     },
@@ -718,7 +719,7 @@ const CLIENT_FALLBACK_ALTERNATIVES: Record<string, AlternativeSuggestion> = {
       zh: "白开水是最健康的饮品选择——零糖、零钠、零卡路里。",
     },
     reason: {
-      en: "All drinks detected are high risk. Plain or mineral water has no sugar, no sodium, and no saturated fat — the safest drink for managing blood sugar, blood pressure, and cholesterol.",
+      en: "All drinks detected are high risk. Plain or mineral water has no sugar, no sodium, and no fat — the safest drink for managing blood sugar, blood pressure, and cholesterol.",
       ms: "Semua minuman yang dikesan berisiko tinggi. Air kosong atau air mineral tiada gula, natrium, dan lemak tepu — minuman paling selamat untuk mengurus gula darah, tekanan darah, dan kolesterol.",
       zh: "检测到的所有饮品均属高风险。白开水或矿泉水不含糖、钠和饱和脂肪，是管理血糖、血压和胆固醇的最安全饮品。",
     },
@@ -942,6 +943,9 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const [cartOpen, setCartOpen] = useState(false)
   const [showImageModal, setShowImageModal] = useState(false)
   const [modalImage, setModalImage] = useState<string | null>(null)
+
+  // Alternative suggestion visibility — keyed by category, hidden by default
+  const [showAltByCategory, setShowAltByCategory] = useState<Record<string, boolean>>({})
 
   // Panel navigation state - "upload" or "results"
   const [currentPanel, setCurrentPanel] = useState<"upload" | "results">("upload")
@@ -1392,6 +1396,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     setShowCategories(true)
     const categoryResults = apiResultsCache?.[category] ?? []
     setResults(categoryResults)
+    // Reset alternative visibility when switching categories
+    setShowAltByCategory(prev => ({ ...prev, [category]: false }))
   }
 
   const handleAnalyzeAnother = () => {
@@ -1832,11 +1838,9 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                       <p className="text-base md:text-lg font-semibold text-[var(--risk-low)]">{t.top3_disclaimer}</p>
                     </div>
 
-                    {/* Alternative Suggestion — shown above food cards when ALL items are High Risk */}
+                    {/* Alternative Suggestion — toggle button + collapsible panel */}
                     {(() => {
-                      // Step 1: Check if ALL items currently shown in this category are High Risk
-                      // Use the SAME computeRiskFromIndicators logic as FoodResultCard's badge,
-                      // so the check matches exactly what the user sees on screen.
+                      // Check if ALL items currently shown are High Risk using correct thresholds
                       const categoryItems = results ?? []
                       if (categoryItems.length === 0) return null
                       const allItemsHighRisk = categoryItems.every((item) => {
@@ -1850,43 +1854,60 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                       })
                       if (!allItemsHighRisk) return null
 
-                      // Step 2: Get the alternative — prefer backend-provided (AI-generated, more specific),
-                      // always fall back to built-in client-side alternatives (guaranteed to exist)
+                      // Get the alternative — prefer AI-generated backend alternative, fall back to built-in
                       const backendAlt = apiResultsCache?._meta?.[selectedCategory ?? ""]?.alternative_suggestion
                       const alt: AlternativeSuggestion =
                         (backendAlt && backendAlt.f && backendAlt.tip && backendAlt.reason)
                           ? backendAlt
                           : CLIENT_FALLBACK_ALTERNATIVES[selectedCategory ?? ""]
-
                       if (!alt) return null
+
+                      const catKey = selectedCategory ?? ""
+                      const isAltVisible = showAltByCategory[catKey] ?? false
 
                       const altTip = alt.tip[lang] || alt.tip.en
                       const altReason = alt.reason[lang] || alt.reason.en
+
                       return (
-                        <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 shadow-sm overflow-hidden mb-4">
-                          <div className="bg-amber-400 px-4 py-2 flex items-center gap-2">
-                            <TrendingDown className="w-5 h-5 text-amber-900" />
-                            <span className="text-amber-900 font-bold text-base">{t.alternative_label}</span>
-                          </div>
-                          <div className="p-5">
-                            <p className="text-sm text-amber-700 font-medium mb-3">{t.all_high_risk_warning}</p>
-                            <h3 className="text-xl font-bold text-amber-900 mb-3">{alt.f}</h3>
-                            {altReason && (
-                              <div className="bg-amber-100 border border-amber-300 rounded-xl p-4 mb-3">
-                                <p className="text-base text-amber-800 font-semibold">
-                                  <span className="font-bold">{t.alternative_why}</span> {altReason}
-                                </p>
+                        <div className="mb-4">
+                          {/* Toggle button — always visible when all items are high risk */}
+                          <button
+                            type="button"
+                            onClick={() => setShowAltByCategory(prev => ({ ...prev, [catKey]: !isAltVisible }))}
+                            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl border-2 border-amber-400 bg-amber-50 text-amber-900 font-bold text-base hover:bg-amber-100 transition-colors"
+                          >
+                            <TrendingDown className="w-5 h-5 shrink-0" />
+                            {isAltVisible ? (t as any).hide_alternative_btn : (t as any).show_alternative_btn}
+                          </button>
+
+                          {/* Collapsible alternative panel */}
+                          {isAltVisible && (
+                            <div className="mt-2 rounded-2xl border-2 border-amber-400 bg-amber-50 shadow-sm overflow-hidden">
+                              <div className="bg-amber-400 px-4 py-2 flex items-center gap-2">
+                                <TrendingDown className="w-5 h-5 text-amber-900" />
+                                <span className="text-amber-900 font-bold text-base">{t.alternative_label}</span>
                               </div>
-                            )}
-                            {altTip && (
-                              <div className="flex items-start gap-2 rounded-xl p-4 bg-amber-100/60">
-                                <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-700" />
-                                <p className="text-base text-amber-900">
-                                  <span className="font-bold">{t.tip_label}:</span> {altTip}
-                                </p>
+                              <div className="p-5">
+                                <p className="text-base text-amber-800 font">{t.all_high_risk_warning}</p>
+                                <h3 className="text-xl font-bold text-amber-900 mb-3">{alt.f}</h3>
+                                {altReason && (
+                                  <div className="bg-amber-100 border border-amber-300 rounded-xl p-4 mb-3">
+                                    <p className="text-base text-amber-800 font-semibold">
+                                      <span className="font-bold">{t.alternative_why}</span> {altReason}
+                                    </p>
+                                  </div>
+                                )}
+                                {altTip && (
+                                  <div className="flex items-start gap-2 rounded-xl p-4 bg-amber-100/60">
+                                    <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-700" />
+                                    <p className="text-base text-amber-900">
+                                      <span className="font-bold">{t.tip_label}:</span> {altTip}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       )
                     })()}
