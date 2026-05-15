@@ -124,8 +124,8 @@ const content = {
     chatbot_estimate_banner_body:
       "Sugar, sodium, fat, risk, and health tips below reuse the same AI estimates as in the chat. They are not verified against the SIHAT food database.",
     // Action sheet
-    sheet_title: "Take Photo",
-    sheet_camera: "Add Photo",
+    sheet_title: "Add Photo",
+    sheet_camera: "Take Photo",
     sheet_gallery: "Choose from Gallery",
     sheet_cancel: "Cancel",
     view_cart: "View Plan",
