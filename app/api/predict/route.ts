@@ -479,7 +479,7 @@ CRITICAL RULE:
 
 FOOD NAME NORMALIZATION RULES (apply before categorizing):
 1. SPELLING CORRECTION: If any food name is a spelling variant of "Char Kway Teow" (e.g. "Char Kuey Teow", "Char Kwey Teow", "Char Koay Teow", "Cha Kway Teow", etc.), use the correct spelling: "Char Kway Teow".
-2. SPECIAL CASE: "Hainanese Chicken Rice" must be recorded as "Chicken Rice" (for database matching).
+2. SPECIAL CASE: Only if the exact phrase "Hainanese Chicken Rice" (or its direct translation) appears, record it as "Chicken Rice" (for database matching). Do NOT rename other nasi or chicken rice dishes.
 
 TASK:
 1. Process EVERY SINGLE item from BOTH Menu OCR AND USER MANUAL INPUT.
@@ -501,7 +501,7 @@ TASK:
 4. Write a short practical health tip for EVERY item (one sentence) in all three languages:
    - NORMAL CASE: Focus on reducing salt, sugar, or fat for that specific item.
 5. For EVERY item, include a "best_reason" object in all three languages explaining WHY this item is the best choice in its category.
-6. ALTERNATIVE SUGGESTION RULE: For EVERY category that has at least one item, ALWAYS provide an "alternative_suggestion" object with a healthier food recommendation that is NOT from the scanned/inputted items. The alternative must include: "f" (food name), "tip" (trilingual health tip), "reason" (trilingual explanation of why it's a healthier alternative). Also set "all_high_risk": true if ALL items in that category are "High" risk (even if only 1 or 2 items exist). Keep the top 3 scanned/inputted items as the main "ranking" — the alternative is displayed separately ABOVE the ranking only when all items are high risk.
+6. ALTERNATIVE SUGGESTION RULE: For EVERY category that has at least one item, ALWAYS provide an "alternative_suggestion" object. The alternative MUST be a specific, contextually relevant healthier food that is NOT from the scanned/inputted items. Choose the alternative based on what is scanned — for example, if the scanned items are Malaysian hawker foods, suggest a lighter Malaysian alternative (e.g. "Yong Tau Foo", "Steamed Rice with Stir-fried Vegetables", "Kuih Bahulu", "Teh O Ais" etc), not a generic western salad. The alternative must include: "f" (food name), "tip" (trilingual health tip), "reason" (trilingual explanation of why it's a healthier alternative). Also set "all_high_risk": true if ALL items in that category are "High" risk (even if only 1 or 2 items exist). Keep the top 3 scanned/inputted items as the main "ranking" — the alternative is displayed separately ABOVE the ranking only when all items are high risk.
 
 RANKING LOGIC (apply per category):
 1. Highest Priority: Risk (Low first, then Medium, then High)
@@ -538,7 +538,7 @@ function buildChineseTrilingualPrompt(combinedOcr: string, userText: string): st
 
 食物名称规范化规则:
 1. 拼写更正: 若食物名称是"Char Kway Teow"的拼写变体（如"Char Kuey Teow"、"Char Kwey Teow"、"Char Koay Teow"等），统一使用正确拼写: "Char Kway Teow"。
-2. 特殊情况: "Hainanese Chicken Rice"(海南鸡饭)必须记录为"Chicken Rice"（用于数据库匹配）。
+2. 特殊情况: 仅当出现确切短语"Hainanese Chicken Rice"（海南鸡饭）时，才记录为"Chicken Rice"（用于数据库匹配）。不得重命名其他鸡饭或米饭类菜肴。
 
 任务:
 1. 分类: 将项目归入 'Appetizer', 'Main Dish', 'Dessert', 'Drinks'。
@@ -550,7 +550,7 @@ function buildChineseTrilingualPrompt(combinedOcr: string, userText: string): st
 3. 字段说明:
    - 'tip': 针对减少盐、糖、脂的建议，三语对象。
    - 'best_reason': 基于营养优势的理由，三语对象。
-4. 替代食物规则: 对于每个至少有一个食物项目的类别，无论风险高低，都必须提供"alternative_suggestion"对象，包含: "f"(替代食物名称)、"tip"(三语健康提示)、"reason"(三语说明为何更健康)。替代食物必须来自扫描/输入内容之外。如果该类别所有食物（即使只有1或2个）均为"High"风险，则设置"all_high_risk": true，替代食物将显示在最佳结果之前。
+4. 替代食物规则: 对于每个至少有一个食物项目的类别，无论风险高低，都必须提供"alternative_suggestion"对象。替代食物必须是具体的、与扫描内容相关的更健康食物，且不在扫描/输入内容中。根据扫描的食物选择替代品——例如，若扫描的是马来西亚小贩食物，建议更清淡的马来西亚替代品（如"Yong Tau Foo"、"清蒸鱼配蔬菜"、"Teh O Ais"等），而非泛泛的西式沙拉。包含: "f"(替代食物名称)、"tip"(三语健康提示)、"reason"(三语说明为何更健康)。如果该类别所有食物均为"High"风险，则设置"all_high_risk": true。
 5. 排序: 风险等级(Low > Medium > High)，其次按盐 > 糖 > 脂肪从小到大排序。
 
 输出格式要求:
