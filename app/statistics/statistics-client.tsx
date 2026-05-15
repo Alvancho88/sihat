@@ -73,7 +73,7 @@ const content = {
       { value: "4.75M", label: "People living with diabetes.", icon: Heart },
     ],
     stats2: [
-      { value: "3 in 4", label: "Elderly have hypertension or hyperlipidemia (high cholesterol)", icon: HeartPulse },
+      { value: "3 in 4", label: "Elderly have high blood pressure or high cholesterol", icon: HeartPulse },
       { value: "68%", label: "Elderly living with two of the three highs", icon: CircleAlert },
       { value: "30%", label: "Elderly have all three conditions", icon: TriangleAlert },
     ],

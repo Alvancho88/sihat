@@ -4,7 +4,7 @@
 "use client"
 
 import { PageLayout } from "@/components/page-layout"
-import { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, Cell, LabelList } from "recharts"
 import { AlertCircle, Heart, Activity, Eye, X, ChevronDown, Check, CalendarCheck, Gauge, Droplet } from "lucide-react"
 import Image from "next/image"
@@ -15,7 +15,7 @@ import BodyMap from "@/components/body-map"
 const content = {
   en: {
     page_title: "The Three Highs: Starting With Diabetes",
-    page_subtitle: "High Blood Sugar, High Blood Pressure (Hypertension), and High Cholesterol (Hyperlipidemia) are Malaysia's biggest silent health threats. Understanding them is the first step toward a healthier life.",
+    page_subtitle: "High Blood Sugar (Diabetes), High Blood Pressure (Hypertension), and High Cholesterol (Hyperlipidemia) are Malaysia's biggest silent health threats. Understanding them is the first step toward a healthier life.",
     stats_title: "Diabetes in Malaysia",
     education: "Education",
     explore: "Exploration",
@@ -67,7 +67,7 @@ const content = {
         iconBg: "#FBEAF0",
         iconColor: "#993556",
         titleColor: "#72243E",
-        title: "What is hypertension?",
+        title: "What is high blood pressure (hypertension)?",
         shortTitle: "Hypertension",
         points: [
           "Blood = Water flowing through your body.",
@@ -1147,18 +1147,19 @@ export default function LearnClient() {
             <div className="scroll-mt-10" id="education-section">
               <div>
                 {/* Section header — left aligned, same edge as tabs and card */}
-                <div className="mb-6">
+                <div className="mb-4">
                   <p className="text-lg font-medium uppercase tracking-widest text-muted-foreground mb-1.5">{t.education}</p>
                   <h2 className="text-3xl md:text-3xl font-bold">{t.edu_title}</h2>
                 </div>
 
                 {/* Education Navigation Tabs */}
-                <div ref={educardRef} className="flex flex-wrap gap-3 mb-8">
+                <div ref={educardRef} className="flex flex-wrap gap-2 mb-4">
                   {t.edu_sections.map((section, idx) => {
                     const isActive = activeEduIndex === idx
                     return (
-                      <button
-                        key={idx}
+                      <React.Fragment key={idx}>
+                        {idx === 3 && <div className="w-full" />}
+                        <button
                         onClick={() => switchCard(idx)}
                         className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all duration-150 font-medium text-base md:text-lg"
                         style={{
@@ -1178,6 +1179,7 @@ export default function LearnClient() {
                         </div>
                         {section.shortTitle ?? section.title}
                       </button>
+                      </React.Fragment>
                     )
                   })}
                 </div>
