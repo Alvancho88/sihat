@@ -67,7 +67,7 @@ const content = {
     risk_high: "High Risk",
     nutrition_sugar: "Sugar",
     nutrition_salt: "Salt/Sodium",
-    nutrition_fat: "Saturated Fat",
+    nutrition_fat: "Fat",
     analyze_another: "Back",
     back_to_upload: "Upload New Photo",
     max_photos: "Maximum 5 Photos",
@@ -173,7 +173,7 @@ const content = {
     risk_high: "Risiko Tinggi",
     nutrition_sugar: "Gula",
     nutrition_salt: "Garam/Natrium",
-    nutrition_fat: "Lemak Tepu",
+    nutrition_fat: "Lemak",
     analyze_another: "Kembali",
     back_to_upload: "Muat Naik Foto Baru",
     max_photos: "Maksimum 5 Foto",
@@ -277,7 +277,7 @@ const content = {
     risk_high: "高风险",
     nutrition_sugar: "糖分",
     nutrition_salt: "盐/钠",
-    nutrition_fat: "饱和脂肪",
+    nutrition_fat: "脂肪",
     analyze_another: "返回",
     back_to_upload: "上传新照片",
     max_photos: "最多5张照片",
@@ -506,10 +506,13 @@ function FoodResultCard({
   const fatValue = parseFloat(food.fat.replace(/[^0-9.]/g, ""))
   const sugarLevel = getLevelFromThresholds(sugarValue, 5, 15)
   const saltLevel = getLevelFromThresholds(saltValue, 200, 600)
-  const fatLevel = getLevelFromThresholds(fatValue, 3, 7)
+  const fatLevel = getLevelFromThresholds(fatValue, 5, 15)
   const tipText = food.tip[lang] || food.tip.en
   const bestReasonText = food.best_reason ? (food.best_reason[lang] || food.best_reason.en) : null
-  const computedRisk = computeRiskFromIndicators(sugarValue, saltValue, fatValue, food.risk)
+  const computedRisk: "low" | "medium" | "high" =
+    sugarLevel === "high" || saltLevel === "high" || fatLevel === "high" ? "high"
+    : sugarLevel === "medium" || saltLevel === "medium" || fatLevel === "medium" ? "medium"
+    : "low"
   const isHighRisk = computedRisk === "high"
   const mealPlanIndex = mealPlanFood ? cart.findIndex((item) => item.name.en === mealPlanFood.name.en) : -1
   const mealPlanAdded = mealPlanIndex !== -1
@@ -1840,7 +1843,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         const sugar = parseFloat(item.sugar.replace(/[^0-9.]/g, ""))
                         const salt = parseFloat(item.salt.replace(/[^0-9.]/g, ""))
                         const fat = parseFloat(item.fat.replace(/[^0-9.]/g, ""))
-                        return computeRiskFromIndicators(sugar, salt, fat, item.risk) === "high"
+                        const sL = sugar <= 5 ? "low" : sugar <= 15 ? "medium" : "high"
+                        const slL = salt <= 200 ? "low" : salt <= 600 ? "medium" : "high"
+                        const fL = fat <= 5 ? "low" : fat <= 15 ? "medium" : "high"
+                        return sL === "high" || slL === "high" || fL === "high"
                       })
                       if (!allItemsHighRisk) return null
 
