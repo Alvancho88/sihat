@@ -501,7 +501,7 @@ TASK:
 4. Write a short practical health tip for EVERY item (one sentence) in all three languages:
    - NORMAL CASE: Focus on reducing salt, sugar, or fat for that specific item.
 5. For EVERY item, include a "best_reason" object in all three languages explaining WHY this item is the best choice in its category.
-6. ALTERNATIVE SUGGESTION RULE: After ranking all items in a category, check if ALL items in that category (even if only 1 or 2 items) are "High" risk. If so, set "all_high_risk": true for that category AND provide an "alternative_suggestion" object with a healthier food recommendation that is NOT from the scanned/inputted items. The alternative must include: "f" (food name), "tip" (trilingual health tip), "reason" (trilingual explanation of why it's a healthier alternative). Keep the top 3 scanned/inputted items as the main "ranking" — the alternative is displayed separately ABOVE the ranking.
+6. ALTERNATIVE SUGGESTION RULE: For EVERY category that has at least one item, ALWAYS provide an "alternative_suggestion" object with a healthier food recommendation that is NOT from the scanned/inputted items. The alternative must include: "f" (food name), "tip" (trilingual health tip), "reason" (trilingual explanation of why it's a healthier alternative). Also set "all_high_risk": true if ALL items in that category are "High" risk (even if only 1 or 2 items exist). Keep the top 3 scanned/inputted items as the main "ranking" — the alternative is displayed separately ABOVE the ranking only when all items are high risk.
 
 RANKING LOGIC (apply per category):
 1. Highest Priority: Risk (Low first, then Medium, then High)
@@ -550,7 +550,7 @@ function buildChineseTrilingualPrompt(combinedOcr: string, userText: string): st
 3. 字段说明:
    - 'tip': 针对减少盐、糖、脂的建议，三语对象。
    - 'best_reason': 基于营养优势的理由，三语对象。
-4. 替代食物规则: 排序后，若某类别所有食物（即使只有1或2个）均为"High"风险，则设置该类别的"all_high_risk": true，并提供"alternative_suggestion"对象，包含: "f"(替代食物名称)、"tip"(三语健康提示)、"reason"(三语说明为何更健康)。替代食物必须来自扫描/输入内容之外，并显示在最佳结果之前。
+4. 替代食物规则: 对于每个至少有一个食物项目的类别，无论风险高低，都必须提供"alternative_suggestion"对象，包含: "f"(替代食物名称)、"tip"(三语健康提示)、"reason"(三语说明为何更健康)。替代食物必须来自扫描/输入内容之外。如果该类别所有食物（即使只有1或2个）均为"High"风险，则设置"all_high_risk": true，替代食物将显示在最佳结果之前。
 5. 排序: 风险等级(Low > Medium > High)，其次按盐 > 糖 > 脂肪从小到大排序。
 
 输出格式要求:
@@ -893,15 +893,17 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // If all items are high risk but the LLM didn't return an alternative, use the built-in fallback
-      if (allHighRisk && !alternativeSuggestion) {
+      // If the LLM didn't return an alternative_suggestion, use the built-in fallback
+      if (!alternativeSuggestion) {
         alternativeSuggestion = FALLBACK_ALTERNATIVES[cat] ?? null;
       }
 
       finalResults[cat] = {
         ranking: top3,
         all_high_risk: allHighRisk,
-        ...(allHighRisk && alternativeSuggestion ? { alternative_suggestion: alternativeSuggestion } : {}),
+        // Always include alternative_suggestion so the frontend can use it
+        // when it independently detects all items are high risk.
+        alternative_suggestion: alternativeSuggestion ?? null,
       };
     }
 
