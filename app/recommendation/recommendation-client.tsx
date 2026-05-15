@@ -665,6 +665,63 @@ type AlternativeSuggestion = {
   reason: { en: string; ms: string; zh: string }
 }
 
+// Client-side fallback alternatives — used when backend didn't return one
+// (e.g. old session data, or LLM failed to generate one for a category)
+const CLIENT_FALLBACK_ALTERNATIVES: Record<string, AlternativeSuggestion> = {
+  appetizer: {
+    f: "Fresh Garden Salad",
+    tip: {
+      en: "A fresh garden salad with light dressing is very low in sugar, salt, and fat — a great starter for managing the three highs.",
+      ms: "Salad taman segar dengan sos ringan sangat rendah gula, garam, dan lemak — pemula yang hebat untuk mengurus tiga tinggi.",
+      zh: "配清淡酱汁的新鲜蔬菜沙拉糖分、盐分和脂肪含量极低，是控制三高的极佳开胃选择。",
+    },
+    reason: {
+      en: "All appetizers detected are high risk. A fresh garden salad is a low-sodium, low-sugar, low-fat alternative to start your meal safely.",
+      ms: "Semua pembuka selera yang dikesan berisiko tinggi. Salad taman segar adalah alternatif rendah natrium, rendah gula, dan rendah lemak untuk memulakan makanan dengan selamat.",
+      zh: "检测到的所有开胃菜均属高风险。新鲜蔬菜沙拉是低钠、低糖、低脂的替代品，可安全开始您的一餐。",
+    },
+  },
+  main: {
+    f: "Steamed Fish with Vegetables",
+    tip: {
+      en: "A light steamed fish with vegetables is significantly lower in saturated fat and sodium than most Malaysian main dishes.",
+      ms: "Ikan kukus dengan sayur-sayuran mengandungi lemak tepu dan natrium yang jauh lebih rendah berbanding kebanyakan hidangan utama Malaysia.",
+      zh: "清蒸鱼配蔬菜的饱和脂肪和钠含量远低于大多数马来西亚主食。",
+    },
+    reason: {
+      en: "All available main dishes are high risk. Steamed fish with vegetables is a healthier alternative with low saturated fat, low sodium, and no added sugar.",
+      ms: "Semua hidangan utama yang tersedia berisiko tinggi. Ikan kukus dengan sayur-sayuran adalah alternatif yang lebih sihat dengan lemak tepu rendah, natrium rendah, dan tiada gula tambahan.",
+      zh: "所有可选主菜均属高风险。清蒸鱼配蔬菜是更健康的选择，饱和脂肪低、钠含量低且无添加糖。",
+    },
+  },
+  dessert: {
+    f: "Fresh Fruit Platter",
+    tip: {
+      en: "A fresh fruit platter provides natural sweetness with fiber and vitamins, without the added sugar and fat of most desserts.",
+      ms: "Pinggan buah-buahan segar menyediakan kemanisan semula jadi dengan serat dan vitamin, tanpa gula tambahan dan lemak kebanyakan pencuci mulut.",
+      zh: "新鲜水果拼盘提供天然甜味、纤维和维生素，无需大多数甜点的添加糖和脂肪。",
+    },
+    reason: {
+      en: "All desserts detected are high risk. A fresh fruit platter is a naturally sweet, low-fat, lower-sodium alternative to satisfy your sweet tooth.",
+      ms: "Semua pencuci mulut yang dikesan berisiko tinggi. Pinggan buah-buahan segar adalah alternatif manis semula jadi, rendah lemak, dan rendah natrium.",
+      zh: "检测到的所有甜点均属高风险。新鲜水果拼盘是天然甜味、低脂、低钠的替代选择，可满足您对甜食的渴望。",
+    },
+  },
+  drink: {
+    f: "Plain Water / Mineral Water",
+    tip: {
+      en: "Plain water is the healthiest drink choice — zero sugar, zero sodium, and zero calories.",
+      ms: "Air kosong adalah pilihan minuman paling sihat — sifar gula, sifar natrium, dan sifar kalori.",
+      zh: "白开水是最健康的饮品选择——零糖、零钠、零卡路里。",
+    },
+    reason: {
+      en: "All drinks detected are high risk. Plain or mineral water has no sugar, no sodium, and no saturated fat — the safest drink for managing blood sugar, blood pressure, and cholesterol.",
+      ms: "Semua minuman yang dikesan berisiko tinggi. Air kosong atau air mineral tiada gula, natrium, dan lemak tepu — minuman paling selamat untuk mengurus gula darah, tekanan darah, dan kolesterol.",
+      zh: "检测到的所有饮品均属高风险。白开水或矿泉水不含糖、钠和饱和脂肪，是管理血糖、血压和胆固醇的最安全饮品。",
+    },
+  },
+}
+
 type ApiResultsCache = Record<string, FoodItem[]> & {
   _meta?: Record<string, { all_high_risk?: boolean; alternative_suggestion?: AlternativeSuggestion | null }>
 }
@@ -1774,11 +1831,31 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
                     {/* Alternative Suggestion — shown above food cards when ALL items are High Risk */}
                     {(() => {
-                      const catMeta = apiResultsCache?._meta?.[selectedCategory ?? ""]
-                      const alt = catMeta?.alternative_suggestion
-                      if (!catMeta?.all_high_risk || !alt) return null
-                      const altTip = typeof alt.tip === "object" ? (alt.tip[lang] || alt.tip.en) : String(alt.tip ?? "")
-                      const altReason = typeof alt.reason === "object" ? (alt.reason[lang] || alt.reason.en) : String(alt.reason ?? "")
+                      // Step 1: Check if ALL items currently shown in this category are High Risk
+                      // Use the SAME computeRiskFromIndicators logic as FoodResultCard's badge,
+                      // so the check matches exactly what the user sees on screen.
+                      const categoryItems = results ?? []
+                      if (categoryItems.length === 0) return null
+                      const allItemsHighRisk = categoryItems.every((item) => {
+                        const sugar = parseFloat(item.sugar.replace(/[^0-9.]/g, ""))
+                        const salt = parseFloat(item.salt.replace(/[^0-9.]/g, ""))
+                        const fat = parseFloat(item.fat.replace(/[^0-9.]/g, ""))
+                        return computeRiskFromIndicators(sugar, salt, fat, item.risk) === "high"
+                      })
+                      if (!allItemsHighRisk) return null
+
+                      // Step 2: Get the alternative — prefer backend-provided (AI-generated, more specific),
+                      // always fall back to built-in client-side alternatives (guaranteed to exist)
+                      const backendAlt = apiResultsCache?._meta?.[selectedCategory ?? ""]?.alternative_suggestion
+                      const alt: AlternativeSuggestion =
+                        (backendAlt && backendAlt.f && backendAlt.tip && backendAlt.reason)
+                          ? backendAlt
+                          : CLIENT_FALLBACK_ALTERNATIVES[selectedCategory ?? ""]
+
+                      if (!alt) return null
+
+                      const altTip = alt.tip[lang] || alt.tip.en
+                      const altReason = alt.reason[lang] || alt.reason.en
                       return (
                         <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 shadow-sm overflow-hidden mb-4">
                           <div className="bg-amber-400 px-4 py-2 flex items-center gap-2">
