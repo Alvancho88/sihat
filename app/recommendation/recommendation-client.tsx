@@ -117,6 +117,7 @@ const content = {
     removed_from_meal_plan: "Removed from your meal plan",
     meal_plan_unavailable: "AI-generated food analysis",
     meal_plan_unavailable_hint: "This food is not currently in the SIHAT food database. The nutrition information and health advice shown here are estimated by AI and may not be fully accurate.",
+    db_verified: "Verified from SIHAT Database",
     chatbot_estimate_banner_title: "AI-estimated analysis (not database verified)",
     chatbot_estimate_banner_body:
       "Sugar, sodium, fat, risk, and health tips below reuse the same AI estimates as in the chat. They are not verified against the SIHAT food database.",
@@ -222,6 +223,7 @@ const content = {
     removed_from_meal_plan: "Dikeluarkan daripada pelan makanan anda",
     meal_plan_unavailable: "Analisis makanan jana AI",
     meal_plan_unavailable_hint: "Makanan ini tidak terdapat dalam pangkalan data makanan SIHAT. Maklumat pemakanan dan nasihat kesihatan yang ditunjukkan di sini dianggarkan oleh AI dan mungkin tidak sepenuhnya tepat.",
+    db_verified: "Disahkan dari Pangkalan Data SIHAT",
     chatbot_estimate_banner_title: "Analisis anggaran AI (bukan data pangkalan SIHAT)",
     chatbot_estimate_banner_body:
       "Gula, natrium, lemak, risiko, dan tip di bawah menggunakan anggaran AI yang sama seperti dalam sembang. Ia tidak disahkan dengan pangkalan data makanan SIHAT.",
@@ -325,6 +327,7 @@ const content = {
     removed_from_meal_plan: "已从饮食计划中移除",
     meal_plan_unavailable: "AI生成的食物分析",
     meal_plan_unavailable_hint: "此食物目前不在SIHAT食物数据库中。此处显示的营养信息和健康建议由AI估算，可能并不完全准确。",
+    db_verified: "已从SIHAT数据库验证",
     chatbot_estimate_banner_title: "AI估算分析（未经SIHAT数据库核实）",
     chatbot_estimate_banner_body:
       "下方的糖、钠、脂肪、风险等级与健康提示与聊天中的AI估算一致，未经SIHAT食物数据库核实。",
@@ -480,6 +483,7 @@ type FoodItem = {
   fat: string
   tip: { en: string; ms: string; zh: string }
   best_reason?: { en: string; ms: string; zh: string }
+  db_matched?: boolean
 }
 
 function FoodResultCard({
@@ -583,15 +587,24 @@ function FoodResultCard({
             </button>
           ) : (
             <div>
-              <button
-                type="button"
-                disabled
-                className="w-full min-h-14 rounded-xl px-4 py-3 text-lg font-bold flex items-center justify-center gap-2 bg-slate-100 text-slate-600 border-2 border-slate-200 cursor-not-allowed"
-              >
-                <Info className="w-5 h-5" />
-                {t.meal_plan_unavailable}
-              </button>
-              <p className="mt-2 text-sm text-slate-500">{t.meal_plan_unavailable_hint}</p>
+              {food.db_matched ? (
+                <div className="w-full rounded-xl px-4 py-3 flex items-center justify-center gap-2 bg-emerald-50 border-2 border-emerald-200">
+                  <CheckCircle className="w-5 h-5 text-emerald-600" />
+                  <span className="text-base font-semibold text-emerald-700">{t.db_verified}</span>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full min-h-14 rounded-xl px-4 py-3 text-lg font-bold flex items-center justify-center gap-2 bg-slate-100 text-slate-600 border-2 border-slate-200 cursor-not-allowed"
+                  >
+                    <Info className="w-5 h-5" />
+                    {t.meal_plan_unavailable}
+                  </button>
+                  <p className="mt-2 text-sm text-slate-500">{t.meal_plan_unavailable_hint}</p>
+                </>
+              )}
             </div>
           )}
           {mealPlanNotice && (
@@ -664,6 +677,7 @@ type PredictFoodItem = {
   risk: string
   tip: { en: string; ms: string; zh: string } | string
   best_reason?: { en: string; ms: string; zh: string } | string
+  db_matched?: boolean
 }
 
 type PredictResults = Record<string, { ranking?: PredictFoodItem[]; all_high_risk?: boolean; alternative_suggestion?: AlternativeSuggestion | null }> & {
@@ -805,6 +819,7 @@ function buildApiResultsCache(data: PredictResults): ApiResultsCache {
         salt: `${item.salt}mg`,
         fat: `${item.fat}g`,
         tip: tipObj,
+        db_matched: item.db_matched === true,
         ...(bestReasonObj ? { best_reason: bestReasonObj } : {}),
       }
     })
