@@ -107,6 +107,9 @@ const content = {
     top3_disclaimer: "We are showing you the Top 3 Healthiest Choices identified in your photo. These are the safest options for managing your blood sugar, blood pressure, and cholesterol.",
     analyze_new_food: "Start Over",
     back_to_category: "Back to Categories",
+    all_high_risk_warning: "All options in this category are High Risk. Consider this healthier alternative:",
+    alternative_label: "Suggested Alternative",
+    alternative_why: "Why this alternative?",
     best_choice_reason_label: "Why we pick this as the Best Choice",
     add_to_meal_plan: "Add to Meal Plan",
     in_meal_plan: "In Meal Plan",
@@ -209,6 +212,9 @@ const content = {
     top3_disclaimer: "Kami menunjukkan kepada anda 3 Pilihan Paling Sihat daripada apa yang dijumpai dalam foto makanan anda. Ini adalah pilihan paling selamat untuk gula darah anda.",
     analyze_new_food: "Mula Semula",
     back_to_category: "Kembali ke Kategori",
+    all_high_risk_warning: "Semua pilihan dalam kategori ini berisiko Tinggi. Pertimbangkan alternatif yang lebih sihat ini:",
+    alternative_label: "Alternatif Dicadangkan",
+    alternative_why: "Mengapa alternatif ini?",
     best_choice_reason_label: "Kenapa Pilihan Terbaik",
     add_to_meal_plan: "Tambah ke Pelan Makanan",
     in_meal_plan: "Dalam Pelan Makanan",
@@ -309,6 +315,9 @@ const content = {
     top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
     analyze_new_food: "重新开始",
     back_to_category: "返回类别",
+    all_high_risk_warning: "此类别中所有选项均为高风险。建议考虑以下更健康的替代选择：",
+    alternative_label: "建议替代食物",
+    alternative_why: "为什么选择这个替代品？",
     best_choice_reason_label: "为何是最佳选择",
     add_to_meal_plan: "加入饮食计划",
     in_meal_plan: "已在饮食计划中",
@@ -637,7 +646,15 @@ const CATEGORY_MAP: Record<string, string> = {
 
 // Type definition for API results cache
 // Stores categorized food items to avoid re-analysis
-type ApiResultsCache = Record<string, FoodItem[]>
+type AlternativeSuggestion = {
+  f: string
+  tip: { en: string; ms: string; zh: string }
+  reason: { en: string; ms: string; zh: string }
+}
+
+type ApiResultsCache = Record<string, FoodItem[]> & {
+  _meta?: Record<string, { all_high_risk?: boolean; alternative_suggestion?: AlternativeSuggestion | null }>
+}
 
 type PredictFoodItem = {
   f: string
@@ -649,7 +666,7 @@ type PredictFoodItem = {
   best_reason?: { en: string; ms: string; zh: string } | string
 }
 
-type PredictResults = Record<string, { ranking?: PredictFoodItem[] }> & {
+type PredictResults = Record<string, { ranking?: PredictFoodItem[]; all_high_risk?: boolean; alternative_suggestion?: AlternativeSuggestion | null }> & {
   uniqueFoodCount?: number
 }
 
@@ -754,8 +771,17 @@ function clearScanContext() {
 
 function buildApiResultsCache(data: PredictResults): ApiResultsCache {
   const cache: ApiResultsCache = {}
+  const meta: Record<string, { all_high_risk?: boolean; alternative_suggestion?: AlternativeSuggestion | null }> = {}
+
   for (const [geminiKey, pageKey] of Object.entries(CATEGORY_MAP)) {
-    const raw = data[geminiKey]?.ranking ?? []
+    const catData = data[geminiKey]
+    const raw = catData?.ranking ?? []
+
+    // Store per-category meta (all_high_risk + alternative_suggestion)
+    meta[pageKey] = {
+      all_high_risk: catData?.all_high_risk ?? false,
+      alternative_suggestion: catData?.alternative_suggestion ?? null,
+    }
     cache[pageKey] = raw.map((item, index) => {
       // Tip: backend now returns a trilingual object; gracefully handle legacy string
       const tipObj: { en: string; ms: string; zh: string } =
@@ -783,6 +809,7 @@ function buildApiResultsCache(data: PredictResults): ApiResultsCache {
       }
     })
   }
+  cache._meta = meta
   return cache
 }
 
@@ -870,7 +897,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const MAX_IMAGES = 5 // Maximum number of images allowed
 
   // Check if we have results to show
-  const hasResults = apiResultsCache && Object.values(apiResultsCache).some(arr => arr.length > 0)
+  const hasResults = apiResultsCache && Object.entries(apiResultsCache).some(([k, arr]) => k !== "_meta" && Array.isArray(arr) && arr.length > 0)
 
   // ─── EFFECTS AND HOOKS ───────────────────────────────────────────────────────────
   
@@ -1262,7 +1289,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       succeeded = true
 
       //const totalFound = Object.values(cache).flat().length
-      const totalFound = data.uniqueFoodCount ?? Object.values(cache).flat().length
+      const totalFound = data.uniqueFoodCount ?? Object.entries(cache).filter(([k]) => k !== "_meta").flatMap(([, v]) => Array.isArray(v) ? v : []).length
       setIsAnalyzing(false)
       setSuccessCount(totalFound)
       await new Promise(resolve => setTimeout(resolve, 2000))
@@ -1729,6 +1756,42 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                       <Star className="w-5 h-5 text-[var(--risk-low)] shrink-0 mt-0.5" />
                       <p className="text-base md:text-lg font-semibold text-[var(--risk-low)]">{t.top3_disclaimer}</p>
                     </div>
+
+                    {/* Alternative Suggestion — shown above food cards when ALL items are High Risk */}
+                    {(() => {
+                      const catMeta = apiResultsCache?._meta?.[selectedCategory ?? ""]
+                      const alt = catMeta?.alternative_suggestion
+                      if (!catMeta?.all_high_risk || !alt) return null
+                      const altTip = typeof alt.tip === "object" ? (alt.tip[lang] || alt.tip.en) : String(alt.tip ?? "")
+                      const altReason = typeof alt.reason === "object" ? (alt.reason[lang] || alt.reason.en) : String(alt.reason ?? "")
+                      return (
+                        <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 shadow-sm overflow-hidden mb-4">
+                          <div className="bg-amber-400 px-4 py-2 flex items-center gap-2">
+                            <TrendingDown className="w-5 h-5 text-amber-900" />
+                            <span className="text-amber-900 font-bold text-base">{t.alternative_label}</span>
+                          </div>
+                          <div className="p-5">
+                            <p className="text-sm text-amber-700 font-medium mb-3">{t.all_high_risk_warning}</p>
+                            <h3 className="text-xl font-bold text-amber-900 mb-3">{alt.f}</h3>
+                            {altReason && (
+                              <div className="bg-amber-100 border border-amber-300 rounded-xl p-4 mb-3">
+                                <p className="text-base text-amber-800 font-semibold">
+                                  <span className="font-bold">{t.alternative_why}</span> {altReason}
+                                </p>
+                              </div>
+                            )}
+                            {altTip && (
+                              <div className="flex items-start gap-2 rounded-xl p-4 bg-amber-100/60">
+                                <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-700" />
+                                <p className="text-base text-amber-900">
+                                  <span className="font-bold">{t.tip_label}:</span> {altTip}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     {/* Food cards */}
                     <div className="space-y-4">
