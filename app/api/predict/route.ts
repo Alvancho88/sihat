@@ -323,9 +323,9 @@ TASK:
    - 'Appetizer': small starters and sides — satay, popiah, spring roll, bean sprout, lettuce, tofu side dishes, gizzard, liver, small soups served as starters.
 3. Estimate for each item: Sugar(g), Salt/Sodium(mg), Saturated Fat(g), and Risk (Low/Medium/High).
    RISK DETERMINATION RULES (The "Three Highs"):
-   - SUGAR: Low (≤5g), Medium (6-15g), High (≥16g)
+   - SUGAR: Low (≤5g), Medium (6-15g), High (>15g)
    - SALT (Sodium): Low (≤200mg), Medium (201-600mg), High (>600mg)
-   - FAT (Saturated): Low (≤3g), Medium (3.1-7g), High (>7g)
+   - FAT (Saturated): Low (≤5g), Medium (6-15g), High (>15g)
    - ASSIGN FINAL RISK:
      - If ANY indicator is High -> Final Risk = "High"
      - Else if ANY indicator is Medium -> Final Risk = "Medium"
@@ -371,8 +371,8 @@ function buildChineseTrilingualPrompt(combinedOcr: string, userText: string): st
 2. 评估逻辑:
    - 糖(g): 低(≤5), 中(6-15), 高(>15)
    - 盐/钠(mg): 低(≤200), 中(201-600), 高(>600)
-   - 脂肪(g): 低(≤3), 中(3.1-7), 高(>7)
-   - 风险等级(risk): 任一指标高=High; 无高且有中=Medium; 全低=Low。
+   - 脂肪(g): 低(≤5), 中(6-15), 高(>15)
+   - 风险等���(risk): 任一指标高=High; 无高且有中=Medium; 全低=Low。
 3. 字段说明:
    - 'tip': 针对减少盐、糖、脂的建议，三语对象。
    - 'best_reason': 基于营养优势的理由，三语对象。

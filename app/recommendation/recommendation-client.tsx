@@ -451,8 +451,8 @@ function RiskBadge({ risk, t }: { risk: string; t: typeof content.en }) {
   const c = configs[risk as keyof typeof configs] || configs.medium
   const isHigh = risk === "high"
   return (
-    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full ${c.bg} ${c.text} ${c.border} ${isHigh ? "font-extrabold" : ""}`}>
-      <c.icon className="w-4 h-4" />
+    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 ${c.bg} ${c.text} ${c.border} ${isHigh ? "font-extrabold" : ""}`}>
+      <c.icon className="w-4 h-4 shrink-0" />
       {c.label}
     </span>
   )
@@ -997,6 +997,28 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   }, [])
 
   useEffect(() => {
+    // Detect if page was refreshed (not navigation) using Navigation Timing API
+    const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+    const isPageRefresh = navEntries.length > 0 && navEntries[0].type === "reload"
+    
+    if (isPageRefresh) {
+      // Clear results on page refresh
+      console.log("[Recommendation] Page refreshed - clearing analysis results")
+      clearScanContext()
+      setShowChatbotAiEstimateBanner(false)
+      setApiResultsCache(null)
+      setShowCategories(false)
+      setSelectedCategory(null)
+      setResults(null)
+      setUploadedImages([])
+      setUploadedFiles([])
+      setNewFiles([])
+      setTextInput("")
+      setShowTextInput(false)
+      return
+    }
+    
+    // On navigation (not refresh), restore previous results
     restoreSharedScanResults()
     const handleSharedScanUpdate = (event: Event) => {
       if (event instanceof CustomEvent && event.detail?.source === "recommendation") return
@@ -1604,7 +1626,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               </div>
             )}
 
-            {/* ═══════════════════════════════════════════════════════════════════════════
+            {/* ══════════════════════════════════════��════════════════════════════════════
                 RESULTS PANEL - Shows after analysis
             ═══════════════════════════════════════════════════════════════════════════ */}
             {currentPanel === "results" && hasResults && (
