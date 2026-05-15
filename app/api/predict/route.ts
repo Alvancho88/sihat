@@ -511,12 +511,11 @@ IMPORTANT OUTPUT RULES:
 - Output ONLY the top 3 best items per category (already ranked). If fewer than 3, output all. If 0, output empty array.
 - Output ONLY valid JSON. No markdown, no code fences, no extra text.
 - Include "uniqueFoodCount" at root level: total unique real food items identified before filtering to top 3.
-- Use this exact structure:
-{"Appetizer":[],"Main Dish":[],"Dessert":[],"Drinks":[],"uniqueFoodCount":number}
 - Every category object must follow this shape:
-{"ranking":[...items...],"all_high_risk":boolean,"alternative_suggestion":{"f":"food name","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}} | null}
+  {"ranking":[...items...],"all_high_risk":boolean,"alternative_suggestion":{"f":"<specific food name>","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}}
+- CRITICAL: "alternative_suggestion" must ALWAYS be a real object with "f", "tip", and "reason" — NEVER null, NEVER omitted. Every category that has any items must have a specific alternative food suggestion.
 - Every item must follow this shape:
-{"f":"name","sugar":number,"salt":number,"fat":number,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"best_reason":{"en":"...","ms":"...","zh":"..."}}
+  {"f":"name","sugar":number,"salt":number,"fat":number,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"best_reason":{"en":"...","ms":"...","zh":"..."}}
 `;
 }
 
@@ -559,12 +558,13 @@ function buildChineseTrilingualPrompt(combinedOcr: string, userText: string): st
 - 必须严格遵守以下JSON结构，且确保括号完全闭合:
 
 {
-  "Appetizer": {"ranking": [{"f":"食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"best_reason":{"en":"...","ms":"...","zh":"..."}}], "all_high_risk": false, "alternative_suggestion": null},
-  "Main Dish": {"ranking": [], "all_high_risk": false, "alternative_suggestion": null},
-  "Dessert": {"ranking": [], "all_high_risk": false, "alternative_suggestion": null},
-  "Drinks": {"ranking": [], "all_high_risk": false, "alternative_suggestion": null},
+  "Appetizer": {"ranking": [{"f":"食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"best_reason":{"en":"...","ms":"...","zh":"..."}}], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
+  "Main Dish": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
+  "Dessert": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
+  "Drinks": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
   "uniqueFoodCount": 数字
-}`;
+}
+注意: "alternative_suggestion" 绝对不能为 null，必须始终是包含具体食物名称的真实对象。`;
 }
 
 // ─── NUTRITIONAL ANALYSIS WITH GROQ ────────────────────────────────────────────────
