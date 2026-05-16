@@ -501,7 +501,7 @@ TASK:
 4. Write a short practical health tip for EVERY item (one sentence) in all three languages:
    - NORMAL CASE: Focus on reducing salt, sugar, or fat for that specific item.
 5. For EVERY item, include a "best_reason" object in all three languages explaining WHY this item is the best choice in its category.
-6. ALTERNATIVE SUGGESTION RULE: For EVERY category that has at least one item, ALWAYS provide an "alternative_suggestion" object. The alternative MUST be a specific, contextually relevant healthier food that is NOT from the scanned/inputted items. Choose the alternative based on what is scanned — for example, if the scanned items are Malaysian hawker foods, suggest a lighter Malaysian alternative, not a generic western salad. The alternative must include: "f" (food name), "tip" (trilingual health tip), "reason" (trilingual explanation of why it's a healthier alternative). Also set "all_high_risk": true if ALL items in that category are "High" risk (even if only 1 or 2 items exist). Keep the top 3 scanned/inputted items as the main "ranking" — the alternative is displayed separately ABOVE the ranking only when all items are high risk.
+6. ALTERNATIVE SUGGESTION RULE: For EVERY category that has at least one item, ALWAYS provide an "alternative_suggestion" object. The alternative MUST be a specific, contextually relevant healthier food that is NOT from the scanned/inputted items. Choose the alternative based on what is scanned — for example, if the scanned items are Malaysian hawker foods, suggest a lighter Malaysian alternative, not a generic western salad. The alternative must include: "f" (food name), "tip" (trilingual health tip), "reason" (trilingual explanation of why it's a healthier alternative), "sugar" (estimated sugar in grams, number), "salt" (estimated sodium in mg, number), "fat" (estimated fat in grams, number), "risk" ("Low", "Medium", or "High" based on the nutrition values). Also set "all_high_risk": true if ALL items in that category are "High" risk (even if only 1 or 2 items exist). Keep the top 3 scanned/inputted items as the main "ranking" — the alternative is displayed separately ABOVE the ranking only when all items are high risk.
 
 RANKING LOGIC (apply per category):
 1. Highest Priority: Risk (Low first, then Medium, then High)
@@ -512,8 +512,8 @@ IMPORTANT OUTPUT RULES:
 - Output ONLY valid JSON. No markdown, no code fences, no extra text.
 - Include "uniqueFoodCount" at root level: total unique real food items identified before filtering to top 3.
 - Every category object must follow this shape:
-  {"ranking":[...items...],"all_high_risk":boolean,"alternative_suggestion":{"f":"<specific food name>","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}}
-- CRITICAL: "alternative_suggestion" must ALWAYS be a real object with "f", "tip", and "reason" — NEVER null, NEVER omitted. Every category that has any items must have a specific alternative food suggestion.
+  {"ranking":[...items...],"all_high_risk":boolean,"alternative_suggestion":{"f":"<specific food name>","sugar":number,"salt":number,"fat":number,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}}
+- CRITICAL: "alternative_suggestion" must ALWAYS be a real object with "f", "sugar", "salt", "fat", "risk", "tip", and "reason" — NEVER null, NEVER omitted. Every category that has any items must have a specific alternative food suggestion.
 - Every item must follow this shape:
   {"f":"name","sugar":number,"salt":number,"fat":number,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"best_reason":{"en":"...","ms":"...","zh":"..."}}
 `;
@@ -549,7 +549,7 @@ function buildChineseTrilingualPrompt(combinedOcr: string, userText: string): st
 3. 字段说明:
    - 'tip': 针对减少盐、糖、脂的建议，三语对象。
    - 'best_reason': 基于营养优势的理由，三语对象。
-4. 替代食物规则: 对于每个至少有一个食物项目的类别，无论风险高低，都必须提供"alternative_suggestion"对象。替代食物必须是具体的、与扫描内容相关的更健康食物，且不在扫描/输入内容中。根据扫描的食物选择替代品——例如，若扫描的是马来西亚小贩食物，建议更清淡的马来西亚替代品（如"Yong Tau Foo"、"清蒸鱼配蔬菜"、"Teh O Ais"等），而非泛泛的西式沙拉。包含: "f"(替代食物名称)、"tip"(三语健康提示)、"reason"(三语说明为何更健康)。如果该类别所有食物均为"High"风险，则设置"all_high_risk": true。
+4. 替代食物规则: 对于每个至少有一个食物项目的类别，无论风险高低，都必须提供"alternative_suggestion"对象。替代食物必须是具体的、与扫描内容相关的更健康食物，且不在扫描/输入内容中。根据扫描的食物选择替代品——例如，若扫描的是马来西亚小贩食物，建议更清淡的马来西亚替代品（如"Yong Tau Foo"、"清蒸鱼配蔬菜"、"Teh O Ais"等），而非泛泛的西式沙拉。包含: "f"(替代食物名称)、"sugar"(估计糖分克数，数字)、"salt"(估计钠毫克数，数字)、"fat"(估计脂肪克数，数字)、"risk"("Low"、"Medium"或"High"，根据营养值)、"tip"(三语健康提示)、"reason"(三语说明为何更健康)。如果该类别所有食物均为"High"风险，则设置"all_high_risk": true。
 5. 排序: 风险等级(Low > Medium > High)，其次按盐 > 糖 > 脂肪从小到大排序。
 
 输出格式要求:
@@ -558,10 +558,10 @@ function buildChineseTrilingualPrompt(combinedOcr: string, userText: string): st
 - 必须严格遵守以下JSON结构，且确保括号完全闭合:
 
 {
-  "Appetizer": {"ranking": [{"f":"食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"best_reason":{"en":"...","ms":"...","zh":"..."}}], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Main Dish": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Dessert": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Drinks": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
+  "Appetizer": {"ranking": [{"f":"食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"best_reason":{"en":"...","ms":"...","zh":"..."}}], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
+  "Main Dish": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
+  "Dessert": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
+  "Drinks": {"ranking": [], "all_high_risk": false, "alternative_suggestion": {"f":"具体替代食物名称","sugar":数字,"salt":数字,"fat":数字,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
   "uniqueFoodCount": 数字
 }
 注意: "alternative_suggestion" 绝对不能为 null，必须始终是包含具体食物名称的真实对象。`;
@@ -695,9 +695,10 @@ function normaliseRisk(raw: unknown): "Low" | "Medium" | "High" {
 // Used when the LLM detects all-high-risk but doesn't return an alternative_suggestion
 // (e.g. when the model returns the old flat-array format).
 
-const FALLBACK_ALTERNATIVES: Record<string, { f: string; tip: { en: string; ms: string; zh: string }; reason: { en: string; ms: string; zh: string } }> = {
+const FALLBACK_ALTERNATIVES: Record<string, { f: string; sugar?: number; salt?: number; fat?: number; risk?: string; tip: { en: string; ms: string; zh: string }; reason: { en: string; ms: string; zh: string } }> = {
   "Main Dish": {
     f: "Steamed Fish with Vegetables",
+    sugar: 2, salt: 180, fat: 4, risk: "Low",
     tip: {
       en: "A light steamed fish with vegetables is significantly lower in saturated fat and sodium than most Malaysian main dishes.",
       ms: "Ikan kukus dengan sayur-sayuran mengandungi lemak tepu dan natrium yang jauh lebih rendah berbanding kebanyakan hidangan utama Malaysia.",
@@ -711,6 +712,7 @@ const FALLBACK_ALTERNATIVES: Record<string, { f: string; tip: { en: string; ms: 
   },
   "Appetizer": {
     f: "Fresh Garden Salad",
+    sugar: 3, salt: 80, fat: 2, risk: "Low",
     tip: {
       en: "A fresh garden salad with light dressing is very low in sugar, salt, and fat — a great starter for managing the three highs.",
       ms: "Salad taman segar dengan sos ringan sangat rendah gula, garam, dan lemak — pemula yang hebat untuk mengurus tiga tinggi.",
@@ -724,6 +726,7 @@ const FALLBACK_ALTERNATIVES: Record<string, { f: string; tip: { en: string; ms: 
   },
   "Dessert": {
     f: "Fresh Fruit Platter",
+    sugar: 12, salt: 5, fat: 1, risk: "Medium",
     tip: {
       en: "A fresh fruit platter provides natural sweetness with fiber and vitamins, without the added sugar and fat of most desserts.",
       ms: "Pinggan buah-buahan segar menyediakan kemanisan semula jadi dengan serat dan vitamin, tanpa gula tambahan dan lemak kebanyakan pencuci mulut.",
@@ -737,6 +740,7 @@ const FALLBACK_ALTERNATIVES: Record<string, { f: string; tip: { en: string; ms: 
   },
   "Drinks": {
     f: "Plain Water / Mineral Water",
+    sugar: 0, salt: 0, fat: 0, risk: "Low",
     tip: {
       en: "Plain water is the healthiest drink choice — zero sugar, zero sodium, and zero calories.",
       ms: "Air kosong adalah pilihan minuman paling sihat — sifar gula, sifar natrium, dan sifar kalori.",
@@ -752,6 +756,31 @@ const FALLBACK_ALTERNATIVES: Record<string, { f: string; tip: { en: string; ms: 
 
 
 
+/**
+ * POST /api/predict
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Main API handler for food image analysis and nutritional ranking.
+ *
+ * Request (multipart/form-data):
+ *   file[]    — up to 5 food/menu images (JPEG/PNG)
+ *   userText  — comma-separated food names typed by the user (optional)
+ *   language  — "en" | "ms" | "zh" (accepted but unused; response is always trilingual)
+ *
+ * Pipeline:
+ *   1. OCR  — each image is processed by Gemma 4 31B (Google AI Studio).
+ *             Falls back to Llama-4-Scout (Groq) if Google keys fail.
+ *   2. Merge — OCR items + userText are deduplicated and normalised.
+ *   3. LLM analysis — llama-3.3-70b-versatile (Groq) classifies each item into
+ *             Appetizer / Main Dish / Dessert / Drinks, estimates Sugar/Sodium/Fat,
+ *             assigns risk, and writes trilingual tips in a single JSON response.
+ *   4. DB merge — matched items get verified nutrition values from the SIHAT DB.
+ *   5. Ranking — items sorted Low→High risk, then Salt→Sugar→Fat ascending.
+ *   6. Response — top 3 per category + alternative_suggestion + all_high_risk flag.
+ *
+ * Response (JSON):
+ *   { Appetizer, "Main Dish", Dessert, Drinks, uniqueFoodCount }
+ *   Each category: { ranking: FoodItem[], all_high_risk: boolean, alternative_suggestion }
+ */
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -805,6 +834,14 @@ export async function POST(req: NextRequest) {
 
     const finalResults: Record<string, { ranking: unknown[]; all_high_risk?: boolean; alternative_suggestion?: unknown }> = {};
 
+    // ── PER-CATEGORY PROCESSING ───────────────────────────────────────────────
+    // For each food category:
+    //   • Clean numeric fields (cleanToNumber handles "15g" → 15)
+    //   • Look up the food in the SIHAT DB and override with verified values
+    //   • Normalise the risk string (handles "High Risk", "high", etc.)
+    //   • Sort by risk → salt → sugar → fat (ascending)
+    //   • Keep only top 3 results per category
+    //   • Normalise alternative_suggestion fields for frontend consumption
     for (const cat of ["Appetizer", "Main Dish", "Dessert", "Drinks"]) {
       // Support both old format (array) and new format (object with ranking key)
       const catData = rawData[cat];
@@ -817,6 +854,11 @@ export async function POST(req: NextRequest) {
         item.salt = cleanToNumber(item.salt ?? 0);
         item.fat = cleanToNumber(item.fat ?? 0);
 
+        // ── DB LOOKUP ─────────────────────────────────────────────────────────
+        // matchFoodInDb() uses exact → token-prefix → fuzzy (Levenshtein ≥0.82)
+        // matching so that slight name variations (e.g. "Chicken Rice" vs
+        // "Nasi Ayam") still resolve to the correct DB entry.
+        // DB values always take priority over LLM estimates for accuracy.
         // ── DB LOOKUP: override with verified nutritional values ────────────
         if (dbFoods.length > 0) {
           const dbMatch = matchFoodInDb(String(item.f ?? ""), dbFoods);
@@ -840,6 +882,10 @@ export async function POST(req: NextRequest) {
         // ─────────────────────────────────────────────────────────────────
       }
 
+      // ── RANKING ──────────────────────────────────────────────────────────────
+      // Primary sort: risk score (Low=1, Medium=2, High=3) — healthiest first.
+      // Tie-breakers within the same risk band: Salt → Sugar → Fat (lower = better).
+      // This ranking logic matches the UI disclaimer shown to users.
       // Sort: risk ascending (Low=1 first), then salt, sugar, fat
       const sorted = [...items].sort((a, b) => {
         if (a.risk_score !== b.risk_score) return a.risk_score - b.risk_score;
@@ -882,7 +928,15 @@ export async function POST(req: NextRequest) {
         }
       });
 
+      // ── ALTERNATIVE SUGGESTION NORMALIZATION ─────────────────────────────────
+      // The LLM may return tip/reason as plain strings (older prompt versions)
+      // or numeric fields as strings (e.g. "3" instead of 3).
+      // This block coerces everything to the expected types so the frontend
+      // never has to defensive-check field types.
+      // If the LLM omitted alternative_suggestion entirely, FALLBACK_ALTERNATIVES
+      // provides safe hardcoded options for each category.
       // Normalize alternative_suggestion tip/reason to trilingual objects if present
+      // Also normalize numeric nutrition fields (sugar, salt, fat) and risk
       let alternativeSuggestion = alternativeSuggestionFromLLM;
       if (alternativeSuggestion && typeof alternativeSuggestion === "object") {
         if (typeof alternativeSuggestion.tip === "string") {
@@ -890,6 +944,14 @@ export async function POST(req: NextRequest) {
         }
         if (typeof alternativeSuggestion.reason === "string") {
           alternativeSuggestion = { ...alternativeSuggestion, reason: { en: alternativeSuggestion.reason, ms: alternativeSuggestion.reason, zh: alternativeSuggestion.reason } };
+        }
+        // Normalize numeric fields
+        if (alternativeSuggestion.sugar !== undefined) alternativeSuggestion = { ...alternativeSuggestion, sugar: Number(alternativeSuggestion.sugar) || 0 };
+        if (alternativeSuggestion.salt !== undefined) alternativeSuggestion = { ...alternativeSuggestion, salt: Number(alternativeSuggestion.salt) || 0 };
+        if (alternativeSuggestion.fat !== undefined) alternativeSuggestion = { ...alternativeSuggestion, fat: Number(alternativeSuggestion.fat) || 0 };
+        if (typeof alternativeSuggestion.risk === "string") {
+          const r = alternativeSuggestion.risk.trim();
+          alternativeSuggestion = { ...alternativeSuggestion, risk: r.charAt(0).toUpperCase() + r.slice(1).toLowerCase() };
         }
       }
 

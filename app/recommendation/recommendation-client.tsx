@@ -1,7 +1,21 @@
 // app/recommendation/recommendation-client.tsx
-// Frontend UI for food analysis and recommendation system
-// Handles image upload, text input, and displays AI-powered nutritional analysis
-// Supports multi-language interface and real-time progress tracking
+// ─────────────────────────────────────────────────────────────────────────────
+// RECOMMENDATION CLIENT  (Client Component)
+// ─────────────────────────────────────────────────────────────────────────────
+// Main frontend for the SIHAT food-analysis feature. Users can:
+//   • Upload up to 5 menu / food photos  → OCR runs on the server
+//   • Type food names manually           → sent as plain text to the server
+//   • View AI-ranked results per category with risk badges & nutritional data
+//   • See a healthier alternative when every item in a category is High Risk
+//   • Add items to the daily Meal Plan (for DB-matched foods only)
+//
+// Multi-language: English (en) | Bahasa Malaysia (ms) | Simplified Chinese (zh)
+// Language is selected in PageLayout and propagated via render props.
+//
+// State persistence strategy:
+//   • Analysis results → sessionStorage (SCAN_CONTEXT_KEY / ANALYSIS_SESSION_KEY)
+//   • Pre-analysis draft (images + text) → sessionStorage (PRE_ANALYSIS_DRAFT_KEY)
+//   • Both stores are cleared on page REFRESH; only drafts survive in-app navigation.
 
 "use client"
 
@@ -468,6 +482,12 @@ function ViewPlanButton({ label, onClick }: { label: string; onClick: () => void
   )
 }
 
+/**
+ * RiskBadge
+ * Renders a coloured pill (Low / Medium / High Risk) with a trend icon.
+ * Colour tokens are defined in globals.css (--risk-low, --risk-medium, etc.)
+ * High-risk items render in amber/gold to match the "Three Highs" warning theme.
+ */
 function RiskBadge({ risk, t }: { risk: string; t: typeof content.en }) {
   const configs = {
     low: { label: t.risk_low, icon: TrendingDown, bg: "bg-[var(--risk-low-bg)]", text: "text-[var(--risk-low)]", border: "" },
@@ -484,6 +504,12 @@ function RiskBadge({ risk, t }: { risk: string; t: typeof content.en }) {
   )
 }
 
+/**
+ * indicatorClass
+ * Returns Tailwind classes for nutritional indicator pills (Sugar / Sodium / Fat).
+ * Only High items get a warning colour; Low and Medium stay neutral so the UI
+ * does not alarm users unnecessarily for acceptable nutrition levels.
+ */
 function indicatorClass(level: "low" | "medium" | "high") {
   if (level === "high") return "bg-[#FFF3CD] text-[#856404]" 
   return "bg-muted text-foreground"
@@ -500,6 +526,19 @@ type FoodItem = {
   db_matched?: boolean
 }
 
+/**
+ * FoodResultCard
+ * Renders a single ranked food item with:
+ *   - Risk badge (top-right)
+ *   - "Best Choice" header banner (only for rank #1)
+ *   - "Why we pick this" reason (rank #1 only, from best_reason field)
+ *   - Nutritional indicators (Sugar / Sodium / Fat), colour-coded for High risk
+ *   - Health tip
+ *   - Add to Meal Plan button (only for DB-matched foods; disabled otherwise)
+ *
+ * computedRisk is derived client-side from the nutrition thresholds so the badge
+ * always reflects actual values even if the server risk string differs.
+ */
 function FoodResultCard({
   food,
   isBest,
@@ -630,6 +669,12 @@ function FoodResultCard({
   )
 }
 
+/**
+ * compressImage
+ * Resizes an image to a max dimension (default 1024px) and re-encodes as JPEG
+ * at the given quality level (default 0.75). This keeps payloads small before
+ * they are sent to the OCR API, staying within Groq/Google vision size limits.
+ */
 function compressImage(file: File, maxDimension = 1024, quality = 0.75): Promise<File> {
   return new Promise((resolve) => {
     const img = new window.Image()
@@ -675,6 +720,10 @@ type AlternativeSuggestion = {
   f: string
   tip: { en: string; ms: string; zh: string }
   reason: { en: string; ms: string; zh: string }
+  sugar?: number
+  salt?: number
+  fat?: number
+  risk?: string
 }
 
 // Client-side fallback alternatives — used when backend didn't return one
@@ -682,6 +731,7 @@ type AlternativeSuggestion = {
 const CLIENT_FALLBACK_ALTERNATIVES: Record<string, AlternativeSuggestion> = {
   appetizer: {
     f: "Fresh Garden Salad",
+    sugar: 3, salt: 80, fat: 2, risk: "low",
     tip: {
       en: "A fresh garden salad with light dressing is very low in sugar, salt, and fat — a great starter for managing the three highs.",
       ms: "Salad taman segar dengan sos ringan sangat rendah gula, garam, dan lemak — pemula yang hebat untuk mengurus tiga tinggi.",
@@ -695,6 +745,7 @@ const CLIENT_FALLBACK_ALTERNATIVES: Record<string, AlternativeSuggestion> = {
   },
   main: {
     f: "Steamed Fish with Vegetables",
+    sugar: 2, salt: 180, fat: 4, risk: "low",
     tip: {
       en: "A light steamed fish with vegetables is significantly lower in fat and sodium than most Malaysian main dishes.",
       ms: "Ikan kukus dengan sayur-sayuran mengandungi lemak tepu dan natrium yang jauh lebih rendah berbanding kebanyakan hidangan utama Malaysia.",
@@ -708,6 +759,7 @@ const CLIENT_FALLBACK_ALTERNATIVES: Record<string, AlternativeSuggestion> = {
   },
   dessert: {
     f: "Fresh Fruit Platter",
+    sugar: 12, salt: 5, fat: 1, risk: "medium",
     tip: {
       en: "A fresh fruit platter provides natural sweetness with fiber and vitamins, without the added sugar and fat of most desserts.",
       ms: "Pinggan buah-buahan segar menyediakan kemanisan semula jadi dengan serat dan vitamin, tanpa gula tambahan dan lemak kebanyakan pencuci mulut.",
@@ -721,6 +773,7 @@ const CLIENT_FALLBACK_ALTERNATIVES: Record<string, AlternativeSuggestion> = {
   },
   drink: {
     f: "Plain Water / Mineral Water",
+    sugar: 0, salt: 0, fat: 0, risk: "low",
     tip: {
       en: "Plain water is the healthiest drink choice — zero sugar, zero sodium, and zero calories.",
       ms: "Air kosong adalah pilihan minuman paling sihat — sifar gula, sifar natrium, dan sifar kalori.",
@@ -758,6 +811,12 @@ const ANALYSIS_SESSION_KEY = SHARED_ANALYSIS_SESSION_KEY
 const SCAN_CONTEXT_EVENT = "sihat_scan_results_changed"
 /** Populated by AI chatbot when user opens full analysis for non-database (estimated) foods */
 const CHATBOT_ESTIMATED_ANALYSIS_KEY = "sihat_chatbot_estimated_analysis"
+// PRE_ANALYSIS_DRAFT_KEY — sessionStorage key for the upload draft.
+// Stores images as base64 data URLs (not blob URLs, which die on navigation)
+// and the typed text so both survive Next.js client-side route changes.
+// Cleared on hard refresh so users always start fresh after reloading the page.
+/** Persists uploaded images (base64) and text across in-app navigation (cleared on refresh) */
+const PRE_ANALYSIS_DRAFT_KEY = "sihat_pre_analysis_draft"
 
 type ChatbotEstimatedFoodPayload = {
   name: string
@@ -834,6 +893,14 @@ function getAvailableCategories(cache: ApiResultsCache | null): AnalysisSessionC
   return (["main", "appetizer", "dessert", "drink"] as const).filter((category) => cache[category]?.length > 0)
 }
 
+/**
+ * saveScanContext
+ * Writes the full analysis result and session metadata to sessionStorage so that:
+ *   - The AI Chatbot can read context-aware food data without a second API call.
+ *   - Navigating away and back restores the last analysis without re-running OCR.
+ *   - Other parts of the app (e.g. statistics) can consume the same result.
+ * Also fires notifyAnalysisReady() so the chatbot hint badge updates immediately.
+ */
 function saveScanContext(
   data: PredictResults,
   session?: Omit<AnalysisSession, "result" | "createdAt" | "source" | "analysisId">,
@@ -872,6 +939,33 @@ function clearScanContext() {
   notifyScanContextChanged()
 }
 
+type PreAnalysisDraft = { images: string[]; text: string }
+
+function savePreAnalysisDraft(images: string[], text: string) {
+  try {
+    sessionStorage.setItem(PRE_ANALYSIS_DRAFT_KEY, JSON.stringify({ images, text } satisfies PreAnalysisDraft))
+  } catch { /* quota exceeded — silently ignore */ }
+}
+
+function clearPreAnalysisDraft() {
+  sessionStorage.removeItem(PRE_ANALYSIS_DRAFT_KEY)
+}
+
+function readPreAnalysisDraft(): PreAnalysisDraft | null {
+  try {
+    const raw = sessionStorage.getItem(PRE_ANALYSIS_DRAFT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as PreAnalysisDraft
+  } catch { return null }
+}
+
+/**
+ * buildApiResultsCache
+ * Converts the raw API response (keyed by Gemini category names like "Main Dish")
+ * into a frontend-friendly cache keyed by short slugs ("main", "appetizer", etc.).
+ * Also extracts per-category metadata (all_high_risk, alternative_suggestion) into
+ * a _meta sub-object so components can access them without re-iterating the items.
+ */
 function buildApiResultsCache(data: PredictResults): ApiResultsCache {
   const cache: ApiResultsCache = {}
   const meta: Record<string, { all_high_risk?: boolean; alternative_suggestion?: AlternativeSuggestion | null }> = {}
@@ -936,6 +1030,13 @@ type RecommendationBootstrap = {
   showChatbotAiEstimateBanner: boolean
 }
 
+/**
+ * parseSessionToBootstrap
+ * Reads SCAN_CONTEXT_KEY + ANALYSIS_SESSION_KEY from sessionStorage and converts
+ * the stored analysis result into the initial state shape needed by the component.
+ * Called on in-app navigation (not on hard refresh — caller checks for reload).
+ * Returns null if sessionStorage is empty or the stored data is malformed.
+ */
 /** Reads SCAN_CONTEXT + ANALYSIS_SESSION when present (caller avoids calling on full reload). */
 function parseSessionToBootstrap(): RecommendationBootstrap | null {
   try {
@@ -992,12 +1093,37 @@ function findMealPlanFood(foodName: string, foods: MealPlanFoodItem[]): MealPlan
  * Handles image uploads, text input, AI analysis, and results display
  * Supports multi-language interface and mobile-responsive design
  */
+/**
+ * RecommendationClient  (default export)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Top-level client component for the food recommendation page.
+ *
+ * Key flows:
+ *   UPLOAD FLOW  → user adds photos / types food names → clicks Analyse
+ *                → handleAnalyze() POSTs to /api/predict
+ *                → results stored in apiResultsCache + sessionStorage
+ *                → UI switches to RESULTS panel automatically
+ *
+ *   RESTORE FLOW → on in-app navigation, readRecommendationBootstrap() reads
+ *                  sessionStorage and pre-populates all state so the user sees
+ *                  their last analysis instantly without re-running OCR.
+ *                → on page REFRESH, all state is cleared (privacy by design).
+ *
+ *   CHATBOT FLOW → chatbot writes to sessionStorage then fires a custom event
+ *                  or navigates with ?fromChatbot=1; this component reads the
+ *                  stored analysis and displays it without a second API call.
+ *
+ * Panel layout (mobile-first two-panel design):
+ *   "upload"  panel — photo/text input, analyse button, photo tips
+ *   "results" panel — category tabs, ranked food cards, alternative suggestion
+ */
 export default function RecommendationClient({ initialFoods }: { initialFoods: MealPlanFoodItem[] }) {
   // ─── STATE MANAGEMENT ────────────────────────────────────────────────────────
   const [initialBootstrap] = useState(() => readRecommendationBootstrap())
 
   // Image and file management
-  const [uploadedImages, setUploadedImages] = useState<string[]>(() => initialBootstrap?.uploadedImages ?? [])
+  const [uploadedImages, setUploadedImages] = useState<string[]>(() => initialBootstrap?.uploadedImages ?? [])  /** Base64 data-URL copies of uploaded images — used to persist across in-app navigation */
+  const [uploadedImagesB64, setUploadedImagesB64] = useState<string[]>([])
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [newFiles, setNewFiles] = useState<File[]>([])
   
@@ -1091,6 +1217,30 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       setTextInput(savedText)
       setShowTextInput(true)
     }
+  }, [])
+
+  /**
+   * Restore pre-analysis draft (uploaded images + text) on in-app navigation.
+   * Only runs when there are no analysis results to restore and it's not a page refresh.
+   */
+  useEffect(() => {
+    const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
+    const isPageRefresh = navEntries.length > 0 && navEntries[0].type === "reload"
+    if (isPageRefresh || initialBootstrap) return // Don't restore on refresh or if results exist
+
+    const draft = readPreAnalysisDraft()
+    if (!draft) return
+    if (draft.images.length > 0) {
+      // Restore base64 images as displayable src values (data URLs work without blob registration)
+      setUploadedImages(draft.images)
+      setUploadedImagesB64(draft.images)
+      // Note: uploadedFiles will be empty — user will need to re-analyze, but the previews show
+    }
+    if (draft.text.trim()) {
+      setTextInput(draft.text)
+      setShowTextInput(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /**
@@ -1192,12 +1342,15 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       // Clear results on page refresh
       console.log("[Recommendation] Page refreshed - clearing analysis results")
       clearScanContext()
+      clearPreAnalysisDraft()
+      sessionStorage.removeItem("rec-text")
       setShowChatbotAiEstimateBanner(false)
       setApiResultsCache(null)
       setShowCategories(false)
       setSelectedCategory(null)
       setResults(null)
       setUploadedImages([])
+      setUploadedImagesB64([])
       setUploadedFiles([])
       setNewFiles([])
       setTextInput("")
@@ -1310,7 +1463,11 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
    */
   useEffect(() => {
     sessionStorage.setItem("rec-text", textInput)
-  }, [textInput])
+    // Keep pre-analysis draft in sync with text changes
+    if (!apiResultsCache && !showCategories) {
+      savePreAnalysisDraft(uploadedImagesB64, textInput)
+    }
+  }, [textInput, uploadedImagesB64, apiResultsCache, showCategories])
 
   /**
    * Manage scanning animation during analysis
@@ -1344,6 +1501,15 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   }
 }, [showTextInput]);
 
+  /**
+   * handleFileUpload
+   * Processes newly selected images:
+   *   1. Compresses each file to ≤1024px JPEG to keep OCR payloads small.
+   *   2. Generates blob URLs for immediate preview rendering.
+   *   3. Converts images to base64 data URLs and saves them to the pre-analysis
+   *      draft in sessionStorage so previews survive in-app navigation.
+   *   4. Resets any existing analysis results (new photos = new analysis).
+   */
   const handleFileUpload = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return
     const remainingSlots = MAX_IMAGES - uploadedImages.length
@@ -1352,7 +1518,24 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     const filesToProcess = Array.from(files).slice(0, remainingSlots)
     Promise.all(filesToProcess.map((f) => compressImage(f))).then((compressed) => {
       const newUrls = compressed.map(file => URL.createObjectURL(file))
-      setUploadedImages(prev => [...prev, ...newUrls])
+      // Convert to base64 for cross-navigation persistence
+      Promise.all(compressed.map(file => new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = () => resolve("")
+        reader.readAsDataURL(file)
+      }))).then(newB64s => {
+        setUploadedImages(prev => {
+          const next = [...prev, ...newUrls]
+          setUploadedImagesB64(prevB64 => {
+            const nextB64 = [...prevB64, ...newB64s.filter(Boolean)]
+            // Persist draft immediately — current textInput captured via ref below
+            savePreAnalysisDraft(nextB64, textInputRef.current?.querySelector("textarea")?.value ?? "")
+            return nextB64
+          })
+          return next
+        })
+      })
       setUploadedFiles(prev => [...prev, ...compressed])
       setIsUploading(false)
       setNewFiles([])
@@ -1383,6 +1566,11 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
   const removeImage = (index: number) => {
     setUploadedImages(prev => prev.filter((_, i) => i !== index))
+    setUploadedImagesB64(prev => {
+      const next = prev.filter((_, i) => i !== index)
+      savePreAnalysisDraft(next, textInput)
+      return next
+    })
     setUploadedFiles(prev => prev.filter((_, i) => i !== index))
     setNewFiles([])
     setPreviousOcr("")
@@ -1394,6 +1582,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
   const removeAllImages = () => {
     setUploadedImages([])
+    setUploadedImagesB64([])
     setUploadedFiles([])
     setNewFiles([])
     setPreviousOcr("")
@@ -1401,9 +1590,23 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     setSelectedCategory(null)
     setResults(null)
     setApiResultsCache(null)
+    savePreAnalysisDraft([], textInput)
     clearScanContext()
   }
 
+  /**
+   * handleAnalyze
+   * Core analysis function — POSTs images + text to /api/predict and processes
+   * the response:
+   *   1. Builds FormData with up to 5 compressed image files and optional text.
+   *   2. Sends to /api/predict which runs OCR + LLM nutritional analysis.
+   *   3. Builds the client-side apiResultsCache from the response.
+   *   4. Saves the full result to sessionStorage (for chatbot context + restore).
+   *   5. Auto-navigates to the results panel and scrolls to category tabs.
+   *
+   * Error states (analyzeError) are shown inline in the upload panel.
+   * A 2-second success count animation plays before revealing category tabs.
+   */
   const handleAnalyze = async (lang: string) => {
     setShowChatbotAiEstimateBanner(false)
     setAnalyzeError(null)
@@ -1493,6 +1696,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const clearAll = () => {
     setShowChatbotAiEstimateBanner(false)
     setUploadedImages([])
+    setUploadedImagesB64([])
     setUploadedFiles([])
     setNewFiles([])
     setPreviousOcr("")
@@ -1504,6 +1708,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     setApiResultsCache(null)
     setAnalyzeError(null)
     setCurrentPanel("upload")
+    clearPreAnalysisDraft()
     clearScanContext()
   }
 
@@ -1922,6 +2127,14 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                       <p className="text-base md:text-lg font-semibold text-[var(--risk-low)]">{t.top3_disclaimer}</p>
                     </div>
 
+                    {/* ── ALTERNATIVE SUGGESTION ───────────────────────────────────────
+                        Shown only when every ranked item in the current category is High
+                        Risk. A toggle button reveals a collapsible panel suggesting a
+                        healthier alternative food.
+                        Priority: AI-generated backend alternative > CLIENT_FALLBACK_ALTERNATIVES.
+                        The panel displays: food name, risk badge, nutrition pills,
+                        "Why this alternative?" reason (amber box), and a health tip.
+                    ─────────────────────────────────────────────────────────────────── */}
                     {/* Alternative Suggestion — toggle button + collapsible panel */}
                     {(() => {
                       // Check if ALL items currently shown are High Risk using correct thresholds
@@ -1966,14 +2179,52 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
                           {/* Collapsible alternative panel */}
                           {isAltVisible && (
-                            <div className="mt-2 rounded-2xl border-2 border-amber-400 bg-amber-50 shadow-sm overflow-hidden">
+                            <div className="mt-2 rounded-2xl border-2 border-amber-400 bg-card shadow-sm overflow-hidden">
                               <div className="bg-amber-400 px-4 py-2 flex items-center gap-2">
                                 <ArrowRightLeft className="w-5 h-5 text-amber-900" />
                                 <span className="text-amber-900 font-bold text-base">{t.alternative_label}</span>
                               </div>
                               <div className="p-5">
                                 <p className="text-base text-amber-800 font">{t.all_high_risk_warning}</p>
-                                <h3 className="text-xl font-bold text-amber-900 mb-3">{alt.f}</h3>
+                                {/* Food name + risk badge — badge sticks to top-right like FoodResultCard */}
+                                <div className="flex items-start justify-between mb-3">
+                                  <h3 className="text-xl font-bold">{alt.f}</h3>
+                                  {alt.risk && (
+                                    <RiskBadge risk={alt.risk.toLowerCase()} t={t} />
+                                  )}
+                                </div>
+                                {/* Nutritional values — only high-risk pills are colored, low/medium are neutral */}
+                                {(alt.sugar !== undefined || alt.salt !== undefined || alt.fat !== undefined) && (
+                                  <div className="flex flex-wrap gap-4 mb-4 text-base">
+                                    {alt.sugar !== undefined && (() => {
+                                      const lvl = getLevelFromThresholds(alt.sugar, 5, 15)
+                                      return (
+                                        <div className={`rounded-xl px-4 py-2 ${indicatorClass(lvl)}`}>
+                                          <span className="font-semibold text-foreground">{t.nutrition_sugar}:</span>
+                                          <span className={`ml-1 ${lvl === "high" ? "font-extrabold" : ""}`}>{alt.sugar}g</span>
+                                        </div>
+                                      )
+                                    })()}
+                                    {alt.salt !== undefined && (() => {
+                                      const lvl = getLevelFromThresholds(alt.salt, 200, 600)
+                                      return (
+                                        <div className={`rounded-xl px-4 py-2 ${indicatorClass(lvl)}`}>
+                                          <span className="font-semibold text-foreground">{t.nutrition_salt}:</span>
+                                          <span className={`ml-1 ${lvl === "high" ? "font-extrabold" : ""}`}>{alt.salt}mg</span>
+                                        </div>
+                                      )
+                                    })()}
+                                    {alt.fat !== undefined && (() => {
+                                      const lvl = getLevelFromThresholds(alt.fat, 5, 15)
+                                      return (
+                                        <div className={`rounded-xl px-4 py-2 ${indicatorClass(lvl)}`}>
+                                          <span className="font-semibold text-foreground">{t.nutrition_fat}:</span>
+                                          <span className={`ml-1 ${lvl === "high" ? "font-extrabold" : ""}`}>{alt.fat}g</span>
+                                        </div>
+                                      )
+                                    })()}
+                                  </div>
+                                )}
                                 {altReason && (
                                   <div className="bg-amber-100 border border-amber-300 rounded-xl p-4 mb-3">
                                     <p className="text-base text-amber-800 font-semibold">
@@ -1982,9 +2233,9 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                                   </div>
                                 )}
                                 {altTip && (
-                                  <div className="flex items-start gap-2 rounded-xl p-4 bg-amber-100/60">
-                                    <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-700" />
-                                    <p className="text-base text-amber-900">
+                                  <div className="flex items-start gap-2 rounded-xl p-4 bg-accent/20">
+                                    <Info className="w-5 h-5 shrink-0 mt-0.5 text-accent-foreground" />
+                                    <p className="text-base text-foreground">
                                       <span className="font-bold">{t.tip_label}:</span> {altTip}
                                     </p>
                                   </div>
