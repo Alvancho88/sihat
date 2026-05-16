@@ -1,3 +1,5 @@
+// Client component for healthcare directory page, handling search, filters, pagination, and geolocation-based sorting.
+// It also supports three languages: English (en), Malay (ms), and Chinese (zh).
 "use client"
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"

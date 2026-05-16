@@ -1,4 +1,4 @@
-import { PageLayout } from "@/components/page-layout"
+// This is a server component that fetches healthcare facilities data and renders the HealthcareClient component with the fetched data as props.
 import { getHealthcareFacilities } from "@/lib/queries"
 import { HealthcareClient } from "./healthcare-client"
 
