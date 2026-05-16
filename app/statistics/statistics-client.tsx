@@ -62,7 +62,7 @@ const content = {
     stat_nudge: [
       { text: "That's someone at every dining table.", link: "Learn the warning signs →", href: "/learn" },
       { text: "Regular screening is the best defence.", link: "Find a clinic near you →", href: "/healthcare" },
-      { text: "Behind every number is a family.", link: "See how food can help →", href: "/food" },
+      { text: "Behind every number is a family.", link: "See how food affects health →", href: "/food" },
     ],
     stats_eyebrow: "Diabetes in Malaysia",
     stats_heading: "The numbers are closer to home than you think",
@@ -124,7 +124,7 @@ const content = {
     stat_nudge: [
       { text: "Itu seseorang di hampir setiap meja makan.", link: "Ketahui tanda amaran →", href: "/learn" },
       { text: "Saringan berkala adalah pertahanan terbaik.", link: "Cari klinik terdekat →", href: "/healthcare" },
-      { text: "Di sebalik setiap angka ada keluarga.", link: "Lihat bagaimana makanan dapat membantu →", href: "/food" },
+      { text: "Di sebalik setiap angka ada keluarga.", link: "Lihat bagaimana makanan mempengaruhi kesihatan →", href: "/food" },
     ],
     stats_eyebrow: "Diabetes di Malaysia",
     stats_heading: "Angka-angka ini lebih dekat dari yang anda sangka",
@@ -186,7 +186,7 @@ const content = {
     stat_nudge: [
       { text: "几乎每张餐桌上都有一个这样的人。", link: "了解警示信号 →", href: "/learn" },
       { text: "定期筛查是最好的防御。", link: "找到附近的诊所 →", href: "/healthcare" },
-      { text: "每个数字背后都是一个家庭。", link: "了解饮食如何帮助 →", href: "/food" },
+      { text: "每个数字背后都是一个家庭。", link: "了解饮食如何影响健康 →", href: "/food" },
     ],
     stats_eyebrow: "马来西亚的糖尿病",
     stats_heading: "这些数字比你想象的更贴近生活",
