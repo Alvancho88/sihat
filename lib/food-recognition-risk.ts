@@ -22,7 +22,7 @@ export function computeRiskFromIndicators(
   if (!Number.isNaN(sugar) && !Number.isNaN(salt) && !Number.isNaN(fat)) {
     const sugarLevel = getLevelFromThresholds(sugar, 5, 15);
     const saltLevel = getLevelFromThresholds(salt, 200, 600);
-    const fatLevel = getLevelFromThresholds(fat, 3, 7);
+    const fatLevel = getLevelFromThresholds(fat, 5, 15);
     if (sugarLevel === "high" || saltLevel === "high" || fatLevel === "high") return "high";
     if (sugarLevel === "medium" || saltLevel === "medium" || fatLevel === "medium") return "medium";
     return "low";

@@ -1680,6 +1680,13 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   );
 
   const openFullAnalysis = useCallback((href: string) => {
+    // Safety guard: if no valid scan context exists in sessionStorage, block everything.
+    const guardCtx = readScanContext();
+    if (!guardCtx || !hasScanContextItems(guardCtx)) {
+      console.warn("[Chatbot] openFullAnalysis: no valid scan context — navigation blocked");
+      return;
+    }
+
     const emitViewDetailAnalysisHint = () => {
       const analysisId = readAnalysisIdFromSession();
       const ctx = readScanContext();
@@ -2056,10 +2063,12 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         const intakeSummary = buildDailyIntakeSummary(cart, gender, messageLang);
         let scanContextForRequest = readScanContext();
         if (isConversationalClientMessage(trimmed)) {
-          if (clearChatbotTypedFoodScanContext()) {
-            scanContextForRequest = null;
-            setScanContext(null);
-          }
+          // Clear in-memory state so the stale scan context is not forwarded to the
+          // API.  Do NOT call clearChatbotTypedFoodScanContext() — that would erase
+          // sessionStorage and blank the recommendation page if it's already showing
+          // a valid analysis.
+          scanContextForRequest = null;
+          setScanContext(null);
         }
         setScanContext(scanContextForRequest);
         const requestBody: ChatRequestBody = {
@@ -2123,26 +2132,25 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           setHasActiveFoodContext(true);
         }
 
-        // Current turn has no food payload — drop typed-food scan cache so stale data
-        // cannot leak into the next API call. Intentionally does NOT clear hasActiveFoodContext
-        // so the badge persists while food context is still valid.
+        // Current turn has no food payload — clear the in-memory scan context so stale
+        // data does not leak into the next API call.
+        // IMPORTANT: Do NOT touch sessionStorage here.  The recommendation page may
+        // already be displaying a valid analysis result that was saved when the user
+        // last clicked "View Detailed Analysis".  Clearing sessionStorage would blank
+        // that page.  The in-memory scanContext is all the API needs for routing.
         if (
           !data.suggestions?.length &&
           !data.estimatedFood &&
           !data.estimatedFoods?.length &&
           !data.actionButton
         ) {
-          if (clearChatbotTypedFoodScanContext()) setScanContext(null);
+          setScanContext(null);
         }
 
-        // Pre-save analysis for instant detailed view (no /api/predict re-run on recommendation page).
-        if (
-          typeof window !== "undefined" &&
-          !categoryPrompt &&
-          mergedActionButton?.href?.includes("/recommendation") &&
-          hasAnalysableFoodPayload
-        ) {
-          const prepared = prepareRecommendationNavigationForMessage(
+        // Update in-memory scan context so follow-up questions work correctly.
+        // sessionStorage is NOT written until the user explicitly clicks "View Detailed Analysis".
+        if (hasAnalysableFoodPayload && !categoryPrompt) {
+          const scanCtx = buildScanContextFromChatbotMessage(
             {
               role: "assistant",
               content: reply,
@@ -2153,8 +2161,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
             },
             messageLang
           );
-          if (prepared) {
-            setScanContext(readScanContext());
+          if (scanCtx) {
+            setScanContext(scanCtx);
             setHasActiveFoodContext(true);
           }
         }
@@ -2568,8 +2576,12 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
                             setIsOpen(false);
                           } else if (href.includes("/recommendation")) {
                             const saved = prepareRecommendationNavigationForMessage(msg, cardLang);
-                            if (saved) setScanContext(readScanContext());
-                            openFullAnalysis(href);
+                            if (saved) {
+                              setScanContext(readScanContext());
+                              openFullAnalysis(href);
+                            } else {
+                              console.warn("[Chatbot] View Detailed Analysis: invalid payload — navigation blocked");
+                            }
                           } else {
                             openFullAnalysis(href);
                           }

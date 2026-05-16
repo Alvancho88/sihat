@@ -1060,6 +1060,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const currentLangRef = useRef<LangCode>("en")        // latest lang from PageLayout render prop
   const textInputRef = useRef<HTMLDivElement>(null);   // text input container (for scroll when user clicks "analyze" with text)
   const typeInsteadButtonRef = useRef<HTMLButtonElement>(null);
+  /** True whenever a valid analysis result is currently displayed on screen. */
+  const hasResultsDisplayedRef = useRef(false);
   const [pendingAutoAnalyze, setPendingAutoAnalyze] = useState(false)
   /** True when results were loaded from chatbot AI estimates (not DB / not fresh /api/predict) */
   const [showChatbotAiEstimateBanner, setShowChatbotAiEstimateBanner] = useState(
@@ -1070,6 +1072,10 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
   // Check if we have results to show
   const hasResults = apiResultsCache && Object.entries(apiResultsCache).some(([k, arr]) => k !== "_meta" && Array.isArray(arr) && arr.length > 0)
+
+  // Keep the ref in sync so the scan-context-changed listener can check without
+  // a stale closure.
+  hasResultsDisplayedRef.current = currentPanel === "results" && !!hasResults
 
   // ─── EFFECTS AND HOOKS ───────────────────────────────────────────────────────────
   
@@ -1211,6 +1217,14 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     }
     const handleSharedScanUpdate = (event: Event) => {
       if (event instanceof CustomEvent && event.detail?.source === "recommendation") return
+      // Guard: if we are currently showing a valid result and sessionStorage was
+      // just cleared (chatbot hygiene after a non-food reply), do not blank the
+      // page.  Only update when there is actually new data to show.
+      const newScanRaw = sessionStorage.getItem(SCAN_CONTEXT_KEY)
+      if (!newScanRaw && hasResultsDisplayedRef.current) {
+        console.log("[Recommendation] Ignoring scan-cleared event — valid results already displayed")
+        return
+      }
       restoreSharedScanResults()
     }
     window.addEventListener(SCAN_CONTEXT_EVENT, handleSharedScanUpdate)
@@ -1278,8 +1292,14 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       return
     }
 
-    // Legacy fallback only — chatbot should save scan context before navigation
+    // No scan context arrived with this navigation — clear any stale state and
+    // show the normal upload page rather than triggering a spurious auto-analysis.
     const savedText = sessionStorage.getItem("rec-text")
+    if (!savedText) {
+      console.log("[Recommendation] fromChatbot: no scan context and no rec-text — showing normal page")
+      sessionStorage.removeItem("rec-text")
+      return
+    }
     console.log("[Recommendation] fromChatbot: no scan context, legacy auto-analyse:", savedText)
     if (savedText) {
       setShowChatbotAiEstimateBanner(false)

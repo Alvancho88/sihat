@@ -527,7 +527,7 @@ function transformFoodRows(rows: FoodDataRow[]): FoodItem[] {
       let risk: "low" | "medium" | "high" = "low"
       if (sugarVal > 15 || fatVal > 15 || sodiumVal > 600 || giVal >= 70) {
         risk = "high"
-      } else if (sugarVal > 5 || fatVal > 5 || sodiumVal > 300 || giVal > 55) {
+      } else if (sugarVal > 5 || fatVal > 7 || sodiumVal > 200 || (giVal > 55 && giVal < 70)) {
         risk = "medium"
       }
 
@@ -911,14 +911,69 @@ function extractFoodQueryCandidate(message: string): string {
     "please add",
     "could you add",
     "kindly add",
+    // Intake-intent prefixes: "i want to eat X", "want to try X", etc.
+    "i would like to eat",
+    "i would like to have",
+    "i would like to try",
+    "i would like",
+    "i want to eat",
+    "i want to have",
+    "i want to try",
+    "i feel like eating",
+    "i feel like having",
+    "i feel like",
+    "i am going to eat",
+    "i am going to have",
+    "i will eat",
+    "i will have",
+    "i will try",
+    "let me eat",
+    "going to eat",
+    "going to have",
+    "want to eat",
+    "want to have",
+    "want to try",
+    "want to check",
+    "i want",
+    "saya nak makan",
+    "saya mahu makan",
+    "saya nak",
+    "saya mahu",
+    "ingin makan",
+    "nak makan",
+    "mahu makan",
+    "what about eating",
+    "how about eating",
+    "what about having",
+    "how about having",
+    "what about trying",
+    "how about trying",
+    "what about",
+    "how about",
   ].sort((a, b) => normalizeFoodText(b).length - normalizeFoodText(a).length);
 
   const trailingJunk = [
     "not available though",
     "not available",
     "though",
+    // Health-assessment adjectives must NOT become part of the food name
+    "healthy or not",
+    "safe or not",
+    "good or not",
+    "healthy",
+    "unhealthy",
+    "healthier",
+    "unhealthier",
+    "safe",
+    "unsafe",
+    "good",
+    "bad",
+    "okay",
+    "ok",
+    "or not",
     "健康吗",
     "健康嗎",
+    "健康不",
     "怎么样",
     "怎麼樣",
     "行不行",
@@ -993,6 +1048,16 @@ function extractFoodQueryCandidate(message: string): string {
       "this",
       "that",
       "food",
+      // Intake-intent tokens ("i want to eat X" → "X")
+      "i",
+      "want",
+      "to",
+      "eat",
+      "eating",
+      "have",
+      "having",
+      "try",
+      "trying",
     ]);
     let tokens = normalized.split(" ").filter(Boolean);
     while (tokens.length > 0 && commandTokens.has(tokens[0]!)) {
@@ -1452,9 +1517,10 @@ const SHORT_REAL_FOOD_TOKENS = new Set(
 /**
  * Strict gate for AI-generated food cards only (DB matches use matchFoodQuery only).
  * Uncertain → false (no card; caller may send clarification).
+ * Plurals like cookies/biscuits/chips/crackers are included explicitly.
  */
 const REAL_FOOD_LEXEME_RE =
-  /\b(pizza|burger|fried\s*rice|chicken\s*rice|hainanese|rice|fried|cendol|chendol|teh\s*o|teh\s*tarik|tarik|limau|bandung|kopi|roti|canai|mee|maggie|maggi|curry|soup|sate|satay|laksa|porridge|noodle|wonton|wantan|dumpling|chicken|beef|fish|shrimp|prawn|crab|cake|bread|toast|sandwich|salad|pasta|steak|sushi|ramen|pho|pie|dim\s*sum|char\s*kuey|kuey\s*teow|kuay\s*teow|bee\s*hoon|bihun|rendang|ketupat|lemang|biryani|dhal|dhall|idli|thosai|milo|horlicks|juice|cola|soda|coffee|tea|tea\s*o|latte|espresso|bubble|boba|cheese|nasi|lemak|nasi\s*lemak|porridge|congee|goreng|kaya|popiah|rojak|ais\s*kacang|ice\s*kacang|murtabak|pisang|tahu|tauhu|daging|ayam|ikan|sotong|udang|nugget|wings|waffle|pancake|croissant|donut|doughnut|muffin|smoothie|milkshake|yogurt|yoghurt|cereal|oats|granola|spring\s*roll|egg\s*tart|custard|custard\s*bun|bao\s*pau|mantou|longan|lychee|rambutan|durian|mango|papaya|coconut|tempeh|tofu|quinoa|couscous|burrito|taco|quesadilla|nacho|falafel|hummus|wrap|bagel|pretzel|cracker|biscuit|cookie|brownie|muffin|macaron|macaroon|gelato|sorbet|churro|kimchi|bibimbap|bulgogi|gyoza|edamame|poke|poutine|bruschetta|ravioli|gnocchi|lasagna|paella|couscous|frittata|omelette|omelet|frittata|crepe|scone|bap|roll|sub|hoagie|kebab|shawarma|falafel|samosa|pakora|biryani|pulut|ketupat|lontong|nasi\s*kandar|nasi\s*dagang|nasi\s*kerabu|ketupat|ketupat\s*palas|lemper|kuih|kuih-muih|pulut|tapai|tapai\s*ubi|cincau|soya|soy\s*milk|almond\s*milk|oat\s*milk|grass\s*jelly|bubble\s*tea|bbt|milk\s*tea|fruit\s*juice|orange\s*juice|apple\s*juice|celery\s*juice|carrot\s*juice|barley|barley\s*water|chrysanthemum|wintermelon|sugarcane|sugar\s*cane|air\s*tebu|sirap\s*bandung|three\s*layer\s*tea|teh\s*ping|ais\s*limau|teh\s*ais)\b/iu;
+  /\b(pizza|burgers?|fried\s*rice|chicken\s*rice|hainanese|rice|fried|cendol|chendol|teh\s*o|teh\s*tarik|tarik|limau|bandung|kopi|roti|canai|mee|maggie|maggi|curry|soups?|sate|satay|laksa|porridge|noodles?|wontons?|wantans?|dumplings?|chicken|beef|fish|shrimp|prawns?|crabs?|cakes?|bread|toast|sandwiches?|salads?|pasta|steak|sushi|ramen|pho|pie|dim\s*sum|char\s*kuey|kuey\s*teow|kuay\s*teow|bee\s*hoon|bihun|rendang|ketupat|lemang|biryani|dhal|dhall|idli|thosai|milo|horlicks|juice|cola|soda|coffee|tea|tea\s*o|latte|espresso|bubble|boba|cheese|nasi|lemak|nasi\s*lemak|porridge|congee|goreng|kaya|popiah|rojak|ais\s*kacang|ice\s*kacang|murtabak|pisang|tahu|tauhu|daging|ayam|ikan|sotong|udang|nuggets?|wings?|waffles?|pancakes?|croissants?|donuts?|doughnuts?|muffins?|smoothie|milkshake|yogurt|yoghurt|cereal|oats|granola|spring\s*rolls?|egg\s*tart|custard|custard\s*bun|bao\s*pau|mantou|longan|lychee|rambutan|durian|mango|papaya|coconut|tempeh|tofu|quinoa|couscous|burritos?|tacos?|quesadillas?|nachos?|falafel|hummus|wraps?|bagels?|pretzels?|crackers?|biscuits?|cookies?|brownies?|macaron|macaroons?|gelato|sorbet|churros?|kimchi|bibimbap|bulgogi|gyoza|edamame|poke|poutine|bruschetta|ravioli|gnocchi|lasagna|paella|frittata|omelette|omelet|crepe|scone|rolls?|sub|hoagie|kebabs?|shawarma|samosas?|pakora|pulut|ketupat|lontong|nasi\s*kandar|nasi\s*dagang|nasi\s*kerabu|lemper|kuih|pulut|tapai|cincau|soya|soy\s*milk|almond\s*milk|oat\s*milk|grass\s*jelly|bubble\s*tea|bbt|milk\s*tea|fruit\s*juice|orange\s*juice|apple\s*juice|celery\s*juice|carrot\s*juice|barley|chrysanthemum|wintermelon|sugarcane|sugar\s*cane|air\s*tebu|sirap\s*bandung|teh\s*ping|ais\s*limau|teh\s*ais|chips?)\b/iu;
 
 function latinLettersOnly(s: string): string {
   return s.replace(/[^a-z]/gi, "");
@@ -1506,7 +1572,7 @@ function isLikelyRealFoodName(candidate: string, _originalMessage: string): bool
     return false;
   }
 
-  if (/\b(who|whom|what|which|why|how|when|where)\b/i.test(n) && !REAL_FOOD_LEXEME_RE.test(n)) {
+  if (/\b(who|whom|what|which|why|how|when|where)\b/i.test(n) && !hasFoodLexeme(n)) {
     return false;
   }
   if (/\b(am i|are you|is this|was i)\b/i.test(n)) return false;
@@ -1515,7 +1581,7 @@ function isLikelyRealFoodName(candidate: string, _originalMessage: string): bool
     return n.length >= 2 && n.length <= 24;
   }
 
-  if (REAL_FOOD_LEXEME_RE.test(n)) return true;
+  if (hasFoodLexeme(n)) return true;
 
   if (looksLikeRandomLetterGibberishPhrase(n)) return false;
 
@@ -1562,7 +1628,7 @@ function isExplicitNormalChatMessage(message: string): boolean {
   if (patterns.some((p) => p.test(n))) return true;
 
   const tokens = n.split(/\s+/).filter(Boolean);
-  if (tokens.length === 1 && looksLikeLatinGibberishToken(tokens[0]!) && !REAL_FOOD_LEXEME_RE.test(n)) {
+  if (tokens.length === 1 && looksLikeLatinGibberishToken(tokens[0]!) && !hasFoodLexeme(n)) {
     return true;
   }
   if (
@@ -1579,7 +1645,22 @@ const FOOD_ANALYSIS_VERB_RE =
   /\b(analyze|analyse|analysis|check|compare|contrast|scan|menu|versus|vs\b|healthy|unhealthier|unhealthy|nutrition|nutrient|calorie|calories|\bgi\b|glycemic|sugar|sodium|salt|\bfat\b|cholesterol|fiber|fibre|eat|drink|makan|minum|makanan|minuman|meal|snack|dish|食物|分析|健康|营养|热量|糖|钠|脂肪|可以吃|能不能吃|可不可以吃|能吃吗|安全吗|boleh makan|semak|analisis)\b/iu;
 
 const DISH_OR_DRINK_HINT_RE =
-  /\b(nasi|lemak|pizza|cendol|teh|tarik|kopi|roti|canai|mee|maggie|maggi|rice|fried|cake|bread|egg|curry|soup|sate|satay|burger|cola|juice|ais|limau|bandung|laksa|porridge|noodle|wonton|dumpling|tahu|tauhu|rendang|ketupat|lemang|biryani|hainanese|toast|sandwich|ramen|pho|sushi|steak|pasta|salad|oats|milo|horlicks|soya|soy|char\s+kuey|dim\s*sum)\b/iu;
+  /\b(nasi|lemak|pizza|cendol|teh|tarik|kopi|roti|canai|mee|maggie|maggi|rice|fried|cake|bread|egg|curry|soups?|sate|satay|burgers?|cola|juice|ais|limau|bandung|laksa|porridge|noodles?|wontons?|dumplings?|tahu|tauhu|rendang|ketupat|lemang|biryani|hainanese|toast|sandwiches?|ramen|pho|sushi|steak|pasta|salads?|oats|milo|horlicks|soya|soy|char\s+kuey|dim\s*sum|cookies?|biscuits?|crackers?|chips?)\b/iu;
+
+/**
+ * Test a normalised string (or its token-by-token de-pluralised form) against
+ * the food lexeme regexes.  Handles cookies→cookie, biscuits→biscuit, etc.
+ */
+function hasFoodLexeme(n: string): boolean {
+  if (REAL_FOOD_LEXEME_RE.test(n) || DISH_OR_DRINK_HINT_RE.test(n)) return true;
+  // Strip common English plural suffixes token-by-token and retest.
+  const depluralised = n
+    .replace(/\b([a-z]{3,})ies\b/gi, "$1y")   // cookies? no — "y" forms
+    .replace(/\b([a-z]{4,})es\b/gi, "$1")     // sandwiches → sandwich
+    .replace(/\b([a-z]{4,})s\b/gi, "$1");     // biscuits → biscuit, chips → chip
+  return depluralised !== n &&
+    (REAL_FOOD_LEXEME_RE.test(depluralised) || DISH_OR_DRINK_HINT_RE.test(depluralised));
+}
 
 /** Positive food-analysis intent only — never default true for unknown text. */
 function isFoodAnalysisRequestIntent(message: string): boolean {
@@ -1587,7 +1668,7 @@ function isFoodAnalysisRequestIntent(message: string): boolean {
   if (!n || n.length > 120) return false;
   if (isExplicitNormalChatMessage(message)) return false;
 
-  const dishLexeme = REAL_FOOD_LEXEME_RE.test(n) || DISH_OR_DRINK_HINT_RE.test(n);
+  const dishLexeme = hasFoodLexeme(n);
   const analysisVerb = FOOD_ANALYSIS_VERB_RE.test(n);
 
   if (
@@ -1606,18 +1687,35 @@ function isFoodAnalysisRequestIntent(message: string): boolean {
 
   const tokens = n.split(/\s+/).filter(Boolean);
   if (dishLexeme && tokens.length >= 1 && tokens.length <= 5) {
-    if (/^(who|whom|what|why|how|when|where|which|dont|don't|stop)\b/i.test(n)) return false;
+    // Block genuine interrogative openers, but NOT "how about X" / "what about X"
+    // which are analysis-request prefixes (also stripped as leadingJunk in extraction).
+    if (/^(who|whom|why|when|where|which|dont|don't|stop)\b/i.test(n)) return false;
+    if (/^(what|how)\b/i.test(n) && !/^(what about|how about)\b/i.test(n)) return false;
     if (tokens.every((t) => GENERIC_NON_FOOD_TOKENS.has(t))) return false;
-    if (tokens.length === 1 && looksLikeLatinGibberishToken(tokens[0]!) && !REAL_FOOD_LEXEME_RE.test(n)) {
+    if (tokens.length === 1 && looksLikeLatinGibberishToken(tokens[0]!) && !hasFoodLexeme(n)) {
       return false;
     }
-    if (hasCjk(n) && !REAL_FOOD_LEXEME_RE.test(n) && !DISH_OR_DRINK_HINT_RE.test(n)) {
+    if (hasCjk(n) && !hasFoodLexeme(n)) {
       return /[\u4e00-\u9fff]{1,}(面|饭|茶|汤|肉|菜|糕|饼|粥|饺|包|饮|奶|糖)/u.test(n);
     }
     return true;
   }
 
   return false;
+}
+
+/**
+ * True when the message is explicitly conversational / non-food by known pattern.
+ * These messages must NEVER be promoted to food_analysis_request even if the DB
+ * pre-check somehow produces a spurious candidate match.
+ */
+function isDefinitelyNonFoodMessage(message: string): boolean {
+  return (
+    isConversationalOnlyMessage(message) ||
+    isCasualAcknowledgement(message) ||
+    isComplaintOrClarification(message) ||
+    isExplicitNormalChatMessage(message)
+  );
 }
 
 /**
@@ -1703,6 +1801,12 @@ function stripFoodQuestionIntent(message: string): string {
     "for",
     "about",
     "tell me",
+    "what about eating",
+    "how about eating",
+    "what about having",
+    "how about having",
+    "what about trying",
+    "how about trying",
     "what about",
     "how about",
     "can i eat",
@@ -1711,10 +1815,48 @@ function stripFoodQuestionIntent(message: string): string {
     "makanan",
     "selamat",
     "tentang",
+    // Health-assessment adjectives
+    "healthy",
+    "unhealthy",
+    "healthier",
+    "unhealthier",
+    "good for you",
+    "bad for you",
+    // Intake-intent wrappers so "i want to eat X" → "X"
+    "i would like to eat",
+    "i would like to have",
+    "i would like to try",
+    "i would like",
+    "i want to eat",
+    "i want to have",
+    "i want to try",
+    "i feel like eating",
+    "i feel like having",
+    "i feel like",
+    "i am going to eat",
+    "i am going to have",
+    "i will eat",
+    "i will have",
+    "i will try",
+    "want to eat",
+    "want to have",
+    "want to try",
+    "going to eat",
+    "going to have",
+    "i want",
+    "saya nak makan",
+    "saya mahu makan",
+    "saya nak",
+    "saya mahu",
+    "ingin makan",
+    "nak makan",
+    "mahu makan",
     "可以吃",
     "安全吗",
     "营养",
     "关于",
+    "想吃",
+    "要吃",
   ];
 
   for (const wrapper of wrappers) {
@@ -2444,21 +2586,35 @@ async function getEstimatedFoodCards(names: string[], lang: LangCode): Promise<E
   const isSingle = names.length === 1;
 
   const prompt = isSingle
-    ? `Analyze the food or drink "${names[0]}" for an elderly person. Reply ONLY with this JSON (no other text):
-{"category":"Main Dish","risk":"medium","sugar":0,"sodium":0,"fat":0,"tip":"One sentence health tip."}
-category: "Main Dish"|"Appetizer"|"Dessert"|"Drink"
-risk: "low"|"medium"|"high" (initial guess; will be overridden by numbers if inconsistent)
-sugar: estimated sugar in grams per typical serving (number)
-sodium: estimated sodium in milligrams per typical serving (number)
-fat: estimated fat in grams per typical serving (number)
-tip: one short sentence in ${langName}`
-    : `Analyze these foods for an elderly person. Reply ONLY with a JSON array (no other text):
+    ? `The user input may be a sentence. Your first job is to extract ONLY the actual food or drink name.
+If there is no real food or drink in the input, set foodName to null and do not analyse.
+Input: "${names[0]}"
+Reply ONLY with this JSON (no other text):
+{"foodName":"Extracted food/drink name, or null if not a real food","category":"Main Dish","risk":"medium","sugar":0,"sodium":0,"fat":0,"tip":"One sentence health tip."}
+Rules:
+- foodName: the clean dish/drink name only (e.g. "Pizza", "Nasi Lemak", "Teh Tarik"). Set to null if input has no real food.
+- category: "Main Dish"|"Appetizer"|"Dessert"|"Drink"
+- risk: "low"|"medium"|"high"
+- sugar: estimated sugar in grams per typical serving (number)
+- sodium: estimated sodium in milligrams per typical serving (number)
+- fat: estimated fat in grams per typical serving (number)
+- tip: one short sentence in ${langName}
+Examples:
+Input "i want to eat pizza" → foodName:"Pizza"
+Input "is nasi lemak healthy?" → foodName:"Nasi Lemak"
+Input "dont talk to me" → foodName:null
+Input "who am i" → foodName:null
+Input "pmg" → foodName:null`
+    : `The user inputs below may be sentences. For each, extract ONLY the food or drink name. If none exists, set foodName to null.
 ${names.map((n, i) => `${i + 1}. ${n}`).join("\n")}
-[{"category":"Main Dish","risk":"medium","sugar":0,"sodium":0,"fat":0,"tip":"Tip."},...]
-category: "Main Dish"|"Appetizer"|"Dessert"|"Drink"
-risk: "low"|"medium"|"high"
-sugar, sodium, fat: numeric estimates per typical serving (sugar and fat in g, sodium in mg)
-tip: short ${langName} sentence`;
+Reply ONLY with a JSON array (no other text):
+[{"foodName":"Extracted food/drink name or null","category":"Main Dish","risk":"medium","sugar":0,"sodium":0,"fat":0,"tip":"Tip."},...]
+Rules:
+- foodName: clean dish/drink name only, or null if no real food in that input
+- category: "Main Dish"|"Appetizer"|"Dessert"|"Drink"
+- risk: "low"|"medium"|"high"
+- sugar, sodium, fat: numeric estimates per typical serving (sugar and fat in g, sodium in mg)
+- tip: short ${langName} sentence`;
 
   const validCat = (v: unknown): EstimatedFoodCategory | null =>
     (["Main Dish", "Appetizer", "Dessert", "Drink"] as EstimatedFoodCategory[]).find(c => c === v) ?? null;
@@ -2468,19 +2624,31 @@ tip: short ${langName} sentence`;
     const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
     return Number.isFinite(n) ? n : undefined;
   };
-  const fallback = (n: string): EstimatedFoodCard => ({ name: n, category: null, risk: "medium", tip: "" });
+
+  /** Extract a clean food name from the AI's foodName field, or null if it is absent/null/"null"/empty. */
+  const parseFoodName = (v: unknown): string | null => {
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim();
+    if (!s || s.toLowerCase() === "null") return null;
+    return s;
+  };
 
   try {
     const text = await generateGroqChatReply(
       "You are a health assistant. Reply only with valid JSON.",
       [{ role: "user", content: prompt }],
-      { temperature: 0.1, max_tokens: isSingle ? 80 : 200 }
+      { temperature: 0.1, max_tokens: isSingle ? 120 : 280 }
     );
 
     if (isSingle) {
       const m = text.match(/\{[\s\S]*?\}/);
-      if (!m) return [fallback(names[0])];
+      if (!m) return [];
       const p = JSON.parse(m[0]);
+      const foodName = parseFoodName(p.foodName);
+      if (!foodName) {
+        console.log(`[chat] getEstimatedFoodCards: AI returned null foodName for input "${names[0]}" — skipping card`);
+        return [];
+      }
       const sugar = num(p.sugar);
       const sodium = num(p.sodium);
       const fat = num(p.fat);
@@ -2491,7 +2659,7 @@ tip: short ${langName} sentence`;
           : modelRisk;
       return [
         {
-          name: names[0],
+          name: foodName,
           category: validCat(p.category),
           risk,
           tip: String(p.tip ?? "").trim(),
@@ -2502,11 +2670,17 @@ tip: short ${langName} sentence`;
       ];
     } else {
       const m = text.match(/\[[\s\S]*\]/);
-      if (!m) return names.map(fallback);
+      if (!m) return [];
       const arr = JSON.parse(m[0]);
-      if (!Array.isArray(arr)) return names.map(fallback);
-      return names.map((n, i) => {
+      if (!Array.isArray(arr)) return [];
+      const cards: EstimatedFoodCard[] = [];
+      names.forEach((n, i) => {
         const p: Record<string, unknown> = arr[i] ?? {};
+        const foodName = parseFoodName(p.foodName);
+        if (!foodName) {
+          console.log(`[chat] getEstimatedFoodCards: null foodName for item "${n}" — skipping`);
+          return;
+        }
         const sugar = num(p.sugar);
         const sodium = num(p.sodium);
         const fat = num(p.fat);
@@ -2515,19 +2689,20 @@ tip: short ${langName} sentence`;
           sugar !== undefined && sodium !== undefined && fat !== undefined
             ? computeRiskFromIndicators(sugar, sodium, fat, modelRisk)
             : modelRisk;
-        return {
-          name: n,
+        cards.push({
+          name: foodName,
           category: validCat(p.category),
           risk,
           tip: String(p.tip ?? "").trim(),
           sugar,
           sodium,
           fat,
-        };
+        });
       });
+      return cards;
     }
   } catch {
-    return names.map(fallback);
+    return [];
   }
 }
 
@@ -2580,10 +2755,8 @@ async function processExtractedFoodNames(
     );
   }
 
-  const uniqueMatched = uniqueFoods(matchedFoods);
-
   if (
-    uniqueMatched.length === 0 &&
+    matchedFoods.length === 0 &&
     ambiguousGroups.length === 0 &&
     unmatchedForAi.length === 0 &&
     declinedRealFood.length > 0
@@ -2592,10 +2765,56 @@ async function processExtractedFoodNames(
     return NextResponse.json({ reply: couldYouSpecifyFoodNameReply(requestLang) });
   }
 
-  const estimatedFoods =
+  // ── AI fallback for unmatched candidates ─────────────────────────────────────
+  const rawAiCards =
     unmatchedForAi.length > 0 && hasGroqChatKey()
       ? await getEstimatedFoodCards(unmatchedForAi, requestLang)
       : [];
+
+  // ── Post-AI DB re-validation ──────────────────────────────────────────────────
+  // The AI normalises food names (e.g. "tell me teh tarik" → "Teh Tarik").
+  // Re-check each AI card name against the database.  Any hit is promoted to a
+  // proper database card so the response never carries an AI disclaimer for a food
+  // that is already in SIHAT.
+  const estimatedFoods: EstimatedFoodCard[] = [];
+  for (const card of rawAiCards) {
+    const recheck = card.name ? matchFoodQuery(card.name, foods) : { status: "none" as const };
+    const source = recheck.status === "matched" || recheck.status === "ambiguous" ? "database" : "ai";
+    const confidence =
+      recheck.status === "matched" ? "db-exact-post-ai" :
+      recheck.status === "ambiguous" ? "db-ambiguous-post-ai" : "ai";
+
+    console.log(JSON.stringify({
+      event: "food-source-decision",
+      foodName: card.name,
+      source,
+      isAIGenerated: source === "ai",
+      confidence,
+      recheckStatus: recheck.status,
+    }));
+
+    if (recheck.status === "matched") {
+      matchedFoods.push(recheck.food);
+    } else if (recheck.status === "ambiguous") {
+      matchedFoods.push(pickShortestCandidateFood(recheck.foods));
+    } else {
+      estimatedFoods.push(card);
+    }
+  }
+
+  // Compute unique DB matches AFTER all possible upgrades from AI re-check.
+  const uniqueMatched = uniqueFoods(matchedFoods);
+
+  // Log each initial DB match decision too.
+  for (const food of uniqueMatched) {
+    console.log(JSON.stringify({
+      event: "food-source-decision",
+      foodName: food.name.en,
+      source: "database",
+      isAIGenerated: false,
+      confidence: "db-matched",
+    }));
+  }
 
   if (uniqueMatched.length === 0 && estimatedFoods.length === 0) {
     console.log("[chat] Llama called: no (no database or AI food result)");
@@ -2610,7 +2829,7 @@ async function processExtractedFoodNames(
   }
 
   if (foodNames.length === 1 && uniqueMatched.length === 0 && estimatedFoods.length === 1) {
-    console.log("[chat] Llama called: yes (AI food estimate only)");
+    console.log("[chat] Llama called: yes (AI food estimate only — not in DB)");
     return NextResponse.json({
       reply: buildMultiFoodIntro(1, requestLang),
       estimatedFood: estimatedFoods[0],
@@ -2734,7 +2953,30 @@ export async function POST(req: NextRequest) {
       zh: "打开完整分析",
     };
 
-    const intent = classifyChatIntent(message);
+    let intent = classifyChatIntent(message);
+
+    // ── Database-first override ───────────────────────────────────────────────
+    // If the lexeme-based classifier returned normal_chat, attempt a quick DB
+    // lookup before giving up.  This ensures foods that exist in the SIHAT
+    // database (e.g. "otak-otak", "rendang", local dishes) produce a structured
+    // card even when they are absent from REAL_FOOD_LEXEME_RE.
+    //
+    // Guard: skip for messages that are explicitly conversational — we must not
+    // accidentally promote "dont talk to me" or "pmg" to food_analysis_request.
+    let dbPreCheckCandidate: string | null = null;
+    if (intent === "normal_chat" && !isDefinitelyNonFoodMessage(message)) {
+      const candidate = extractFoodQueryCandidate(message);
+      if (candidate) {
+        const dbPreCheck = matchFoodQuery(candidate, foods);
+        if (dbPreCheck.status === "matched" || dbPreCheck.status === "ambiguous") {
+          console.log(`[chat] DB pre-check: "${candidate}" → overriding to food_analysis_request`);
+          intent = "food_analysis_request";
+          dbPreCheckCandidate = candidate;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     console.log(`[chat] intent: ${intent}`);
 
     if (intent === "follow_up_question") {
@@ -2755,8 +2997,13 @@ export async function POST(req: NextRequest) {
       return respondNormalChat(message, history, requestLang);
     }
 
-    // food_analysis_request only: extract → DB match → AI estimate (strict gates inside)
-    const extractedFoodNames = extractFoodNamesFromMessage(message);
+    // food_analysis_request only: extract → DB match → AI estimate (strict gates inside).
+    // If the DB pre-check already extracted the candidate, use it directly so we
+    // don't re-run intent classification inside extractFoodNamesFromMessage (which
+    // would see normal_chat and return []).
+    const extractedFoodNames = dbPreCheckCandidate
+      ? [dbPreCheckCandidate]
+      : extractFoodNamesFromMessage(message);
     if (extractedFoodNames.length > 0) {
       const foodResult = await processExtractedFoodNames(
         message,
