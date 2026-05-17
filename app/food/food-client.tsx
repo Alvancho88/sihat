@@ -442,6 +442,23 @@ const getLevelPillStyle = (level: "low" | "medium" | "high") => {
   return "bg-[#FFF3CD] border-[#856404] text-[#856404]"
 }
 
+/**
+ * translatePortion
+ *
+ * Translates English portion unit words in a food's serving description into
+ * the currently selected UI language.  Uses word-boundary regex replacements
+ * so "pieces" is not incorrectly matched inside other words.
+ *
+ * Example: "1 plate" → "1 pinggan" (Malay), "1 碟" would be handled by the
+ * database having Chinese names directly.
+ *
+ * Replacement order matters — plural forms (e.g., "scoops") are replaced
+ * before singular ("scoop") to avoid double-replacing.
+ *
+ * @param portion - The raw English serving string from the food database (e.g., "1 plate")
+ * @param t       - The current language translation object
+ * @returns       The serving string with unit words replaced in the target language
+ */
 function translatePortion(portion: string, t: typeof pageContent.en): string {
   return portion
     .replace(/\bplate\b/gi, t.portion_plate)
@@ -461,6 +478,28 @@ function translatePortion(portion: string, t: typeof pageContent.en): string {
     .replace(/\bslice\b/gi, t.portion_slice)
 }
 
+/**
+ * FoodCard
+ *
+ * A compact food item card shown in the main grid on the food search page.
+ * Displays the food image, name, add/remove button, and five colour-coded
+ * nutrition pills (Sugar, Calories, GI, Fat, Sodium).
+ *
+ * Pill colours are based on risk levels returned by the helper functions in
+ * food-functions.ts:
+ *   - Blue  = Low (safe)
+ *   - Olive = Medium (moderate)
+ *   - Amber = High (limit intake)
+ *
+ * Clicking anywhere on the card fires the `onOpen` callback to open the
+ * full-screen detail modal.  The add/remove button uses stopPropagation to
+ * prevent the modal from opening when the user just wants to add to their plan.
+ *
+ * @param food   - The food item data from the database
+ * @param t      - Translated UI strings for the current language
+ * @param lang   - The current language code, used to look up the food name
+ * @param onOpen - Callback invoked when the user taps the card to open the modal
+ */
 function FoodCard({ food, t, lang, onOpen }: { food: FoodItem; t: typeof pageContent.en; lang: LangCode; onOpen: () => void }) {
   const { addToCart, removeFromCart, isInCart, cart } = useCart()
 
@@ -552,6 +591,37 @@ function FoodCard({ food, t, lang, onOpen }: { food: FoodItem; t: typeof pageCon
   )
 }
 
+/**
+ * FoodDetailModal
+ *
+ * A full-screen modal that shows detailed nutritional information for a single
+ * food item.  Supports gallery-style navigation through the currently filtered
+ * food list via left/right arrow buttons (desktop), swipe gestures (mobile),
+ * and keyboard ArrowLeft/ArrowRight/Escape keys.
+ *
+ * The modal includes:
+ *   - Full-size food image with a fade transition during navigation
+ *   - Food name, serving size, and category
+ *   - Add to / Remove from daily plan button
+ *   - Colour-coded nutrition pills (Sugar, Cal, GI, Fat, Sodium)
+ *   - Daily sugar reference (women and men limits)
+ *   - Health tip block — highlighted amber when any nutrient is high-risk
+ *   - Swipe hint for mobile users
+ *   - "Food X of Y" counter
+ *
+ * `isTransitioning` is set by the parent during the 150ms fade animation
+ * between foods to prevent rapid repeated clicks from racing.
+ *
+ * @param food            - The food item to display
+ * @param index           - Zero-based index of this food in the filtered list
+ * @param total           - Total number of foods in the filtered list
+ * @param isTransitioning - True while the fade animation between foods is active
+ * @param onPrev          - Callback to navigate to the previous food
+ * @param onNext          - Callback to navigate to the next food
+ * @param onClose         - Callback to dismiss the modal
+ * @param t               - Translated UI strings for the current language
+ * @param lang            - Language code for resolving food name and health tip
+ */
 function FoodDetailModal({
   food,
   index,
@@ -614,6 +684,18 @@ function FoodDetailModal({
   const giVal = typeof food.gi === "string" ? parseFloat(food.gi.replace(/[^0-9.]/g, "")) : food.gi
   const fatVal = typeof food.fat === "string" ? parseFloat(food.fat.replace(/[^0-9.]/g, "")) : food.fat
   const sodiumVal = typeof food.sodium === "string" ? parseFloat(food.sodium.replace(/[^0-9.]/g, "")) : food.sodium
+  /**
+   * isHighRisk
+   *
+   * True when any nutrient value crosses its "high risk" threshold:
+   *   - Sugar  > 22.5g  (close to the women's 25g daily limit)
+   *   - GI     ≥ 70     (High GI category)
+   *   - Fat    ≥ 16g    (high fat per serving)
+   *   - Sodium ≥ 601mg  (high sodium category)
+   *
+   * When isHighRisk is true, the health tip box is styled with a bold amber
+   * warning background to draw the user's attention more strongly.
+   */
   const isHighRisk = sugarVal > 22.5 || giVal >= 70 || fatVal >= 16 || sodiumVal >= 601
 
   return (
@@ -825,7 +907,12 @@ function DailyIntakePanel({ t, isOpen, onClose, lang }: { t: typeof pageContent.
 
   const { totals, limits, excess } = buildDailyIntakeSummary(cart, gender)
 
-  // Colour palette for each nutrient's progress bar
+  // Colour palette for each nutrient's progress bar.
+  // Each colour is chosen to be visually distinct and accessible:
+  //   cal   → blue-500  (neutral; calories have no strict daily limit)
+  //   sugar → golden brown (warm; sugar risk aligns with amber palette)
+  //   fat   → purple  (distinct from sugar and sodium)
+  //   sodium → rose pink (distinct from sugar and fat)
   const barColors: Record<string, string> = {
     cal: "#3b82f6",    // blue-500
     sugar: "#BA7517",  // golden brown
@@ -833,14 +920,45 @@ function DailyIntakePanel({ t, isOpen, onClose, lang }: { t: typeof pageContent.
     sodium: "#D4537E", // rose pink
   }
 
+  /**
+   * ExceededTipKey
+   *
+   * A union type for nutrients that have health tips associated with them
+   * when their daily limit is exceeded.  Calories do not have a tip because
+   * the panel only enforces sugar, fat, and sodium limits.
+   */
   type ExceededTipKey = "sugar" | "fat" | "sodium"
 
+  /**
+   * exceededTips
+   *
+   * Maps each tracked nutrient to a pair of health tips (two bullet points)
+   * that are displayed when the user has consumed more than the daily limit
+   * for that nutrient.  Tips are sourced from the localized `t` translations
+   * so they appear in the correct language.
+   */
   const exceededTips: Record<ExceededTipKey, [string, string]> = {
     sugar: [t.sugar_tip_1, t.sugar_tip_2],
     fat: [t.fat_tip_1, t.fat_tip_2],
     sodium: [t.sodium_tip_1, t.sodium_tip_2],
   }
 
+  /**
+   * HealthTipCard
+   *
+   * An amber-tinted tip card that appears inside the daily intake panel
+   * when the user has exceeded the daily limit for sugar, fat, or sodium.
+   * Shows two actionable health tips from the `exceededTips` lookup table.
+   *
+   * Three size variants are supported via boolean props:
+   *   - `mobile`  — extra-compact text and padding for the narrow mobile column
+   *   - `compact` — slightly smaller than default (used in the desktop left column)
+   *   - default   — full size for the desktop right column summary
+   *
+   * @param tipKey  - The nutrient whose tips to display ("sugar", "fat", or "sodium")
+   * @param compact - If true, uses compact spacing (desktop left column)
+   * @param mobile  - If true, uses minimal spacing (mobile layout)
+   */
   const HealthTipCard = ({ tipKey, compact = false, mobile = false }: { tipKey: ExceededTipKey; compact?: boolean; mobile?: boolean }) => (
     <div className={`w-full rounded-md border border-amber-200 bg-amber-50 text-amber-950 ${
       mobile ? "mt-0.5 px-1.5 py-1" : compact ? "mt-1 px-2 py-1.5" : "mt-1.5 px-2.5 py-2"
@@ -1013,6 +1131,8 @@ function DailyIntakePanel({ t, isOpen, onClose, lang }: { t: typeof pageContent.
 
   // Reverse cart display so the most recently added item appears at the top
   const displayCart = [...cart].reverse()
+  // Chinese text is more compact, so we use a narrower max-width and slightly
+  // adjusted margins to prevent the two-column layout from becoming too wide.
   const useCompactDesktopPanel = lang === "zh"
 
   return (
@@ -1418,6 +1538,14 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   // Fade transition flag during modal food navigation
   const [modalTransitioning, setModalTransitioning] = useState(false)
 
+  /**
+   * Dispatches a custom "sihat_food_detail_modal" event whenever the food detail
+   * modal opens or closes.  The AI chatbot component listens for this event to
+   * hide its floating button while the modal is visible so the two elements don't
+   * overlap.  The cleanup function dispatches a close event on unmount to ensure
+   * the chatbot floating button is never left hidden if the component unmounts
+   * while the modal is open.
+   */
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent("sihat_food_detail_modal", {
@@ -1445,7 +1573,11 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   // Whether the user is near the bottom of the page (shows static button instead)
   const [isNearBottom, setIsNearBottom] = useState(false)
   // Number of food items to show per page
+  // Number of food items to show per page.
+  // 15 items was chosen to keep the grid short enough to browse without
+  // excessive scrolling, while still showing a meaningful variety per page.
   const ITEMS_PER_PAGE = 15
+  // Readable category names for the active filter, used in the filter summary bar
   const selectedCategoryLabels = selectedCats.map((index) => cats[index]).filter(Boolean)
 
   /**
@@ -1546,6 +1678,20 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     setSortBy("sugar")
   }
 
+  /**
+   * goToPage
+   *
+   * Navigates to a specific pagination page number, clamping the value to the
+   * valid range [1, totalPages] to prevent out-of-bounds pages.  If the target
+   * page is the same as the current page, no state update is made.
+   *
+   * After updating the page, uses requestAnimationFrame to smooth-scroll the
+   * viewport so that the search input bar is near the top of the visible area
+   * (with a 112px offset to clear the fixed navbar).  This ensures the user
+   * can immediately start filtering on the new page without scrolling back up.
+   *
+   * @param page - The target page number to navigate to
+   */
   const goToPage = (page: number) => {
     const nextPage = Math.min(Math.max(page, 1), totalPages)
     if (nextPage === currentPage) return
@@ -1560,8 +1706,24 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     })
   }
 
+  /** Opens the food detail modal at the given index in the filtered list. */
   const openModal = (idx: number) => setSelectedFoodIndex(idx)
+  /** Closes the food detail modal and returns to the food grid. */
   const closeModal = () => setSelectedFoodIndex(null)
+  /**
+   * navigateModal
+   *
+   * Moves the modal to the adjacent food in the filtered list (dir = -1 for
+   * previous, dir = +1 for next).  Uses a 150ms fade transition:
+   *   1. Sets `modalTransitioning` to true → image and body fade out
+   *   2. After 150ms, updates `selectedFoodIndex` → new food renders
+   *   3. Sets `modalTransitioning` to false → image and body fade back in
+   *
+   * Returns early without doing anything if the target index would be out of
+   * bounds (i.e., already on the first or last food).
+   *
+   * @param dir - Direction: -1 for previous, +1 for next
+   */
   const navigateModal = (dir: -1 | 1) => {
     if (selectedFoodIndex === null) return
     const next = selectedFoodIndex + dir
@@ -1649,7 +1811,9 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     return sortOrder === "asc" ? aVal - bVal : bVal - aVal
   })
 
-  // Pagination: total pages and the slice of foods for the current page
+  // Pagination: total pages and the slice of foods for the current page.
+  // `totalPages` is derived from the full filtered count (not the paginated slice)
+  // so the pagination control always shows the correct total.
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE)
   const paginatedFoods = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 

@@ -1,8 +1,29 @@
 // app/api/chat/route.ts
 // Epic 9: AI Conversational Health Assistant
-// Chat: Groq/Llama only (llama-3.3-70b-versatile). Gemma OCR stays in app/api/predict.
-// Supports context-aware advice from food scan sessionStorage data
-// Supports multi-language: English, Bahasa Malaysia, Simplified Chinese
+//
+// This is the main API route for the SIHAT AI chatbot (Siti).
+// It handles all POST requests from the chatbot UI component and decides
+// what kind of response to return based on the user's message.
+//
+// Architecture overview:
+//   1. Parse the request body (message, history, language, scanContext, cart)
+//   2. Detect the user's language from the typed text
+//   3. Try to match cart commands (add/remove/clear/view) first
+//   4. Check if the user is asking about their daily intake
+//   5. Check if the user wants the "best choice" from a scanned menu
+//   6. Classify the chat intent: food_analysis_request | follow_up_question | normal_chat
+//   7. If food_analysis_request → extract food names → match DB → AI estimate fallback
+//   8. Otherwise → route to normal chat (Groq Llama) or quick canned replies
+//
+// Key design decisions:
+//   - Database match always takes priority over AI-generated food cards
+//   - AI food cards are only shown when no DB match exists AND the name looks like a real food
+//   - Groq Llama is used for conversational replies; it is NOT used for OCR (that stays in predict route)
+//   - Language detection is done from the typed message first; UI language is a fallback
+//   - scanContext comes from sessionStorage on the client (written by the recommendation page)
+//
+// Model: llama-3.3-70b-versatile (Groq)
+// OCR model (NOT this file): llama-4-scout (in app/api/predict/route.ts)
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAllFoodData, type FoodDataRow } from "@/lib/queries";
@@ -10,12 +31,31 @@ import { buildDailyIntakeSummary, type DailyIntakeSummary } from "@/lib/daily-in
 import { type FoodItem, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel } from "@/lib/food-functions";
 import { computeRiskFromIndicators, parseNutrientNumber as parseNutrientFromDisplayString } from "@/lib/food-recognition-risk";
 
+// Vercel serverless function max execution time (seconds)
 export const maxDuration = 30;
 
+// ─── TYPE DEFINITIONS ─────────────────────────────────────────────────────────
+
+/** Supported language codes across the chatbot, food data, and health tips. */
 type LangCode = "en" | "ms" | "zh";
+
+/**
+ * The four menu scan categories produced by the recommendation page.
+ * These match the sessionStorage keys written by recommendation-client.tsx.
+ */
 type ScanCategory = "Main Dish" | "Appetizer" | "Dessert" | "Drinks";
 
+/**
+ * The four food categories used specifically for AI-estimated food cards.
+ * Note: "Drink" (singular) here vs "Drinks" (plural) in ScanCategory — kept consistent with AI prompt output.
+ */
 type EstimatedFoodCategory = "Main Dish" | "Appetizer" | "Dessert" | "Drink";
+
+/**
+ * A single food card produced by the AI estimator (Groq Llama).
+ * Used when a food name is not found in the SIHAT database.
+ * Nutrient values are AI estimates and are shown to the user with a disclaimer.
+ */
 interface EstimatedFoodCard {
   name: string;
   category: EstimatedFoodCategory | null;
@@ -29,24 +69,43 @@ interface EstimatedFoodCard {
   fat?: number;
 }
 
+/**
+ * The structured response sent back to the chatbot frontend.
+ * The frontend (ai-chatbot.tsx) inspects these fields to decide
+ * whether to render a plain text reply, food cards, suggestion buttons, etc.
+ */
 interface ChatResponse {
+  /** Main chat reply text shown as a chat bubble */
   reply: string;
+  /** Cart action to execute on the client side (add/remove/clear a food item) */
   action?: {
     type: "add" | "remove" | "clear";
     food?: FoodItem;
   };
+  /** List of database-matched FoodItem cards to display */
   suggestions?: FoodItem[];
+  /** The food name that was not found — used by the frontend for the "not available" message */
   unavailableFoodName?: string;
+  /** Short reply chips shown below the chatbot reply for quick follow-up */
   quickReplies?: string[];
+  /** A single CTA button (e.g. "Open Full Analysis") linking to another page */
   actionButton?: {
     label: string;
     href: string;
   };
+  /** True when more than one food is returned — affects card layout in the UI */
   isMultiFood?: boolean;
+  /** Single AI-estimated food card (used when exactly one unmatched food is returned) */
   estimatedFood?: EstimatedFoodCard;
+  /** Multiple AI-estimated food cards (used when multiple unmatched foods are returned) */
   estimatedFoods?: EstimatedFoodCard[];
 }
 
+/**
+ * A single food item from the scan result stored in sessionStorage.
+ * This matches the shape written by the recommendation page after analysis.
+ * The `f` field is the food name; `sugar`, `salt`, `fat` are numeric nutrient values.
+ */
 interface ScanFoodItem {
   f: string;       // food name
   sugar: number;   // sugar in grams
@@ -59,15 +118,27 @@ interface ScanFoodItem {
   best_reason?: string | Partial<Record<LangCode, string>>;
 }
 
+/** A single message in the conversation history passed from the frontend. */
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
+/**
+ * The full request body sent by the chatbot component (ai-chatbot.tsx).
+ * All fields except `message` are optional — the route handles missing data gracefully.
+ */
 interface ChatRequest {
+  /** The user's current typed message */
   message: string;
+  /** Previous conversation turns (last ~6 used for context) */
   history: ChatMessage[];
+  /** UI language selected by the user (fallback; typed language takes priority) */
   language?: LangCode;
+  /**
+   * Food scan results read from sessionStorage on the client.
+   * Populated only after the user has run a menu analysis on the recommendation page.
+   */
   scanContext?: {
     "Appetizer"?: { ranking: ScanFoodItem[] };
     "Main Dish"?: { ranking: ScanFoodItem[] };
@@ -75,12 +146,22 @@ interface ChatRequest {
     "Drinks"?: { ranking: ScanFoodItem[] };
     uniqueFoodCount?: number;
   } | null;
+  /** Current food plan items (used for daily intake summary calculation) */
   cart?: FoodItem[];
+  /** Pre-computed daily intake summary passed from the client to avoid duplicate calculation */
   intakeSummary?: DailyIntakeSummary;
 }
 
 // ─── QUICK FOOD GUIDANCE BUILDERS ─────────────────────────────────────────────
 
+/**
+ * Returns the user-facing risk label for a given risk level in the requested language.
+ * Used when composing food summary text for the chatbot reply.
+ *
+ * @param risk - "low" | "medium" | "high"
+ * @param lang - Display language
+ * @returns Localised risk string (e.g. "low-risk", "risiko rendah", "低风险")
+ */
 function getLocalizedRiskLabel(risk: "low" | "medium" | "high", lang: LangCode): string {
   const labels = {
     en: { low: "low-risk", medium: "medium-risk", high: "high-risk" },
@@ -90,6 +171,19 @@ function getLocalizedRiskLabel(risk: "low" | "medium" | "high", lang: LangCode):
   return labels[lang][risk];
 }
 
+/**
+ * Builds a short, human-readable food summary for a single database-matched food item.
+ * This is the text shown in the chatbot reply bubble when the user asks about a specific food.
+ *
+ * The summary includes:
+ *   - An intro sentence stating the food name and overall Three Highs risk level
+ *   - Up to 2 relevant nutrient warning notes (e.g. "⚠️ Higher in sodium")
+ *   - A short health tip in the correct language
+ *
+ * @param food - A matched FoodItem from the SIHAT database
+ * @param lang - Language code for localisation
+ * @returns Formatted multi-line summary string
+ */
 function buildQuickFoodSummary(food: FoodItem, lang: LangCode): string {
   const labels = {
     en: {
@@ -165,26 +259,72 @@ function buildStructuredDatabaseFoodResponse(
 }
 
 // ─── CART MANAGEMENT ──────────────────────────────────────────────────────────
+//
+// These functions handle food plan (cart) operations triggered via chat.
+// Supported commands: add <food>, remove <food>, clear, view plan.
+// Language detection runs before matching so users can type in any supported language
+// regardless of the UI language setting.
 
+/**
+ * The result of attempting to match a user's food query against the database.
+ * - "matched": exactly one food found
+ * - "ambiguous": multiple similar foods found (user should pick one)
+ * - "none": no match found at all
+ */
 type FoodMatchResult =
   | { status: "matched"; food: FoodItem }
   | { status: "ambiguous"; foods: FoodItem[] }
   | { status: "none" }
 
+/**
+ * Returns true if the message contains the given ASCII token as a whole word (case-insensitive).
+ * Uses a word-boundary regex to avoid partial matches like "add" inside "paddle".
+ */
 function messageContainsAsciiToken(message: string, token: string): boolean {
   return new RegExp(`\\b${escapeRegExp(token)}\\b`, "i").test(message);
 }
 
+/**
+ * Returns true if the message contains any of the given markers.
+ * For non-ASCII markers (e.g. Chinese characters), a simple substring check is used.
+ * For ASCII markers, whole-word matching is applied via messageContainsAsciiToken.
+ */
 function messageContainsAnyMarker(message: string, markers: string[]): boolean {
   return markers.some((m) => (/[^\x00-\x7f]/.test(m) ? message.includes(m) : messageContainsAsciiToken(message, m)));
 }
 
-/** "加" alone is too broad (e.g. 增加); only treat as add when it reads like "…帮我加[食物]". */
+/**
+ * Detects whether a Chinese-language message is expressing an "add" intent using "加".
+ *
+ * The character "加" alone is too broad — it appears in words like "增加" (increase)
+ * which are NOT add-to-cart commands. This function only returns true when "加" is
+ * preceded by a clear conversational request pattern (e.g. "帮我加" = "help me add").
+ *
+ * @param message - Raw user message (not normalised)
+ * @returns True when the message is a genuine Chinese add-to-cart request using "加"
+ */
 function messageSuggestChineseAddJia(message: string): boolean {
   if (/(增加|增長|增长)/.test(message)) return false;
   return /(帮|幫|请|請|那|麻烦|麻煩).{0,12}加/u.test(message);
 }
 
+/**
+ * Tries to parse the user's message as a cart command (add/remove/clear/view).
+ *
+ * Matching strategy:
+ *   1. Check for clear or view commands first (they don't need a food name)
+ *   2. Check for add/remove intent using multilingual keyword markers
+ *   3. Strip the intent words from the message to isolate the food name
+ *   4. Run food name matching (exact → fuzzy) against the food database
+ *
+ * Language markers from ALL three languages are checked regardless of the UI language,
+ * because users sometimes type in a different language than the UI is set to.
+ *
+ * @param message - Raw user message
+ * @param foods   - Full list of FoodItem objects from the database
+ * @param lang    - Detected or selected language (used for food name extraction)
+ * @returns A parsed cart command object, or null if no cart intent is detected
+ */
 function parseCartCommand(message: string, foods: FoodItem[], lang: LangCode): { action: string; food?: FoodItem; suggestions?: FoodItem[]; query?: string } | null {
   const lowerMsg = message.toLowerCase();
   const labels = {
@@ -227,6 +367,23 @@ function parseCartCommand(message: string, foods: FoodItem[], lang: LangCode): {
   return null;
 }
 
+/**
+ * Executes a parsed cart command and returns the appropriate ChatResponse.
+ *
+ * Handles all four command types:
+ *   - "clear": removes all foods from the user's plan
+ *   - "view":  lists foods currently in the plan with total calories
+ *   - "add":   adds a food to the plan (with duplicate detection)
+ *   - "remove": removes a food from the plan (with "not in plan" guard)
+ *
+ * If suggestions exist (ambiguous match), returns them so the user can clarify.
+ * If no food was found for an add/remove command, returns a localised "not available" message.
+ *
+ * @param cart    - Current food plan items from the frontend
+ * @param command - Parsed cart command from parseCartCommand
+ * @param lang    - Display language for response messages
+ * @returns A ChatResponse to send back to the frontend
+ */
 function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem; suggestions?: FoodItem[]; query?: string }, lang: LangCode): ChatResponse {
   const labels = {
     en: {
@@ -328,6 +485,20 @@ function updateCart(cart: FoodItem[], command: { action: string; food?: FoodItem
   return { reply: "Sorry, I didn't understand that." };
 }
 
+/**
+ * Formats an "ambiguous match" response when a food query matched multiple database entries.
+ * The user is shown up to 3 similar foods and asked to pick one.
+ *
+ * Also includes:
+ *   - A "not available" prefix if the original query could not be exactly matched
+ *   - An "Open Full Analysis" action button linking to the recommendation page
+ *
+ * @param foods          - Array of candidate FoodItem matches (up to 3)
+ * @param lang           - Display language
+ * @param query          - The original food name the user typed
+ * @param openFullLabels - Localised labels for the CTA button
+ * @returns A ChatResponse with reply text, food suggestions, and optional action button
+ */
 function formatFoodSuggestions(
   foods: FoodItem[],
   lang: LangCode,
@@ -357,6 +528,17 @@ function formatFoodSuggestions(
   };
 }
 
+/**
+ * Checks whether the user's message is asking about their current daily food intake.
+ * This includes questions about the food plan total, whether limits were exceeded, etc.
+ *
+ * Language-specific keyword phrases are checked for all three supported languages.
+ * If matched, the route will call formatDailyIntakeSummary instead of Llama.
+ *
+ * @param message - User's message (not normalised; phrases checked against lowercased)
+ * @param lang    - Current language used to pick the right keyword set
+ * @returns True if the message is a daily intake / food plan question
+ */
 function isDailyIntakeQuestion(message: string, lang: LangCode): boolean {
   const lowerMsg = message.toLowerCase();
   const phrases = {
@@ -396,6 +578,21 @@ function isDailyIntakeQuestion(message: string, lang: LangCode): boolean {
   return phrases[lang].some((phrase) => lowerMsg.includes(phrase));
 }
 
+/**
+ * Builds a full daily intake summary message from a DailyIntakeSummary object.
+ *
+ * The output includes:
+ *   - A list of food names currently in the user's plan
+ *   - Sugar, fat, sodium, and calorie totals vs daily limits
+ *   - Warning lines for any nutrient that has been exceeded
+ *   - Up to 3 practical diet tips in the selected language
+ *
+ * If the food plan is empty, a short prompt asking the user to add foods is returned.
+ *
+ * @param summary - Pre-computed daily intake totals and excess values
+ * @param lang    - Display language for the summary
+ * @returns A multi-line string to show as a chatbot reply
+ */
 function formatDailyIntakeSummary(summary: DailyIntakeSummary, lang: LangCode): string {
   const labels = {
     en: {
@@ -512,6 +709,21 @@ ${l.sodium}: ${status(summary.excess.sodium, "mg")}
 ${l.calories}: ${status(summary.excess.cal, "kcal")}${warningSection}${tipSection}`;
 }
 
+/**
+ * Transforms raw database rows (from getAllFoodData) into the FoodItem shape
+ * used throughout the chatbot and food functions.
+ *
+ * The database returns one row per language per food (e.g. 3 rows for nasi lemak:
+ * one English, one Malay, one Chinese). This function groups them by food_id,
+ * assembles the multilingual name and tip, and computes an overall risk level
+ * based on the nutrient thresholds used in the Three Highs framework:
+ *   - High: sugar > 15g, fat > 15g, sodium > 600mg, or GI >= 70
+ *   - Medium: sugar > 5g, fat > 7g, sodium > 200mg, or GI 55–69
+ *   - Low: all within safe range
+ *
+ * @param rows - Raw database rows from getAllFoodData()
+ * @returns Array of FoodItem objects ready for food matching and display
+ */
 function transformFoodRows(rows: FoodDataRow[]): FoodItem[] {
   const byId = new Map<number, FoodItem>()
 
@@ -558,6 +770,21 @@ function transformFoodRows(rows: FoodDataRow[]): FoodItem[] {
   return Array.from(byId.values())
 }
 
+/**
+ * Normalises a food name or query string for consistent comparison.
+ *
+ * Steps:
+ *   1. Unicode NFKC normalisation (handles full-width characters, ligatures)
+ *   2. Lowercase
+ *   3. Remove all non-letter, non-digit characters (punctuation, dashes, slashes)
+ *   4. Collapse multiple spaces to one
+ *
+ * This is the primary normalisation function used before any string comparison
+ * in the food matching pipeline.
+ *
+ * @param value - Raw food name string
+ * @returns Normalised string suitable for comparison
+ */
 function normalizeFoodText(value: string): string {
   return value
     .normalize("NFKC")
@@ -567,10 +794,23 @@ function normalizeFoodText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+/**
+ * Returns the compact (space-free) form of a normalised food name.
+ * Used for CJK substring matching where word boundaries do not exist.
+ * Example: "nasi lemak" → "nasilemak", "拉茶" → "拉茶" (unchanged for CJK)
+ */
 function compactFoodText(value: string): string {
   return normalizeFoodText(value).replace(/\s+/g, "");
 }
 
+/**
+ * Removes duplicate FoodItem entries from an array.
+ * Deduplication key is the English name (primary identifier).
+ * Falls back to "ms|zh" combined string if English name is absent.
+ *
+ * @param foods - Array of FoodItem objects (may contain duplicates from multi-language DB rows)
+ * @returns Deduplicated array preserving original order
+ */
 function uniqueFoods(foods: FoodItem[]): FoodItem[] {
   const seen = new Set<string>();
   return foods.filter((food) => {
@@ -581,14 +821,25 @@ function uniqueFoods(foods: FoodItem[]): FoodItem[] {
   });
 }
 
+/**
+ * Converts a raw language string to a valid LangCode.
+ * Defaults to "en" for any unrecognised or missing value.
+ */
 function toLangCode(value: string | undefined): LangCode {
   return value === "ms" || value === "zh" ? value : "en";
 }
 
-// Split a query containing multiple food names joined by common separators.
-// Returns an empty array when the input is clearly a single food name.
-// NOTE: call this on the ORIGINAL message (before normalization) to preserve
-// commas and other separators that normalizeFoodText would otherwise strip.
+/**
+ * Tries to split a multi-food query into individual food name parts.
+ * Splits on common separators: commas, semicolons, slashes, and multilingual
+ * conjunctions (and/or/atau/和/跟/etc.).
+ *
+ * Only returns a non-empty array when MORE than one part is found.
+ * For single-food queries this returns [] so the caller handles them as a single item.
+ *
+ * NOTE: call this on the ORIGINAL message (before normalization) to preserve
+ * commas and other separators that normalizeFoodText would otherwise strip.
+ */
 function splitMultipleFoodNames(query: string): string[] {
   const parts = query
     .split(
@@ -599,8 +850,15 @@ function splitMultipleFoodNames(query: string): string[] {
   return parts.length > 1 ? parts : [];
 }
 
-// Try splitting on the normalized query first (conjunctions survive normalization).
-// Fall back to the original message so commas/semicolons/slashes are not lost.
+/**
+ * Attempts multi-food splitting on the normalised query first, then falls back
+ * to the original message if the normalised version did not produce parts.
+ * This is needed because normalizeFoodText strips commas and slashes.
+ *
+ * @param originalMessage  - The raw user message (preserves commas/slashes for splitting)
+ * @param normalizedQuery  - Normalised version (may already have conjunctions intact)
+ * @returns Array of individual food name parts, or [] if only one food is detected
+ */
 function resolveMultiFoodParts(originalMessage: string, normalizedQuery: string): string[] {
   const fromNormalized = splitMultipleFoodNames(normalizedQuery);
   if (fromNormalized.length > 1) return fromNormalized;
@@ -611,6 +869,13 @@ function resolveMultiFoodParts(originalMessage: string, normalizedQuery: string)
   return fromOriginal.length > 1 ? fromOriginal : [];
 }
 
+/**
+ * Returns the intro sentence used when displaying multiple food analysis results.
+ * Example: "Here is the health analysis for these 3 foods:"
+ *
+ * @param count - Number of food items being shown
+ * @param lang  - Display language
+ */
 function buildMultiFoodIntro(count: number, lang: LangCode): string {
   const labels: Record<LangCode, string> = {
     en: `Here is the health analysis for these ${count} foods:`,
@@ -620,6 +885,21 @@ function buildMultiFoodIntro(count: number, lang: LangCode): string {
   return labels[lang];
 }
 
+/**
+ * Detects the language the user is typing in based on character patterns and keyword markers.
+ *
+ * Detection priority:
+ *   1. CJK character range → Chinese ("zh")
+ *   2. Malay keyword markers (e.g. "apa", "boleh", "makanan") → Malay ("ms")
+ *   3. English keyword markers (e.g. "what", "how", "food") → English ("en")
+ *   4. Ambiguous (both or neither) → null (caller falls back to UI language)
+ *
+ * This is intentionally simple — it checks for presence of known markers rather than
+ * full language model detection. It works well enough for short health queries.
+ *
+ * @param message - Raw user message
+ * @returns Detected LangCode, or null if the language cannot be determined
+ */
 function detectUserMessageLanguage(message: string): LangCode | null {
   const normalized = normalizeFoodText(message);
   if (!normalized) return null;
@@ -645,6 +925,10 @@ function detectUserMessageLanguage(message: string): LangCode | null {
   return null;
 }
 
+/**
+ * Returns all non-empty name strings for a food item across all three languages.
+ * Used when building the list of candidate name strings for food matching.
+ */
 function getFoodNames(food: FoodItem): string[];
 function getFoodNames(food: FoodItem): string[] {
   return [food.name.en, food.name.ms, food.name.zh].filter(Boolean);
@@ -717,6 +1001,8 @@ function stripCartIntent(message: string, action: "add" | "remove", lang: LangCo
     zh: new Set(["请", "帮我", "添加", "加入", "放", "删除", "移除", "到", "购物车", "每日计划"]),
   };
 
+  // stripTrailing removes known trailing filler phrases like "into my food cart",
+  // "to my daily plan", etc. Runs in a loop until no more fillers can be stripped.
   function stripTrailing(text: string): string {
     let s = text.trim();
     let changed = true;
@@ -742,6 +1028,8 @@ function stripCartIntent(message: string, action: "add" | "remove", lang: LangCo
     return s;
   }
 
+  // stripLeading removes known leading conversational filler phrases like
+  // "can you please", "i would like to", "boleh tolong", "帮我", etc.
   function stripLeading(text: string): string {
     let s = text.trim();
     let changed = true;
@@ -767,6 +1055,9 @@ function stripCartIntent(message: string, action: "add" | "remove", lang: LangCo
     return s;
   }
 
+  // dropStopwords removes common command words (add, remove, help, my, etc.)
+  // from the candidate string, leaving only the actual food name tokens.
+  // CJK text is returned as-is since it has no clear stopword boundaries.
   function dropStopwords(candidate: string): string {
     if (!candidate) return "";
     if (lang === "zh" || hasCjk(candidate)) return candidate;
@@ -779,11 +1070,15 @@ function stripCartIntent(message: string, action: "add" | "remove", lang: LangCo
       .trim();
   }
 
+  // Applies stripLeading + stripTrailing + dropStopwords to produce a clean food name.
   function cleanCandidate(text: string): string {
     const compact = dropStopwords(stripLeading(stripTrailing(text)));
     return compact.replace(/\s+/g, " ").trim();
   }
 
+  // Strategy: find the earliest occurrence of an action verb in the normalised message.
+  // Extract the text AFTER the verb as the food name; fall back to text BEFORE the verb
+  // if the post-verb region is empty (e.g. "birthday cake, add to cart").
   // Find earliest action verb occurrence in the message.
   let verbStart = -1;
   let verbEnd = -1;
@@ -1069,6 +1364,14 @@ function extractFoodQueryCandidate(message: string): string {
   return normalized.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * A set of short, exact-match conversational phrases that should NEVER be treated
+ * as food queries. These are phrases like "ok", "thanks", "不对", "再试" that users
+ * send as conversational feedback rather than food requests.
+ *
+ * Each phrase is normalised using normalizeFoodText before being added to the set
+ * so comparisons are done on the same normalised form.
+ */
 const CONVERSATIONAL_PHRASES_EXACT = new Set(
   [
     "ok",
@@ -1107,7 +1410,19 @@ const CONVERSATIONAL_PHRASES_EXACT = new Set(
   ].map(normalizeFoodText)
 );
 
-/** Follow-up about risk / meaning — not generic chit-chat; may use prior scan context. */
+/**
+ * Returns true when the message is a follow-up question specifically about a food's
+ * risk classification, nutrient levels, or health score — NOT generic chit-chat.
+ *
+ * Examples that return true:
+ *   - "why is it high risk?"
+ *   - "what does this mean?"
+ *   - "为什么钠这么高" (why is sodium so high)
+ *   - "kenapa risiko tinggi" (why high risk)
+ *
+ * These messages are routed to buildFollowUpSystemPrompt which references scan context
+ * to give a specific answer, rather than asking the user to name a food again.
+ */
 function isFoodFollowUpQuestion(message: string): boolean {
   const n = normalizeFoodText(message);
   if (!n) return false;
@@ -1126,6 +1441,16 @@ function isFoodFollowUpQuestion(message: string): boolean {
   return false;
 }
 
+/**
+ * Returns true when the message is a casual acknowledgement like "ok", "thanks",
+ * "got it", "明白", "好的" — not a food question or complaint.
+ *
+ * These messages receive a short canned reply from casualAcknowledgementReply()
+ * instead of calling Llama or attempting food extraction.
+ *
+ * Follow-up questions are excluded here even if they superficially look like
+ * acknowledgements (e.g. "ok but why is it high?").
+ */
 function isCasualAcknowledgement(message: string): boolean {
   const n = normalizeFoodText(message);
   if (!n || isFoodFollowUpQuestion(message)) return false;
@@ -1168,6 +1493,13 @@ function isCasualAcknowledgement(message: string): boolean {
   return false;
 }
 
+/**
+ * Returns true when the message looks like a user complaint or a request for clarification
+ * about the app's behaviour (e.g. "it's not working", "that is wrong", "salah").
+ *
+ * These messages receive a soft "Can you tell me which food or part of the app you mean?"
+ * reply instead of attempting food analysis, which would likely fail anyway.
+ */
 function isComplaintOrClarification(message: string): boolean {
   const n = normalizeFoodText(message);
   if (!n || isFoodFollowUpQuestion(message) || isCasualAcknowledgement(message)) return false;
@@ -1185,7 +1517,13 @@ function isComplaintOrClarification(message: string): boolean {
   return false;
 }
 
-/** Food-analysis intent but no dish named (this/that/healthy). */
+/**
+ * Returns true when the message expresses food analysis intent but does NOT name a specific food.
+ * Examples: "is this healthy?", "can you check this?", "analisis ini", "分析这个".
+ *
+ * These are handled by sending a clarification question ("Which food would you like me to check?")
+ * rather than attempting food extraction, which would fail on vague pronoun-only messages.
+ */
 function isVagueFoodAnalysisIntent(message: string): boolean {
   const n = normalizeFoodText(message);
   if (!n || isFoodFollowUpQuestion(message) || isCasualAcknowledgement(message) || isComplaintOrClarification(message)) {
@@ -1204,6 +1542,17 @@ function isVagueFoodAnalysisIntent(message: string): boolean {
   return false;
 }
 
+/**
+ * Extracts a flat list of food scan items from all categories in the scan context
+ * and formats them as a compact summary string for use in the Llama system prompt.
+ *
+ * Each line includes: food name, category, risk level, nutrient values, and a short tip.
+ * This is injected into the follow-up system prompt so Llama can reference specific
+ * scanned foods without hallucinating details.
+ *
+ * @param scanContext - Non-null scan context from the request body
+ * @returns Multi-line string of scanned food items for the system prompt
+ */
 function scanContextSummaryLines(scanContext: NonNullable<ChatRequest["scanContext"]>): string {
   const lines: string[] = [];
   for (const cat of ["Appetizer", "Main Dish", "Dessert", "Drinks"] as const) {
@@ -1222,6 +1571,16 @@ function scanContextSummaryLines(scanContext: NonNullable<ChatRequest["scanConte
   return lines.join("\n");
 }
 
+/**
+ * Builds a minimal system prompt for handling very short conversational messages
+ * like "ok", "thanks", or "never mind".
+ *
+ * The prompt instructs Llama to reply in one warm sentence without asking about food.
+ * This avoids the chatbot awkwardly asking "which food would you like to check?" in
+ * response to a simple acknowledgement.
+ *
+ * @param language - Display language for the response
+ */
 function buildBriefChitChatSystemPrompt(language: LangCode): string {
   const langInstructions: Record<LangCode, string> = {
     en: "Respond entirely in English.",
@@ -1237,6 +1596,17 @@ The user sent a very short message (for example okay, thanks, or never mind). It
 Reply in ONE short sentence, warm and natural. Do NOT ask which food or drink to check. Do NOT mention pizza, menus, or analysis unless the user did.`;
 }
 
+/**
+ * Builds a focused system prompt for handling follow-up questions about a scanned menu.
+ *
+ * This prompt injects the previously scanned food items into the context so Llama
+ * can answer questions like "why is that high risk?" without the user needing to
+ * name the food again. Llama is instructed to reference ONLY the listed items
+ * and not invent other foods.
+ *
+ * @param language    - Display language for the response
+ * @param scanContext - Non-null scan context containing the scanned food items
+ */
 function buildFollowUpSystemPrompt(
   language: LangCode,
   scanContext: NonNullable<ChatRequest["scanContext"]>
@@ -1264,6 +1634,14 @@ Instructions:
 - No medical diagnosis or medication advice.`;
 }
 
+/**
+ * Returns a short canned reply for casual acknowledgement messages.
+ * Responses are deterministic but vary slightly based on a hash of the message,
+ * so repeated "thanks" messages don't always get the exact same reply.
+ *
+ * @param lang - Display language
+ * @param seed - The user's message; used to deterministically select a reply variant
+ */
 function casualAcknowledgementReply(lang: LangCode, seed: string): string {
   const en = ["No problem.", "Glad I could help.", "Okay.", "You're welcome.", "Happy to help."];
   const ms = ["Tiada masalah.", "Senang dapat membantu.", "Okay.", "Sama-sama.", "Dengan senang hati."];
@@ -1274,6 +1652,10 @@ function casualAcknowledgementReply(lang: LangCode, seed: string): string {
   return en[idx]!;
 }
 
+/**
+ * Returns a canned reply asking the user to clarify which food or app feature they mean.
+ * Used when the message looks like a complaint or confusion report.
+ */
 function complaintClarificationReply(lang: LangCode): string {
   const labels: Record<LangCode, string> = {
     en: "Could you tell me which food or part of the app you mean? I will try to help.",
@@ -1283,6 +1665,10 @@ function complaintClarificationReply(lang: LangCode): string {
   return labels[lang];
 }
 
+/**
+ * Returns a reply asking the user which food to explain.
+ * Used when the message is a follow-up question but no scan context exists.
+ */
 function followUpWithoutContextReply(lang: LangCode): string {
   const labels: Record<LangCode, string> = {
     en: "Which food would you like me to explain?",
@@ -1292,7 +1678,19 @@ function followUpWithoutContextReply(lang: LangCode): string {
   return labels[lang];
 }
 
-/** Meta / feedback — not food names; must not become food cards or AI estimates. */
+/**
+ * Returns true when the message is purely conversational / meta feedback and
+ * should NEVER be treated as a food query under any circumstances.
+ *
+ * This includes phrases like "not available", "that is wrong", "what do you mean",
+ * and various Chinese/Malay equivalents. It also catches short messages that
+ * contain words like "wrong", "why", or "available" without any food lexeme,
+ * as well as single-token messages that are clearly not food names.
+ *
+ * Used as a final guard to prevent messages like "dont talk to me" or "pmg"
+ * from ever entering the food analysis pipeline even if a DB pre-check
+ * somehow produces a spurious candidate match.
+ */
 function isConversationalOnlyMessage(text: string): boolean {
   if (isFoodFollowUpQuestion(text)) return false;
   const n = normalizeFoodText(text);
@@ -1422,6 +1820,10 @@ const GENERIC_NON_FOOD_TOKENS = new Set(
   ].map(normalizeFoodText)
 );
 
+/**
+ * Returns true if every token in the given phrase is a generic non-food word.
+ * Used to block phrases like "who am i" or "ok thanks" from entering the food pipeline.
+ */
 function tokensAreOnlyGenericNonFood(phrase: string): boolean {
   const tokens = normalizeFoodText(phrase)
     .split(" ")
@@ -1429,6 +1831,12 @@ function tokensAreOnlyGenericNonFood(phrase: string): boolean {
   return tokens.length > 0 && tokens.every((tok) => GENERIC_NON_FOOD_TOKENS.has(tok));
 }
 
+/**
+ * A set of words that should be stripped from a food candidate before passing it to AI estimation.
+ * These are common query/command words that are not part of the food name itself
+ * (e.g. "help", "analyze", "check", "this", "please").
+ * CJK stopwords are also included for Chinese-language queries.
+ */
 const TYPED_FOOD_STOPWORDS = new Set(
   [
     "a",
@@ -1485,7 +1893,22 @@ const TYPED_FOOD_STOPWORDS = new Set(
   ].map(normalizeFoodText)
 );
 
-/** Gate AI-estimated cards: only when the extracted string plausibly names food/drink. */
+/**
+ * Gate function for generating AI food cards.
+ * Returns true only when the extracted candidate string plausibly names a food or drink.
+ *
+ * Rejects:
+ *   - Conversational phrases ("ok thanks", "what do you mean")
+ *   - Generic non-food tokens only ("who am i")
+ *   - Command-only phrases ("help me analyze")
+ *   - Follow-up questions ("why is it high?")
+ *   - CJK strings outside a reasonable length range (< 2 or > 16 characters)
+ *   - Latin phrases with only stopword tokens
+ *   - Phrases longer than 6 tokens (too long to be a dish name)
+ *
+ * @param name - Extracted food name candidate (normalised)
+ * @returns True if the string looks like a real food/drink name
+ */
 function looksLikePlausibleFoodName(name: string): boolean {
   const n = normalizeFoodText(name);
   if (!n || isConversationalOnlyMessage(n)) return false;
@@ -1509,27 +1932,51 @@ function looksLikePlausibleFoodName(name: string): boolean {
   return n.length >= 2 && n.length <= 48;
 }
 
-/** 3-letter (or shorter) tokens that are still credible dishes/drinks alone. */
+/**
+ * A set of very short (3 letters or fewer) Latin tokens that are still credible food names.
+ * Without this, single-syllable food names like "teh" or "mee" would be rejected
+ * by the length-based plausibility check in looksLikePlausibleFoodName.
+ */
 const SHORT_REAL_FOOD_TOKENS = new Set(
   ["teh", "mee", "kui", "egg", "pis", "bao", "tau", "rot", "pho"].map(normalizeFoodText)
 );
 
 /**
+ * A large regex that matches explicit food/drink names across Malaysian, Chinese, and international cuisines.
+ * Used as the primary "is this message about a food?" signal before running full intent classification.
+ *
+ * Includes common food names like pizza, nasi lemak, teh tarik, roti canai, cendol, bubble tea, etc.
+ * Also covers plural forms (cookies, biscuits, chips) via word boundary patterns.
+ *
  * Strict gate for AI-generated food cards only (DB matches use matchFoodQuery only).
- * Uncertain → false (no card; caller may send clarification).
+ * Uncertain inputs that match this regex only qualify for a food card, not generic AI chat.
  * Plurals like cookies/biscuits/chips/crackers are included explicitly.
  */
 const REAL_FOOD_LEXEME_RE =
   /\b(pizza|burgers?|fried\s*rice|chicken\s*rice|hainanese|rice|fried|cendol|chendol|teh\s*o|teh\s*tarik|tarik|limau|bandung|kopi|roti|canai|mee|maggie|maggi|curry|soups?|sate|satay|laksa|porridge|noodles?|wontons?|wantans?|dumplings?|chicken|beef|fish|shrimp|prawns?|crabs?|cakes?|bread|toast|sandwiches?|salads?|pasta|steak|sushi|ramen|pho|pie|dim\s*sum|char\s*kuey|kuey\s*teow|kuay\s*teow|bee\s*hoon|bihun|rendang|ketupat|lemang|biryani|dhal|dhall|idli|thosai|milo|horlicks|juice|cola|soda|coffee|tea|tea\s*o|latte|espresso|bubble|boba|cheese|nasi|lemak|nasi\s*lemak|porridge|congee|goreng|kaya|popiah|rojak|ais\s*kacang|ice\s*kacang|murtabak|pisang|tahu|tauhu|daging|ayam|ikan|sotong|udang|nuggets?|wings?|waffles?|pancakes?|croissants?|donuts?|doughnuts?|muffins?|smoothie|milkshake|yogurt|yoghurt|cereal|oats|granola|spring\s*rolls?|egg\s*tart|custard|custard\s*bun|bao\s*pau|mantou|longan|lychee|rambutan|durian|mango|papaya|coconut|tempeh|tofu|quinoa|couscous|burritos?|tacos?|quesadillas?|nachos?|falafel|hummus|wraps?|bagels?|pretzels?|crackers?|biscuits?|cookies?|brownies?|macaron|macaroons?|gelato|sorbet|churros?|kimchi|bibimbap|bulgogi|gyoza|edamame|poke|poutine|bruschetta|ravioli|gnocchi|lasagna|paella|frittata|omelette|omelet|crepe|scone|rolls?|sub|hoagie|kebabs?|shawarma|samosas?|pakora|pulut|ketupat|lontong|nasi\s*kandar|nasi\s*dagang|nasi\s*kerabu|lemper|kuih|pulut|tapai|cincau|soya|soy\s*milk|almond\s*milk|oat\s*milk|grass\s*jelly|bubble\s*tea|bbt|milk\s*tea|fruit\s*juice|orange\s*juice|apple\s*juice|celery\s*juice|carrot\s*juice|barley|chrysanthemum|wintermelon|sugarcane|sugar\s*cane|air\s*tebu|sirap\s*bandung|teh\s*ping|ais\s*limau|teh\s*ais|chips?)\b/iu;
 
+/**
+ * Returns only the Latin alphabet characters from a string (a–z, A–Z).
+ * Used by latinTokenHasVowelLetters and looksLikeLatinGibberishToken to
+ * check whether a token looks like a real word rather than keyboard gibberish.
+ */
 function latinLettersOnly(s: string): string {
   return s.replace(/[^a-z]/gi, "");
 }
 
+/** Returns true if the string contains at least one vowel letter (a, e, i, o, u, y). */
 function latinTokenHasVowelLetters(s: string): boolean {
   return /[aeiouy]/i.test(latinLettersOnly(s));
 }
 
+/**
+ * Returns true if a single Latin token looks like random gibberish rather than a real word.
+ * Gibberish detection rules:
+ *   - Short token (≤ 5 letters) with no vowel letters (e.g. "qwrt", "bcd")
+ *   - Token is all one repeated character (e.g. "aaaa", "zzzz")
+ *
+ * CJK tokens are never considered gibberish (they have no vowel concept).
+ */
 function looksLikeLatinGibberishToken(token: string): boolean {
   if (hasCjk(token)) return false;
   const letters = latinLettersOnly(token);
@@ -1539,11 +1986,20 @@ function looksLikeLatinGibberishToken(token: string): boolean {
   return false;
 }
 
+/**
+ * Returns true if any token in the normalised phrase looks like Latin gibberish.
+ * Used as a pre-filter to reject keyboard mashing like "qwerty nasi" from food matching.
+ */
 function looksLikeRandomLetterGibberishPhrase(n: string): boolean {
   const tokens = n.split(/\s+/).filter(Boolean);
   return tokens.some((tok) => looksLikeLatinGibberishToken(tok));
 }
 
+/**
+ * A set of short command-only phrases that must never trigger AI food card estimation.
+ * These phrases describe an action ("help me analyze") but do not name any food,
+ * so asking the AI to estimate a food card for them would produce nonsense.
+ */
 const COMMAND_ONLY_CANDIDATE_PHRASES = new Set(
   [
     "help me",
@@ -1558,6 +2014,23 @@ const COMMAND_ONLY_CANDIDATE_PHRASES = new Set(
 
 /**
  * Before AI fallback: true only when the candidate is likely a real food/drink name.
+ */
+/**
+ * The final strict gate before calling getEstimatedFoodCards.
+ * Returns true ONLY when the candidate string is very likely a real food/drink name.
+ *
+ * This is stricter than looksLikePlausibleFoodName because an AI estimation
+ * call is expensive (Groq API), so false positives should be minimised.
+ *
+ * Rejection criteria (in addition to looksLikePlausibleFoodName checks):
+ *   - Contains interrogative openers (who, what, why) without a food lexeme
+ *   - Contains "am i", "are you", "is this" patterns
+ *   - Random letter gibberish (e.g. "qwerty", "xyz")
+ *   - CJK strings outside a reasonable length range
+ *
+ * @param candidate        - Extracted food name candidate
+ * @param _originalMessage - Original message (reserved for future use)
+ * @returns True if the candidate is likely a real food name worth sending to AI
  */
 function isLikelyRealFoodName(candidate: string, _originalMessage: string): boolean {
   const n = normalizeFoodText(candidate);
@@ -1598,13 +2071,35 @@ function isLikelyRealFoodName(candidate: string, _originalMessage: string): bool
   return true;
 }
 
+/**
+ * The three possible classifications for a user message.
+ * Used by classifyChatIntent to determine which processing path to take.
+ *
+ * - "food_analysis_request": user is asking about a specific food or drink
+ * - "follow_up_question": user is asking a follow-up about risk/nutrition from a scan
+ * - "normal_chat": everything else (health questions, greetings, complaints, etc.)
+ */
 type ChatIntent = "food_analysis_request" | "normal_chat" | "follow_up_question";
 
+/**
+ * A set of tokens that are explicitly non-food AND non-conversational.
+ * Used to reject short messages made entirely of these tokens from food analysis.
+ * Includes tech/meta words (abc, qwe, pmg) and social rejection phrases (dont, stop, leave).
+ */
 const NON_FOOD_CHAT_TOKENS = new Set(
   ["dont", "don't", "talk", "stop", "leave", "alone", "away", "pmg", "abc", "qwe"].map(normalizeFoodText)
 );
 
-/** Social / meta phrases that must never enter food-analysis (default is normal_chat). */
+/**
+ * Returns true when the message is explicitly social/meta by known exact patterns.
+ * These are phrases that should always route to normal_chat, never food analysis,
+ * even if the DB pre-check somehow produces a match.
+ *
+ * Includes: "dont talk to me", "leave me alone", "who am i", single gibberish tokens,
+ * and any message made entirely of generic non-food and non-food-chat tokens.
+ *
+ * Social / meta phrases that must never enter food-analysis (default is normal_chat).
+ */
 function isExplicitNormalChatMessage(message: string): boolean {
   const n = normalizeFoodText(message);
   if (!n) return true;
@@ -1641,15 +2136,29 @@ function isExplicitNormalChatMessage(message: string): boolean {
   return false;
 }
 
+/**
+ * A compound regex combining food analysis verbs (analyze, check, nutrition, sugar, etc.)
+ * and health/dietary terms across English and Malay/Chinese.
+ * Used as part of isFoodAnalysisRequestIntent to detect messages with clear food intent.
+ */
 const FOOD_ANALYSIS_VERB_RE =
   /\b(analyze|analyse|analysis|check|compare|contrast|scan|menu|versus|vs\b|healthy|unhealthier|unhealthy|nutrition|nutrient|calorie|calories|\bgi\b|glycemic|sugar|sodium|salt|\bfat\b|cholesterol|fiber|fibre|eat|drink|makan|minum|makanan|minuman|meal|snack|dish|食物|分析|健康|营养|热量|糖|钠|脂肪|可以吃|能不能吃|可不可以吃|能吃吗|安全吗|boleh makan|semak|analisis)\b/iu;
 
+/**
+ * A secondary food hint regex covering common Malaysian and international dish names.
+ * Shorter and faster than REAL_FOOD_LEXEME_RE; used together with it in hasFoodLexeme.
+ */
 const DISH_OR_DRINK_HINT_RE =
   /\b(nasi|lemak|pizza|cendol|teh|tarik|kopi|roti|canai|mee|maggie|maggi|rice|fried|cake|bread|egg|curry|soups?|sate|satay|burgers?|cola|juice|ais|limau|bandung|laksa|porridge|noodles?|wontons?|dumplings?|tahu|tauhu|rendang|ketupat|lemang|biryani|hainanese|toast|sandwiches?|ramen|pho|sushi|steak|pasta|salads?|oats|milo|horlicks|soya|soy|char\s+kuey|dim\s*sum|cookies?|biscuits?|crackers?|chips?)\b/iu;
 
 /**
- * Test a normalised string (or its token-by-token de-pluralised form) against
- * the food lexeme regexes.  Handles cookies→cookie, biscuits→biscuit, etc.
+ * Returns true if the normalised string contains at least one known food/drink lexeme.
+ * Tests against both REAL_FOOD_LEXEME_RE and DISH_OR_DRINK_HINT_RE.
+ * Also handles common English plural suffixes (cookies→cookie, sandwiches→sandwich)
+ * so pluralised food names are matched even if the regex only has singular forms.
+ *
+ * @param n - Normalised food name or query string
+ * @returns True if a food lexeme is present
  */
 function hasFoodLexeme(n: string): boolean {
   if (REAL_FOOD_LEXEME_RE.test(n) || DISH_OR_DRINK_HINT_RE.test(n)) return true;
@@ -1662,7 +2171,23 @@ function hasFoodLexeme(n: string): boolean {
     (REAL_FOOD_LEXEME_RE.test(depluralised) || DISH_OR_DRINK_HINT_RE.test(depluralised));
 }
 
-/** Positive food-analysis intent only — never default true for unknown text. */
+/**
+ * Returns true ONLY when the message is positively signalling food analysis intent.
+ * The default is false — food analysis is opt-in via positive signals only.
+ *
+ * Positive signals:
+ *   - Contains a food lexeme AND a health/analysis verb ("check nasi lemak")
+ *   - Contains "is/are/can i/should i" + "healthy/safe/eat" + food lexeme
+ *   - Contains a dish name within 1–5 tokens (short food-only messages)
+ *
+ * NOT a positive signal:
+ *   - Interrogative-only openers (who/what/why/when/where/which) without a food lexeme
+ *   - Explicitly conversational messages
+ *   - CJK messages without a food lexeme
+ *
+ * This is intentionally conservative — false negatives (missing a food request)
+ * are less harmful than false positives (treating a chat message as a food query).
+ */
 function isFoodAnalysisRequestIntent(message: string): boolean {
   const n = normalizeFoodText(message);
   if (!n || n.length > 120) return false;
@@ -1705,7 +2230,15 @@ function isFoodAnalysisRequestIntent(message: string): boolean {
 }
 
 /**
- * True when the message is explicitly conversational / non-food by known pattern.
+ * Returns true when the message is explicitly conversational or non-food by multiple
+ * combined criteria. Used as a combined guard before the DB pre-check override.
+ *
+ * True when ANY of the following is true:
+ *   - isConversationalOnlyMessage (exact match / pattern match)
+ *   - isCasualAcknowledgement ("ok", "thanks", etc.)
+ *   - isComplaintOrClarification ("it's wrong", "not working")
+ *   - isExplicitNormalChatMessage (social / meta phrases, gibberish tokens)
+ *
  * These messages must NEVER be promoted to food_analysis_request even if the DB
  * pre-check somehow produces a spurious candidate match.
  */
@@ -1719,8 +2252,20 @@ function isDefinitelyNonFoodMessage(message: string): boolean {
 }
 
 /**
- * Classify user message before any food extraction or AI food cards.
- * Default is normal_chat — food analysis is opt-in via positive signals only.
+ * Classifies a user message into one of three intents before any food processing begins.
+ *
+ * Intent routing:
+ *   - "follow_up_question": asking why something is high/low, what a risk means, etc.
+ *     → routed to buildFollowUpSystemPrompt with scan context
+ *   - "food_analysis_request": message contains a food lexeme and analysis intent
+ *     → routed to food extraction → DB match → AI estimate pipeline
+ *   - "normal_chat": everything else (default — food analysis is opt-in)
+ *     → routed to respondNormalChat (Llama or canned reply)
+ *
+ * The default is "normal_chat" — never food_analysis_request for unknown inputs.
+ *
+ * @param message - Raw user message
+ * @returns The classified ChatIntent
  */
 function classifyChatIntent(message: string): ChatIntent {
   if (isFoodFollowUpQuestion(message)) return "follow_up_question";
@@ -1732,13 +2277,24 @@ function classifyChatIntent(message: string): ChatIntent {
   return "normal_chat";
 }
 
+/** Convenience wrapper that returns true when the intent classification is "food_analysis_request". */
 function messageIndicatesFoodRelatedQuery(message: string): boolean {
   return classifyChatIntent(message) === "food_analysis_request";
 }
 
 /**
- * STEP 1 — Pull dish/drink names from typed text (never return raw full sentences).
- * Caller must only invoke when classifyChatIntent === food_analysis_request.
+ * Extracts one or more food/drink names from a user message for database lookup.
+ *
+ * This is STEP 1 of the food analysis pipeline. It should only be called when
+ * classifyChatIntent has already returned "food_analysis_request".
+ *
+ * Strategy:
+ *   1. Run extractFoodQueryCandidate to get a clean candidate string
+ *   2. Try to split into multiple food names (for queries like "nasi lemak and teh tarik")
+ *   3. For each part, validate it looks like a plausible food name before including it
+ *
+ * @param message - Raw user message classified as food_analysis_request
+ * @returns Array of extracted food name strings (may be empty if extraction fails)
  */
 function extractFoodNamesFromMessage(message: string): string[] {
   if (classifyChatIntent(message) !== "food_analysis_request") return [];
@@ -1757,6 +2313,7 @@ function extractFoodNamesFromMessage(message: string): string[] {
   return [candidate];
 }
 
+/** Returns a clarification reply asking which food the user wants to check. */
 function whichFoodClarificationReply(lang: LangCode): string {
   const labels: Record<LangCode, string> = {
     en: "Which food or drink would you like me to check?",
@@ -1766,7 +2323,7 @@ function whichFoodClarificationReply(lang: LangCode): string {
   return labels[lang];
 }
 
-/** When extraction looked food-like but the term is not a credible dish/drink name for AI. */
+/** Returns a more specific clarification reply when the query looked food-like but wasn't a credible dish name. */
 function couldYouSpecifyFoodNameReply(lang: LangCode): string {
   const labels: Record<LangCode, string> = {
     en: "Could you tell me the food or drink name you want me to check?",
@@ -1776,6 +2333,11 @@ function couldYouSpecifyFoodNameReply(lang: LangCode): string {
   return labels[lang];
 }
 
+/**
+ * Returns true if the message is a general food/health question without a specific dish name.
+ * Used to decide whether to return whichFoodClarificationReply vs couldYouSpecifyFoodNameReply.
+ * Examples: "is this healthy?", "what should I eat?", "boleh makan?"
+ */
 function isVagueFoodQuestion(message: string): boolean {
   const n = normalizeFoodText(message);
   if (!n || isConversationalOnlyMessage(n)) return false;
@@ -1786,6 +2348,18 @@ function isVagueFoodQuestion(message: string): boolean {
   );
 }
 
+/**
+ * Strips common question wrappers and health-assessment adjectives from a normalised
+ * food query to extract the bare food name. For example:
+ *   "is nasi lemak healthy?" → "nasi lemak"
+ *   "can i eat teh tarik?" → "teh tarik"
+ *   "i want to eat pizza" → "pizza"
+ *
+ * Wrappers are removed iteratively using removeNormalizedPhrase until no more can be stripped.
+ *
+ * @param message - Raw user message
+ * @returns Normalised string with intent wrappers removed
+ */
 function stripFoodQuestionIntent(message: string): string {
   let normalized = normalizeFoodText(message);
   const wrappers = [
@@ -1866,6 +2440,15 @@ function stripFoodQuestionIntent(message: string): string {
   return normalized.trim().replace(/\s+/g, " ");
 }
 
+/**
+ * Formats an unavailable food name for display in the chatbot reply.
+ * For CJK names, whitespace is removed for compact display.
+ * For Latin names, title-case is applied (first letter of each word capitalised).
+ *
+ * @param query - The raw food query that was not found
+ * @param lang  - Display language (affects CJK handling)
+ * @returns Formatted food name string, or "" if the query is empty
+ */
 function formatUnavailableFoodName(query: string | undefined, lang: LangCode): string {
   const normalized = normalizeFoodText(query ?? "");
   if (!normalized) return "";
@@ -1877,6 +2460,12 @@ function formatUnavailableFoodName(query: string | undefined, lang: LangCode): s
     .join(" ");
 }
 
+/**
+ * Removes all occurrences of a normalised phrase from a normalised text string.
+ * For CJK phrases, a simple string split-join is used (no word boundaries needed).
+ * For Latin phrases, a regex with word-boundary-aware anchors is used to avoid
+ * removing the phrase when it is part of a longer word.
+ */
 function removeNormalizedPhrase(normalizedText: string, phrase: string): string {
   const normalizedPhrase = normalizeFoodText(phrase);
   if (!normalizedPhrase) return normalizedText;
@@ -1888,10 +2477,24 @@ function removeNormalizedPhrase(normalizedText: string, phrase: string): string 
   return normalizedText.replace(new RegExp(`(^|\\s)${escapeRegExp(normalizedPhrase)}(?=\\s|$)`, "gu"), " ");
 }
 
+/**
+ * Escapes special regex metacharacters in a string so it can be safely
+ * embedded inside a RegExp constructor without unintended pattern matches.
+ * Example: "teh tarik (kurang manis)" → "teh tarik \\(kurang manis\\)"
+ */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Computes the Levenshtein edit distance between two strings.
+ * Used by similarityScore for fuzzy food name matching.
+ * Implemented with a two-row rolling array to reduce memory usage.
+ *
+ * @param a - First string
+ * @param b - Second string
+ * @returns Number of single-character edits (insertions, deletions, substitutions)
+ */
 function levenshteinDistance(a: string, b: string): number {
   const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
   const current = Array.from({ length: b.length + 1 }, () => 0);
@@ -1911,12 +2514,23 @@ function levenshteinDistance(a: string, b: string): number {
   return previous[b.length];
 }
 
+/**
+ * Returns a similarity score between 0.0 and 1.0 for two strings.
+ * Score of 1.0 means identical; 0.0 means completely different.
+ * Computed as: 1 - (editDistance / longerStringLength)
+ *
+ * Used to rank fuzzy food name matches in matchFoodQuery.
+ */
 function similarityScore(a: string, b: string): number {
   const longer = Math.max(a.length, b.length);
   if (longer === 0) return 1;
   return 1 - levenshteinDistance(a, b) / longer;
 }
 
+/**
+ * Returns true if `candidate` tokens appear as a contiguous subsequence inside `source` tokens.
+ * Used for embedded token matching in matchFoodQuery (e.g. query "chicken rice" inside "hainanese chicken rice").
+ */
 function hasContiguousTokens(source: string[], candidate: string[]): boolean {
   if (candidate.length === 0 || candidate.length > source.length) return false;
   for (let i = 0; i <= source.length - candidate.length; i++) {
@@ -1932,17 +2546,26 @@ function hasContiguousTokens(source: string[], candidate: string[]): boolean {
   return false;
 }
 
+/** Returns true if the string contains at least one CJK (Han) Unicode character. */
 function hasCjk(value: string): boolean {
   return /\p{Script=Han}/u.test(value);
 }
 
-/** Normalized query → normalized canonical name (must match DB normalizeFoodText output). */
+/**
+ * Hard-coded aliases for food names that users commonly type differently from the database entry.
+ * Maps the normalised user query → normalised canonical DB name.
+ * Example: "iced milo" → "milo ice" (matching the actual database entry name).
+ */
 const NORMALIZED_FOOD_QUERY_ALIASES: Record<string, string> = {
   "iced milo": "milo ice",
   "ice milo": "milo ice",
   "milo iced": "milo ice",
 };
 
+/**
+ * Internal shape for indexed food name entries, used in matchFoodQuery for efficient matching.
+ * Each FoodItem generates one FoodNameEntry per language name it has.
+ */
 type FoodNameEntry = {
   food: FoodItem;
   name: string;
@@ -1951,7 +2574,17 @@ type FoodNameEntry = {
   nameTokens: string[];
 };
 
-/** True when `nameTokens` begins with every token of `queryTokens` in order (extra trailing tokens = modifiers). */
+/**
+ * Returns true if every token in the normalised name string begins with
+ * every token of the query string (in order). This checks whether the query
+ * could be a prefix of the food name.
+ *
+ * Example: query "nasi" prefix-matches "nasi lemak" and "nasi kandar".
+ *
+ * @param nameTokens  - Tokenised normalised food name
+ * @param queryTokens - Tokenised normalised query
+ * @returns True if nameTokens starts with all queryTokens
+ */
 function tokensPrefix(nameTokens: string[], queryTokens: string[]): boolean {
   if (queryTokens.length > nameTokens.length) return false;
   for (let i = 0; i < queryTokens.length; i++) {
@@ -1960,19 +2593,50 @@ function tokensPrefix(nameTokens: string[], queryTokens: string[]): boolean {
   return true;
 }
 
+/**
+ * Returns the minimum token count across all language names for a given food item.
+ * Used in pickShortestCandidateFood to prefer simpler/shorter food names when
+ * multiple DB entries tie during matching.
+ */
 function minTokenCountAcrossNames(food: FoodItem): number {
   return Math.min(
     ...getFoodNames(food).map((n) => normalizeFoodText(n).split(" ").filter(Boolean).length)
   );
 }
 
-/** When multiple DB rows tie, prefer the shortest canonical name (fewest tokens). */
+/**
+ * When multiple database entries match equally well, prefer the one with the shortest
+ * canonical name (fewest tokens). For example, if "teh" matches both "Teh O" and
+ * "Teh O Ais Limau", "Teh O" is preferred because it is the more direct match.
+ */
 function pickShortestCandidateFood(foods: FoodItem[]): FoodItem {
   return foods.reduce((best, cur) =>
     minTokenCountAcrossNames(cur) < minTokenCountAcrossNames(best) ? cur : best
   );
 }
 
+/**
+ * Tries to match a user's food query against the SIHAT food database.
+ *
+ * Matching strategy (in order of confidence):
+ *   1. Exact normalised match (highest confidence)
+ *   2. Exact compact match (for CJK where spaces differ)
+ *   3. Alias lookup (e.g. "iced milo" → "milo ice")
+ *   4. CJK prefix match (user typed the start of a longer food name)
+ *   5. CJK substring match
+ *   6. Latin token prefix match (e.g. "nasi" matches "nasi lemak")
+ *   7. Latin contiguous token embed match (e.g. "chicken rice" inside "hainanese chicken rice")
+ *   8. Fuzzy similarity match (Levenshtein, score >= 0.92 for confident single match)
+ *   9. Fuzzy suggestion match (score >= 0.74 for ambiguous suggestions)
+ *
+ * Returns:
+ *   - { status: "matched", food }   — exactly one confident result
+ *   - { status: "ambiguous", foods } — multiple similar results (up to 3)
+ *   - { status: "none" }            — no usable match found
+ *
+ * @param query - Extracted food name candidate (raw, will be normalised internally)
+ * @param foods - Full list of FoodItem objects from the database
+ */
 function matchFoodQuery(query: string, foods: FoodItem[]): FoodMatchResult {
   const normalizedQuery = normalizeFoodText(query);
   const compactQuery = compactFoodText(query);
@@ -2103,6 +2767,7 @@ function matchFoodQuery(query: string, foods: FoodItem[]): FoodMatchResult {
   return { status: "none" };
 }
 
+/** Returns true when the scan context contains at least one analysed food item in any category. */
 function hasAnalysedFoods(scanContext: ChatRequest["scanContext"]): boolean {
   if (!scanContext) return false;
   return (["Main Dish", "Appetizer", "Dessert", "Drinks"] as const).some(
@@ -2110,6 +2775,10 @@ function hasAnalysedFoods(scanContext: ChatRequest["scanContext"]): boolean {
   );
 }
 
+/**
+ * Returns true when the user's message is asking for the best food choice from their scanned menu.
+ * Checks both Chinese characters (最好, 推荐) and English/Malay phrases.
+ */
 function isBestChoiceQuestion(message: string): boolean {
   const normalized = normalizeFoodText(message);
   if (!normalized) return false;
@@ -2134,6 +2803,14 @@ function isBestChoiceQuestion(message: string): boolean {
   return phrases.some((phrase) => normalized.includes(normalizeFoodText(phrase)));
 }
 
+/**
+ * Detects whether the user's message mentions a specific scan category
+ * (Main Dish, Appetizer, Dessert, or Drinks) in any supported language.
+ * Used when the user asks "what should I have for drinks?" or "主食里最好是什么?"
+ *
+ * @param message - User's raw message
+ * @returns Matched ScanCategory, or null if no category is mentioned
+ */
 function detectScanCategory(message: string): ScanCategory | null {
   const normalized = normalizeFoodText(message);
   const compact = normalized.replace(/\s+/g, "");
@@ -2158,6 +2835,11 @@ function detectScanCategory(message: string): ScanCategory | null {
   return null;
 }
 
+/**
+ * Returns true when the user's message is EXACTLY a category selection (e.g. "Main Dish", "饮料")
+ * rather than a general question that happens to mention a category.
+ * Used to decide whether to prompt the user to pick a category or show results directly.
+ */
 function isCategorySelectionMessage(message: string, category: ScanCategory | null): boolean {
   if (!category) return false;
   const normalized = normalizeFoodText(message);
@@ -2176,6 +2858,14 @@ function isCategorySelectionMessage(message: string, category: ScanCategory | nu
   });
 }
 
+/**
+ * Identifies if the user's best-choice question mentions a specific category
+ * (e.g. "what is the best drink?" → "Drinks"). More permissive than detectScanCategory
+ * as it does substring matching rather than exact matching.
+ *
+ * @param message - User's raw message
+ * @returns Matched ScanCategory, or null if no category is found
+ */
 function findBestChoiceCategory(message: string): ScanCategory | null {
   const normalized = normalizeFoodText(message);
   const compact = normalized.replace(/\s+/g, "");
@@ -2234,12 +2924,23 @@ function askCategoryReply(lang: LangCode): ChatResponse {
   return { reply: text, quickReplies: getScanCategoryButtons(lang) };
 }
 
+/**
+ * Selects the localised text from a scan food item's tip or best_reason field.
+ * These fields can be either a plain string or a language-keyed object.
+ * Falls back to English if the requested language is not available.
+ */
 function selectLocalizedText(value: ScanFoodItem["tip"] | ScanFoodItem["best_reason"], lang: LangCode): string {
   if (!value) return "";
   if (typeof value === "string") return value;
   return value[lang] || value.en || "";
 }
 
+/**
+ * Tries to match a food name from the scan result exactly against the database.
+ * Used in buildBestChoiceResponse to retrieve full nutritional data for the best pick.
+ * Tries raw (lowercased) match first, then normalised match.
+ * Returns null if multiple matches are found (ambiguous) or none.
+ */
 function exactDatasetFoodMatch(foodName: string, foods: FoodItem[]): FoodItem | null {
   const rawName = foodName.trim().toLowerCase();
   if (!rawName) return null;
@@ -2257,6 +2958,11 @@ function exactDatasetFoodMatch(foodName: string, foods: FoodItem[]): FoodItem | 
   return normalizedMatches.length === 1 ? normalizedMatches[0] : null;
 }
 
+/**
+ * Parses a nutrient value that may be a raw number or a string with a unit suffix.
+ * Returns null if the value cannot be meaningfully parsed to a finite number.
+ * Example: "12.5g" → 12.5, "380 mg" → 380, 10 → 10, "" → null
+ */
 function parseNutrientNumber(value: string | number | undefined): number | null {
   if (value === undefined || value === null) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -2266,6 +2972,19 @@ function parseNutrientNumber(value: string | number | undefined): number | null 
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Generates a warning line for a specific nutrient when its value exceeds the
+ * Three Highs threshold. Used to build HIGH_NUTRITION flags in the system prompt
+ * so Llama knows to mention the nutrient risk in its reply.
+ *
+ * Thresholds (same as computeRiskFromIndicators):
+ *   - Sugar: > 15g
+ *   - Sodium: > 600mg
+ *   - Fat: > 7g
+ *   - GI: >= 70
+ *
+ * Returns an empty string if the value is not high (no warning line needed).
+ */
 function nutritionWarningLine(kind: "sugar" | "sodium" | "fat" | "gi", value: number | null, lang: LangCode): string {
   if (value === null) return "";
   const isHigh =
@@ -2284,11 +3003,20 @@ function nutritionWarningLine(kind: "sugar" | "sodium" | "fat" | "gi", value: nu
   return `!HIGH_NUTRITION! ${labels[lang][kind]}`;
 }
 
+/**
+ * Returns the value as a string, or a fallback string if the value is undefined/null/empty.
+ * Used to safely format optional nutrient fields in reply text.
+ */
 function formatMaybeValue(value: string | number | undefined, fallback: string): string {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value);
 }
 
+/**
+ * Removes blank (whitespace-only) lines from a multi-line string.
+ * Used to clean up food summary text where optional lines (e.g. nutrient notes)
+ * may produce multiple consecutive blank lines when they are absent.
+ */
 function compactBlankLines(value: string): string {
   return value
     .split("\n")
@@ -2296,6 +3024,11 @@ function compactBlankLines(value: string): string {
     .join("\n");
 }
 
+/**
+ * Converts a raw risk value (string or unknown) to a numeric score for sorting.
+ * Used in getBestScanFood to rank scanned food items from safest to riskiest.
+ * Low = 1, Medium = 2, High = 3.
+ */
 function riskScore(risk: unknown): number {
   const normalized = normaliseRisk(risk);
   if (normalized === "Low") return 1;
@@ -2303,6 +3036,15 @@ function riskScore(risk: unknown): number {
   return 2;
 }
 
+/**
+ * Selects the best (lowest-risk) food from the scan context, optionally filtered by category.
+ * Ranking order: risk level (low first) → sodium → sugar → fat.
+ * If a category is specified, only items from that category are considered.
+ *
+ * @param scanContext - Non-null scan context from the request body
+ * @param category    - Optional category filter ("Main Dish", "Drinks", etc.)
+ * @returns The best ScanFoodItem, or null if no items are available
+ */
 function getBestScanFood(
   scanContext: NonNullable<ChatRequest["scanContext"]>,
   category: ScanCategory | null
@@ -2321,6 +3063,21 @@ function getBestScanFood(
   })[0] ?? null;
 }
 
+/**
+ * Builds the ChatResponse for a "best choice" query.
+ * Finds the lowest-risk food from the scan context (optionally within a category),
+ * cross-references it with the SIHAT database for accurate nutrient data, and formats
+ * a structured reply with food name, risk level, highlight notes, and a health tip.
+ *
+ * If the best choice food is found in the database, a proper FoodSummaryCard is shown.
+ * If it is not in the database, the AI-provided tip from the scan result is used instead.
+ *
+ * @param category    - Optional category to filter by (null = search all categories)
+ * @param scanContext - Non-null scan context with the scanned food items
+ * @param foods       - Full food database for cross-referencing
+ * @param lang        - Display language
+ * @returns A ChatResponse with the best choice food details
+ */
 function buildBestChoiceResponse(
   category: ScanCategory | null,
   scanContext: NonNullable<ChatRequest["scanContext"]>,
@@ -2404,6 +3161,14 @@ ${tip || unavailable}`),
   };
 }
 
+/**
+ * Normalises a raw risk string from the AI or database to the canonical capitalised form.
+ * Accepts variations like "LOW", "Low risk", "low", "high risk", etc.
+ * Defaults to "Medium" for any unrecognised value.
+ *
+ * @param raw - Raw risk value from AI response or database row
+ * @returns Canonical risk string: "Low" | "Medium" | "High"
+ */
 function normaliseRisk(raw: unknown): "Low" | "Medium" | "High" {
   const s = String(raw ?? "").toLowerCase().trim().replace(/\s+risk$/, "");
   if (s === "low") return "Low";
@@ -2413,6 +3178,25 @@ function normaliseRisk(raw: unknown): "Low" | "Medium" | "High" {
 
 // ─── SYSTEM PROMPT BUILDER ────────────────────────────────────────────────────
 
+/**
+ * Builds the full system prompt for the Siti health assistant chatbot.
+ *
+ * The prompt defines:
+ *   - Siti's role: friendly SIHAT health assistant for elderly Malaysian users
+ *   - Language instruction: respond entirely in the user's detected language
+ *   - Food scan context: injects scanned menu items from sessionStorage if available
+ *   - Response rules: short (max 4 sentences), no nutrition tables, warm tone
+ *   - Strict safety rules: no medical diagnosis, no medication advice
+ *   - Tone guidelines: professional but approachable, no slang, elderly-friendly
+ *
+ * The scan context is injected only when the user has previously scanned a menu.
+ * It tells Llama which foods were analysed and their risk levels so it can give
+ * specific advice rather than generic health guidance.
+ *
+ * @param language    - The user's detected language for response instructions
+ * @param scanContext - Optional scan results from the recommendation page
+ * @returns Complete system prompt string to pass to the Groq API
+ */
 function buildSystemPrompt(
   language: LangCode,
   scanContext: ChatRequest["scanContext"]
@@ -2425,7 +3209,9 @@ function buildSystemPrompt(
 
   const langInstruction = langInstructions[language];
 
-  // Build food context from sessionStorage scan results
+  // Build food context from sessionStorage scan results.
+  // Each scanned food item includes its category, risk level, and nutrient values.
+  // This section is only included when the user has previously analysed a menu.
   let foodContext = "";
   if (scanContext) {
     const allItems: string[] = [];
@@ -2493,10 +3279,25 @@ TONE & PERSONALITY:
 }
 
 // ─── GROQ LLAMA (CHATBOT ONLY) ────────────────────────────────────────────────
+//
+// This section handles all direct calls to the Groq API for conversational replies.
+// The chat route uses llama-3.3-70b-versatile only. The OCR model (llama-4-scout)
+// is used exclusively in app/api/predict/route.ts and is never called from here.
+//
+// Multiple API keys (GROQ_API_KEY_3/4 > GROQ_API_KEY > GROQ_API_KEY_2) are tried
+// in order to handle rate limiting and quota exhaustion gracefully.
 
+/** The Groq model used for all chatbot responses. */
 const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
+
+/** The Groq OpenAI-compatible chat completions endpoint. */
 const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
 
+/**
+ * Returns all configured Groq API keys in priority order.
+ * Keys are de-duplicated in case the same key is set under multiple env var names.
+ * Priority: GROQ_API_KEY_3/4 (dedicated chat keys) → GROQ_API_KEY → GROQ_API_KEY_2
+ */
 function getGroqChatKeys(): string[] {
   const keys = [
     process.env.GROQ_API_KEY_3,
@@ -2507,19 +3308,33 @@ function getGroqChatKeys(): string[] {
   return [...new Set(keys)];
 }
 
+/** Returns true if at least one Groq API key is available. */
 function hasGroqChatKey(): boolean {
   return getGroqChatKeys().length > 0;
 }
 
+/** Extracts a human-readable error message from an unknown caught error. */
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Parses the text content from a Groq API response payload, trimming whitespace. */
 function parseGroqChatText(data: unknown): string {
   const payload = data as { choices?: Array<{ message?: { content?: string } }> };
   return payload?.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
+/**
+ * Makes a single request to the Groq chat completions API with a given API key.
+ * Throws if the HTTP status is not OK, or if the response has no text content.
+ *
+ * @param systemPrompt - The system instruction to prepend before conversation history
+ * @param messages     - Conversation history (user + assistant turns)
+ * @param apiKey       - Groq API key to use for this request
+ * @param options      - Optional temperature and max_tokens overrides
+ * @returns The AI-generated reply text
+ * @throws Error if the API call fails or returns empty content
+ */
 async function callGroqChat(
   systemPrompt: string,
   messages: ChatMessage[],
@@ -2556,6 +3371,17 @@ async function callGroqChat(
   return text;
 }
 
+/**
+ * Attempts to generate a chat reply using all configured Groq API keys in order.
+ * Falls through to the next key when one fails (e.g. rate limit, quota exhaustion).
+ * Throws an error only if all configured keys have been exhausted.
+ *
+ * @param systemPrompt - The system instruction for this request
+ * @param messages     - Conversation history
+ * @param options      - Optional temperature and max_tokens
+ * @returns The first successful AI reply text
+ * @throws Error if all API keys fail
+ */
 async function generateGroqChatReply(
   systemPrompt: string,
   messages: ChatMessage[],
@@ -2578,7 +3404,34 @@ async function generateGroqChatReply(
 }
 
 // ─── AI FOOD CARD ESTIMATION ──────────────────────────────────────────────────
+//
+// When a food name is NOT found in the SIHAT database, we ask Groq Llama to estimate
+// its category, risk level, nutrient values, and a short health tip.
+// This is the "AI food card" feature shown in the chatbot with a disclaimer.
+//
+// The AI output is validated and re-checked against the database after estimation —
+// if the normalised AI food name now matches a DB entry, the DB card is used instead.
 
+/**
+ * Calls the Groq Llama API to estimate food card data for one or more food names
+ * that were NOT found in the SIHAT database.
+ *
+ * For a single food, a compact JSON object is requested.
+ * For multiple foods, a JSON array is requested (one entry per food name).
+ *
+ * The AI is instructed to:
+ *   - Return null for foodName if the input does not contain a real food
+ *   - Estimate sugar (g), sodium (mg), fat (g) per typical serving
+ *   - Assign risk level: "low" | "medium" | "high"
+ *   - Provide a short health tip in the requested language
+ *
+ * Risk level is validated using computeRiskFromIndicators to ensure consistency
+ * with the database risk classification thresholds.
+ *
+ * @param names - Array of food name strings to estimate
+ * @param lang  - Language for the health tip
+ * @returns Array of EstimatedFoodCard objects (empty array on any error)
+ */
 async function getEstimatedFoodCards(names: string[], lang: LangCode): Promise<EstimatedFoodCard[]> {
   if (!names.length) return [];
 
@@ -2707,7 +3560,29 @@ Rules:
 }
 
 /**
- * STEP 2–3 — Match SIHAT database first; AI estimate only for plausible non-DB foods.
+ * STEP 2–3 of the food analysis pipeline.
+ *
+ * For each extracted food name:
+ *   - STEP 2: Try to match it against the SIHAT database (exact → fuzzy)
+ *   - STEP 3: For unmatched names that look like real food, call getEstimatedFoodCards (AI fallback)
+ *
+ * After AI estimation, each AI card name is re-checked against the database
+ * (post-AI DB re-validation). The AI often normalises food names (e.g. "tell me teh tarik" → "Teh Tarik"),
+ * and the normalised name may now match a DB entry. Any such hit is promoted to a
+ * proper database card so the response never carries an AI disclaimer for a food in SIHAT.
+ *
+ * Response rules:
+ *   - Single food, 1 DB match → buildStructuredDatabaseFoodResponse (no AI call)
+ *   - Single food, 1 AI estimate → single estimatedFood card
+ *   - Multiple foods → multi-food response with both DB cards and AI cards combined
+ *   - Ambiguous single food → formatFoodSuggestions (user picks)
+ *
+ * @param message       - Original user message (used for logging and multi-food split fallback)
+ * @param foodNames     - Extracted food name strings from extractFoodNamesFromMessage
+ * @param foods         - Full food database
+ * @param requestLang   - Display language
+ * @param openFullLabels - Localised CTA button labels
+ * @returns NextResponse to return, or null if no food result could be built
  */
 async function processExtractedFoodNames(
   message: string,
@@ -2855,7 +3730,20 @@ async function processExtractedFoodNames(
   });
 }
 
-/** Normal chat path — no food extraction, cards, or View Detailed Analysis. */
+/**
+ * Handles the "normal_chat" intent path — no food extraction, cards, or "View Detailed Analysis" button.
+ *
+ * Routes to:
+ *   - casualAcknowledgementReply: for "ok", "thanks", etc.
+ *   - complaintClarificationReply: for "it's wrong", "not available"
+ *   - Groq chit-chat system prompt: for short conversational messages
+ *   - Full Groq health assistant system prompt: for general health questions
+ *
+ * @param message    - User's raw message
+ * @param history    - Conversation history
+ * @param requestLang - Detected display language
+ * @returns NextResponse with the chatbot reply
+ */
 async function respondNormalChat(
   message: string,
   history: ChatMessage[],
@@ -2892,10 +3780,37 @@ async function respondNormalChat(
 
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
 
+/**
+ * POST /api/chat
+ *
+ * The main entry point for all chatbot requests from the SIHAT frontend.
+ * Accepts a JSON body matching the ChatRequest interface and returns a JSON
+ * response matching the ChatResponse interface.
+ *
+ * Full routing decision tree:
+ *   1. Parse request body; return 400 if message is empty
+ *   2. Detect language from typed message (overrides UI language setting)
+ *   3. Fetch food database rows and transform into FoodItem array
+ *   4. Check for cart commands (add/remove/clear/view) → return cart result
+ *   5. Check for daily intake questions → return intake summary
+ *   6. Check for "best choice" or category selection → return best choice result
+ *   7. Check Groq API key availability
+ *   8. Classify intent (follow_up | food_analysis | normal_chat)
+ *   9. Run DB pre-check override for foods not caught by lexeme classifier
+ *  10. Route based on intent:
+ *      - follow_up_question → buildFollowUpSystemPrompt with scan context
+ *      - food_analysis_request → extract → DB match → AI estimate
+ *      - normal_chat → respondNormalChat
+ *
+ * Error handling:
+ *   - Any unexpected error returns a 200 response with a localised fallback message
+ *   - This prevents the frontend from showing an error state for transient failures
+ */
 export async function POST(req: NextRequest) {
   let requestLang: LangCode = "en";
 
   try {
+    // Step 1: Parse request body and extract all fields with safe defaults
     const body: ChatRequest = await req.json();
     const { message, history = [], language = "en", scanContext = null, cart = [], intakeSummary } = body;
     const selectedLang = toLangCode(language);
@@ -2904,16 +3819,23 @@ export async function POST(req: NextRequest) {
     if (!message?.trim()) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
+
+    // Step 2: Override UI language with language detected from the user's typed message.
+    // This allows users to type in Chinese even when the UI is set to English.
     requestLang = detectUserMessageLanguage(message) ?? selectedLang;
 
-    // Fetch food data for lookup
+    // Step 3: Fetch and transform all food data from the database once per request.
+    // This is used for cart matching, food lookup, and intake summary calculations.
     const rows = await getAllFoodData();
     const foods = transformFoodRows(rows);
 
-    // Check for cart command
+    // Step 4: Check for cart commands before intent classification.
+    // Cart commands take priority over everything else so food plan operations
+    // are always handled immediately regardless of the rest of the message.
     const command = parseCartCommand(message, foods, requestLang);
     if (command) {
       if (command.action === "view") {
+        // "view" returns the daily intake summary, not a raw cart list
         const summary = intakeSummary ?? buildDailyIntakeSummary(cart, "male", requestLang);
         return NextResponse.json({ reply: formatDailyIntakeSummary(summary, requestLang) });
       }
@@ -2921,11 +3843,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(result);
     }
 
+    // Step 5: Check for daily intake questions (separate from cart view command
+    // to catch natural-language variants like "how is my food plan today?").
     if (isDailyIntakeQuestion(message, requestLang)) {
       const summary = intakeSummary ?? buildDailyIntakeSummary(cart, "male", requestLang);
       return NextResponse.json({ reply: formatDailyIntakeSummary(summary, requestLang) });
     }
 
+    // Step 6: Check for "best choice" questions or category selection.
+    // These require scan context to be present — return a "no food analysed" message if not.
     const bestChoiceQuestion = isBestChoiceQuestion(message);
     const selectedCategory = detectScanCategory(message);
     const scanCategory = bestChoiceQuestion ? findBestChoiceCategory(message) : selectedCategory;
@@ -2943,6 +3869,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(buildBestChoiceResponse(scanCategory, analysedScanContext, foods, requestLang));
     }
 
+    // Step 7: Fail fast if no Groq API key is available at all.
     if (!hasGroqChatKey()) {
       throw new Error("No Groq API keys configured (GROQ_API_KEY_3/4 or GROQ_API_KEY/GROQ_API_KEY_2)");
     }
@@ -2953,11 +3880,13 @@ export async function POST(req: NextRequest) {
       zh: "打开完整分析",
     };
 
+    // Step 8: Classify the message intent.
     let intent = classifyChatIntent(message);
 
-    // ── Database-first override ───────────────────────────────────────────────
+    // Step 9: Database-first override for foods the lexeme classifier missed.
+    //
     // If the lexeme-based classifier returned normal_chat, attempt a quick DB
-    // lookup before giving up.  This ensures foods that exist in the SIHAT
+    // lookup before giving up. This ensures foods that exist in the SIHAT
     // database (e.g. "otak-otak", "rendang", local dishes) produce a structured
     // card even when they are absent from REAL_FOOD_LEXEME_RE.
     //
@@ -2977,6 +3906,7 @@ export async function POST(req: NextRequest) {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // Step 10: Route based on final intent.
     console.log(`[chat] intent: ${intent}`);
 
     if (intent === "follow_up_question") {
@@ -2997,10 +3927,10 @@ export async function POST(req: NextRequest) {
       return respondNormalChat(message, history, requestLang);
     }
 
-    // food_analysis_request only: extract → DB match → AI estimate (strict gates inside).
-    // If the DB pre-check already extracted the candidate, use it directly so we
-    // don't re-run intent classification inside extractFoodNamesFromMessage (which
-    // would see normal_chat and return []).
+    // food_analysis_request: extract food names → DB match → AI estimate.
+    // If the DB pre-check already found the candidate, use it directly to avoid
+    // re-running extractFoodNamesFromMessage (which would return [] because the
+    // original intent was classified as normal_chat).
     const extractedFoodNames = dbPreCheckCandidate
       ? [dbPreCheckCandidate]
       : extractFoodNamesFromMessage(message);
@@ -3026,7 +3956,8 @@ export async function POST(req: NextRequest) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("[chat] ❌ Error:", errMsg);
 
-    // Fallback messages per language — return 200 so UI doesn't crash
+    // Return a soft 200 error with a localised fallback message so the UI
+    // doesn't crash or show a raw error page. The user sees a friendly message.
     const fallbacks: Record<string, string> = {
       en: "Sorry, I'm unable to respond right now. Please try again in a moment.",
       ms: "Maaf, saya tidak dapat menjawab sekarang. Sila cuba lagi sebentar.",
