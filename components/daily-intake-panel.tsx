@@ -1,3 +1,33 @@
+/**
+ * daily-intake-panel.tsx
+ *
+ * A full-screen overlay panel that shows the user's current daily food plan
+ * (cart) along with a comparison of their cumulative nutrient intake vs.
+ * recommended daily limits.
+ *
+ * This component is a standalone, reusable version extracted from food-client.tsx
+ * so it can be embedded in other pages (e.g., the food search page) without
+ * duplicating the layout code.
+ *
+ * Key features:
+ *   - Gender selector (Male / Female) that adjusts daily limits via
+ *     buildDailyIntakeSummary (e.g., sugar: women <25g, men <36g).
+ *     The preference is persisted to localStorage so it survives page refreshes.
+ *   - Horizontal progress bars for Sugar, Fat, and Sodium vs. daily limits.
+ *     Each bar has a red vertical limit-marker line; the bar turns red and
+ *     shows the excess amount if the limit is exceeded.
+ *   - Calorie total card (displayed without a strict limit).
+ *   - Scrollable food list with remove buttons.  List is reversed so the most
+ *     recently added food appears at the top.
+ *   - "Clear All" button that empties the entire daily plan.
+ *   - Responsive: compact single-column layout on mobile, two-column on desktop.
+ *   - Chinese language gets a slightly narrower max-width to compensate for
+ *     shorter character widths (useCompactDesktopPanel).
+ *
+ * The component reads and mutates cart state via the useCart() hook which is
+ * backed by CartContext / CartProvider in components/cart-context.tsx.
+ */
+
 "use client"
 
 import { useState } from "react"
@@ -7,8 +37,27 @@ import { useCart } from "@/components/cart-context"
 import { buildDailyIntakeSummary, type Gender } from "@/lib/daily-intake-summary"
 import { getFoodName, getSugarLevel, getGILevel, getFatLevel, getSodiumLevel } from "@/lib/food-functions"
 
+/**
+ * LangCode
+ *
+ * The three language codes supported by the SIHAT application.
+ * Used to look up localized food names via getFoodName(food, lang).
+ */
 type LangCode = "en" | "ms" | "zh"
 
+/**
+ * DailyIntakePanelStrings
+ *
+ * All UI text strings required by the DailyIntakePanel component, grouped
+ * as a single interface so the caller can pass its own localized translations
+ * object.  This keeps the component language-agnostic — it doesn't import
+ * any hardcoded text and instead relies entirely on whatever the parent passes.
+ *
+ * Design rationale: using an interface rather than accepting a `lang` prop
+ * and building strings internally means the panel can be embedded in any page
+ * that already has a translations object, without coupling to a specific
+ * page's translation format.
+ */
 export interface DailyIntakePanelStrings {
   daily_intake: string
   no_items: string
@@ -39,6 +88,18 @@ export interface DailyIntakePanelStrings {
   sodium_tip_2: string
 }
 
+/**
+ * DailyIntakePanel
+ *
+ * Full-screen overlay panel for reviewing and managing the daily food plan.
+ * Renders nothing when `isOpen` is false (early return before JSX).
+ *
+ * @param t       - Localized UI string object implementing DailyIntakePanelStrings.
+ * @param isOpen  - Controls panel visibility.  When false the panel is not mounted.
+ * @param onClose - Callback invoked when the user clicks outside the panel card
+ *                  or taps the close button in the header.
+ * @param lang    - Active language code; used to resolve multilingual food names.
+ */
 export function DailyIntakePanel({
   t,
   isOpen,
@@ -52,19 +113,42 @@ export function DailyIntakePanel({
 }) {
   const { cart, removeFromCart, clearCart } = useCart()
 
+  // Gender preference is persisted in localStorage under "manis-gender".
+  // The lazy initializer reads from localStorage immediately so the correct
+  // daily limits are applied on the very first render without a flicker.
+  // During SSR (window === "undefined") we default to "male" as a safe fallback.
   const [gender, setGender] = useState<Gender>(() => {
     if (typeof window === "undefined") return "male"
     const saved = localStorage.getItem("manis-gender")
     return saved === "female" ? "female" : "male"
   })
 
+  /**
+   * handleGenderChange
+   *
+   * Updates the selected gender in both component state and localStorage.
+   * Persisting to localStorage means the choice is shared with the food page
+   * and the chatbot's daily intake summary, which all read the same key.
+   *
+   * @param newGender - "male" or "female"
+   */
   const handleGenderChange = (newGender: Gender) => {
     setGender(newGender)
     localStorage.setItem("manis-gender", newGender)
   }
 
+  // Compute daily intake totals, per-nutrient limits, and excess amounts.
+  // `totals` is the sum of each nutrient across all items in the cart.
+  // `limits` is the gender-specific recommended daily intake for each nutrient.
+  // `excess` is max(0, total - limit) for each nutrient (0 when within limit).
   const { totals, limits, excess } = buildDailyIntakeSummary(cart, gender)
 
+  // Colour palette for each nutrient's progress bar.
+  // Colours are chosen to be visually distinct and accessible:
+  //   cal    → blue-500  (neutral; calories have no enforced limit in this UI)
+  //   sugar  → golden brown (warm; aligns with the amber "caution" palette)
+  //   fat    → purple    (distinct from sugar and sodium)
+  //   sodium → rose pink (distinct from sugar and fat)
   const barColors: Record<string, string> = {
     cal: "#3b82f6",
     sugar: "#BA7517",
@@ -72,14 +156,34 @@ export function DailyIntakePanel({
     sodium: "#D4537E",
   }
 
+  // Union type for the three nutrients that show health tips when exceeded.
+  // Calories are excluded because the panel does not enforce a calorie limit.
   type ExceededTipKey = "sugar" | "fat" | "sodium"
 
+  // Maps each tracked nutrient to a pair of actionable health tips sourced
+  // from the localized translation strings passed in via `t`.
   const exceededTips: Record<ExceededTipKey, [string, string]> = {
     sugar: [t.sugar_tip_1, t.sugar_tip_2],
     fat: [t.fat_tip_1, t.fat_tip_2],
     sodium: [t.sodium_tip_1, t.sodium_tip_2],
   }
 
+  /**
+   * HealthTipCard
+   *
+   * An amber-tinted card showing two actionable health tips for a nutrient
+   * that has exceeded its daily limit.  Appears directly below the progress bar
+   * inside the NutritionBarCompact / NutritionBar components.
+   *
+   * Three size variants are controlled by boolean flags:
+   *   - `mobile`  — extra-compact text/padding for the narrow mobile column.
+   *   - `compact` — slightly smaller than default for the desktop left column.
+   *   - default   — full size, used in the desktop left-column NutritionBar.
+   *
+   * @param tipKey  - Which nutrient's tips to display.
+   * @param compact - Render in compact (desktop left-column) size.
+   * @param mobile  - Render in minimal (mobile) size.
+   */
   const HealthTipCard = ({
     tipKey,
     compact = false,
@@ -117,6 +221,32 @@ export function DailyIntakePanel({
     </div>
   )
 
+  /**
+   * NutritionBarCompact
+   *
+   * A compact horizontal progress bar for a single nutrient, designed for the
+   * narrow mobile layout.  Uses smaller text and tighter padding compared to
+   * NutritionBar.
+   *
+   * Bar math:
+   *   - maxDisplay is capped at 110 % of the limit so that values right at the
+   *     limit leave a small visual gap before the bar hits the wall, making it
+   *     obvious that 100 % is the danger zone.
+   *   - fillPct: how wide the coloured fill bar should be (capped at 100 %).
+   *   - limitPct: horizontal position of the red vertical limit-marker line.
+   *     The marker always appears at the 100 % limit position regardless of
+   *     the actual value so users know where the safe boundary is.
+   *
+   * @param label        - Nutrient label string (e.g. "Sugar (g)").
+   * @param value        - Current total intake for this nutrient.
+   * @param limit        - Recommended daily limit for this nutrient (gender-adjusted).
+   * @param unit         - Unit string appended to numbers (e.g. "g", "mg").
+   * @param color        - Hex colour for the progress bar fill when within limit.
+   * @param excessAmount - How much the value exceeds the limit (0 if within).
+   * @param statusOk     - Text shown below the bar when within limit.
+   * @param statusOver   - Text shown below the bar when over limit.
+   * @param tipKey       - Which nutrient's health tips to render; omit to hide tips.
+   */
   const NutritionBarCompact = ({
     label,
     value,
@@ -138,9 +268,15 @@ export function DailyIntakePanel({
     statusOver: string
     tipKey?: ExceededTipKey
   }) => {
+    // Determine whether the current value has exceeded the daily limit.
     const isOver = value > limit
+    // Scale the bar so 100 % visual width corresponds to 110 % of the limit.
+    // This ensures that the limit-marker line is not at the very right edge,
+    // giving the user a clear visual indication that there is still "room".
     const maxDisplay = limit * 1.1
+    // Percentage width of the coloured fill bar (clamped to 100 %).
     const fillPct = Math.min((value / maxDisplay) * 100, 100)
+    // Horizontal position (%) of the vertical red limit-marker line.
     const limitPct = (limit / maxDisplay) * 100
 
     return (
@@ -191,6 +327,27 @@ export function DailyIntakePanel({
     )
   }
 
+  /**
+   * NutritionBar
+   *
+   * The full-size version of the horizontal nutrient progress bar, used in the
+   * desktop layout's left column.  Functionally identical to NutritionBarCompact
+   * but with larger text, a taller bar track (h-3 vs h-2), and bigger icon/padding.
+   *
+   * Bar math is the same as NutritionBarCompact (see that component for details).
+   * The opacity of the fill is 0.85 when within the limit for a softer look,
+   * and 1.0 (fully opaque red) when over the limit to draw attention.
+   *
+   * @param label        - Nutrient label string (e.g. "Sugar (g)").
+   * @param value        - Current total intake for this nutrient.
+   * @param limit        - Recommended daily limit (gender-adjusted).
+   * @param unit         - Unit string appended to numbers.
+   * @param color        - Hex colour for the fill bar when within limit.
+   * @param statusOk     - Text shown below the bar when within limit.
+   * @param statusOver   - Text shown below the bar when over limit.
+   * @param excessAmount - How much the value exceeds the limit (0 if within).
+   * @param tipKey       - Which nutrient's health tips to render; omit to hide tips.
+   */
   const NutritionBar = ({
     label,
     value,
@@ -212,6 +369,7 @@ export function DailyIntakePanel({
     excessAmount: number
     tipKey?: ExceededTipKey
   }) => {
+    // Same bar-scale math as NutritionBarCompact.
     const isOver = value > limit
     const maxDisplay = limit * 1.1
     const fillPct = Math.min((value / maxDisplay) * 100, 100)
@@ -269,9 +427,18 @@ export function DailyIntakePanel({
     )
   }
 
+  // Do not render anything while the panel is closed.
+  // We return null instead of using CSS `display:none` so that the DOM is
+  // completely unmounted — this avoids scroll-position side effects and
+  // slightly reduces memory use when the panel is not visible.
   if (!isOpen) return null
 
+  // Reverse the cart so the most recently added food appears at the top of the
+  // list.  We create a new array with spread+reverse to avoid mutating state.
   const displayCart = [...cart].reverse()
+
+  // Chinese text is shorter per character, so the panel can be slightly narrower
+  // on desktop without feeling cramped.  This prevents awkward whitespace on zh.
   const useCompactDesktopPanel = lang === "zh"
 
   return (
@@ -427,6 +594,10 @@ export function DailyIntakePanel({
               <div className="flex-1 overflow-y-auto px-3 py-2">
                 <div className="space-y-2">
                   {displayCart.map((food, index) => {
+                    // displayCart is the reversed cart, so index 0 here corresponds
+                    // to the last element of the original cart array.
+                    // We compute originalIndex so that removeFromCart receives
+                    // the correct position in the un-reversed cart state array.
                     const originalIndex = cart.length - 1 - index
                     return (
                       <div key={originalIndex} className="flex items-center gap-2 bg-muted rounded-xl p-2">
@@ -596,12 +767,23 @@ export function DailyIntakePanel({
                 <div className="flex-1 overflow-y-auto p-3">
                   <div className="space-y-2">
                     {displayCart.map((food, index) => {
+                      // Same index mapping as the mobile list above.
                       const originalIndex = cart.length - 1 - index
+                      // Pre-compute risk levels for each nutrient so we can
+                      // colour the pill badges (low=blue, medium=green, high=yellow).
                       const foodSugarLevel = getSugarLevel(food.sugar)
                       const foodGiLevel = getGILevel(food.gi)
                       const foodFatLevel = getFatLevel(food.fat)
                       const foodSodiumLevel = getSodiumLevel(food.sodium)
 
+                      /**
+                       * getPillStyle
+                       * Returns a Tailwind class string for the coloured badge border
+                       * and background based on the risk level of the nutrient value.
+                       * low    → light blue  (safe range)
+                       * medium → sage green  (moderate caution)
+                       * high   → amber/yellow (high caution — mirrors the "Three Highs" theme)
+                       */
                       const getPillStyle = (level: "low" | "medium" | "high") => {
                         if (level === "low") return "bg-[#B5E0F1] border-[#1a5276] text-[#1a5276]"
                         if (level === "medium") return "bg-[#E6EAC7] border-[#4a5a23] text-[#4a5a23]"

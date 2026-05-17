@@ -2,12 +2,29 @@
 
 // components/AIChatbot.tsx
 // Epic 9: AI Conversational Health Assistant
-// Features:
-// - Floating button accessible from all pages
-// - Context-aware: reads food scan results from sessionStorage
-// - Multi-language: English, Bahasa Malaysia, Simplified Chinese
-// - Safety: disclaimer on every message, no medical diagnosis
-// - Fallback handling for API errors
+//
+// This is the main chatbot UI component for the SIHAT application.
+// It renders a floating button accessible from every page and a slide-up
+// chat panel that users can interact with in English, Bahasa Malaysia, or
+// Simplified Chinese.
+//
+// Key responsibilities:
+//   - Renders the floating assistant button and the chat panel (open/close)
+//   - Manages conversation state, language detection, and session persistence
+//   - Reads food scan results from sessionStorage (written by recommendation page)
+//   - Sends user messages to /api/chat and applies the structured response
+//   - Handles cart (meal plan) add/remove/clear from chat commands
+//   - Supports voice input via Web Speech API (non-auto-send; user reviews first)
+//   - Supports food photo upload → /api/predict for in-chat menu scanning
+//   - Coordinates "View Detailed Analysis" navigation with the recommendation page
+//
+// Architecture notes:
+//   - Conversation language is tracked separately from page UI language
+//     so users can type in a different language and get replies in that language
+//   - SessionStorage is used for cross-page scan context sharing
+//   - Analysis hint events (CustomEvent) are used for cross-page real-time sync
+//   - Cart state comes from CartContext (shared with the food page)
+//   - Daily intake summary is computed client-side before each API request
 
 import { Fragment, useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -50,15 +67,38 @@ import {
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
+/**
+ * The three supported UI / conversation languages for SIHAT.
+ * Used throughout the component to select localized strings and
+ * to tell the /api/chat endpoint which language to respond in.
+ */
 type LangCode = "en" | "ms" | "zh";
 
+/**
+ * Constructor type for the browser's SpeechRecognition API.
+ * Accessed via window.SpeechRecognition or window.webkitSpeechRecognition
+ * (vendor-prefixed on Chrome/Safari). We define our own interface instead of
+ * relying on the built-in TS DOM lib because this API is not uniformly typed
+ * across all target environments.
+ */
 type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
+/**
+ * Represents a single recognition result returned during a speech session.
+ * `isFinal` is true once the browser has committed the transcript for that
+ * utterance. Each result object is also indexable to retrieve the alternative
+ * transcripts (we only use index [0], which is the best guess).
+ */
 interface BrowserSpeechRecognitionResult {
   isFinal: boolean;
   [index: number]: { transcript: string };
 }
 
+/**
+ * Event fired by the SpeechRecognition API each time speech is recognised.
+ * `resultIndex` tells us where in the results list new entries begin so we
+ * can append rather than re-process already-committed results.
+ */
 interface BrowserSpeechRecognitionEvent {
   resultIndex: number;
   results: {
@@ -67,10 +107,19 @@ interface BrowserSpeechRecognitionEvent {
   };
 }
 
+/**
+ * Error event fired when the SpeechRecognition API encounters a problem
+ * (e.g., microphone permission denied, network failure, no speech detected).
+ */
 interface BrowserSpeechRecognitionErrorEvent {
   error: string;
 }
 
+/**
+ * Full interface for the browser SpeechRecognition object.
+ * We keep our own definition because the `@types/dom` entry is absent in
+ * some TypeScript setups and we only need a subset of the full API.
+ */
 interface BrowserSpeechRecognition {
   continuous: boolean;
   interimResults: boolean;
@@ -83,12 +132,26 @@ interface BrowserSpeechRecognition {
   abort: () => void;
 }
 
+/**
+ * Extends the standard browser Window with the (possibly vendor-prefixed)
+ * SpeechRecognition constructor so TypeScript doesn't complain when we look
+ * up window.SpeechRecognition or window.webkitSpeechRecognition at runtime.
+ */
 type SpeechRecognitionWindow = Window &
   typeof globalThis & {
     SpeechRecognition?: BrowserSpeechRecognitionConstructor;
     webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
   };
 
+/**
+ * Summary of a single food item derived from a scan result.
+ * Used by the chat UI to render food cards inline in the message bubble.
+ * Nutrient values are stored as numbers so the risk computation helper
+ * (`computeRiskFromIndicators`) can work directly on them.
+ *
+ * `category` is the scan bucket the food belongs to (Main Dish, Appetizer,
+ * etc.) and is used for grouping when showing multi-category scan results.
+ */
 interface ScanFoodSummary {
   name: string;
   risk: "Low" | "Medium" | "High";
@@ -99,7 +162,19 @@ interface ScanFoodSummary {
   fatG: number;
 }
 
+/**
+ * Category labels used by the AI-estimated food card path.
+ * Mirrors the categories in ScanContext but uses singular/title-case form
+ * for display and for mapping back to the correct session-storage bucket.
+ */
 type EstimatedFoodCategory = "Main Dish" | "Appetizer" | "Dessert" | "Drink";
+
+/**
+ * A food card returned by /api/chat when the food is NOT in the SIHAT
+ * database and the API falls back to AI estimation (Groq LLM).
+ * Optional nutrient fields may be absent if the model could not estimate them;
+ * the UI handles NaN gracefully by skipping the numeric risk override.
+ */
 interface EstimatedFoodCard {
   name: string;
   category: EstimatedFoodCategory | null;
@@ -110,6 +185,27 @@ interface EstimatedFoodCard {
   fat?: number;
 }
 
+/**
+ * A single message in the chat conversation.
+ *
+ * Core fields (`role`, `content`, `id`) are always present.
+ * The remaining optional fields carry structured payloads that the UI
+ * renders as food cards, quick-reply chips, or action buttons:
+ *
+ *   - `locale`            — language the assistant used for this reply;
+ *                           controls which strings are shown on buttons/labels.
+ *   - `kind: "system"`    — italic system notice (language switch, reset, etc.)
+ *   - `suggestions`       — DB-matched foods the user can add to their meal plan.
+ *   - `unavailableFoodName` — food name when no DB match was found (shown grayed out).
+ *   - `scanFood`          — single food from a photo/menu scan.
+ *   - `scanFoods`         — multiple foods from a multi-item photo scan.
+ *   - `quickReplies`      — pre-built reply chips the user can tap.
+ *   - `starterQuestions`  — shown only on the welcome message; triggers onboarding flow.
+ *   - `actionButton`      — CTA button (e.g., "View Detailed Analysis", "Open Food Page").
+ *   - `isMultiFood`       — true when this message contains cards for multiple foods.
+ *   - `estimatedFood`     — single AI-estimated food card (not in DB).
+ *   - `estimatedFoods`    — multiple AI-estimated food cards.
+ */
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -132,13 +228,31 @@ interface Message {
   estimatedFoods?: EstimatedFoodCard[];
 }
 
+/**
+ * An image the user has staged for upload but not yet sent.
+ * `url` is a temporary object URL created with URL.createObjectURL() and must
+ * be revoked when the image is removed or the component unmounts.
+ */
 interface PendingChatImage {
   id: string;
   file: File;
   url: string;
 }
 
-/** True before any real chat: no user messages, no food cards, only welcome / scan hint / system notices. */
+/**
+ * Returns true when the conversation is still in its initial "seed" state,
+ * meaning no real user messages have been sent yet and no food cards have
+ * appeared in the thread.
+ *
+ * This is used to decide whether a page-language change should silently
+ * replace the welcome message (seed state → swap) or insert a visible
+ * "switched to X language" notice into the existing conversation.
+ *
+ * A message counts as non-seed if it is a user message OR an assistant
+ * message that carries structured payload (suggestions, food cards, etc.).
+ * System notices (kind === "system") and the initial welcome message with
+ * starter questions are not considered real conversation content.
+ */
 function isChatInInitialSeedState(messages: Message[]): boolean {
   for (const m of messages) {
     if (m.role === "user") return false;
@@ -162,6 +276,17 @@ function isChatInInitialSeedState(messages: Message[]): boolean {
   return true;
 }
 
+/**
+ * The shape of the food-scan result stored in sessionStorage by /api/predict
+ * (also produced by the chatbot's inline photo analysis and by typed-food flows).
+ *
+ * Each category key holds a ranked list of `FoodItem` objects.
+ * `uniqueFoodCount` is a convenience count used to quickly tell whether any
+ * category has real data without iterating all buckets.
+ *
+ * Note: the key "Drinks" (plural) is used here, whereas the EstimatedFoodCategory
+ * type uses "Drink" (singular) — the mapping is handled in scanBucketForEstimatedCategory.
+ */
 // Shape of what /api/predict stores — mirrors the API response
 interface ScanContext {
   "Appetizer"?: { ranking: FoodItem[] };
@@ -171,6 +296,19 @@ interface ScanContext {
   uniqueFoodCount?: number;
 }
 
+/**
+ * A single food item as stored inside a ScanContext ranking array.
+ * Fields use short keys (f, sugar, salt, fat) because the data originates
+ * from the database and is serialised into sessionStorage; keeping keys short
+ * reduces payload size slightly.
+ *
+ * `tip` and `best_reason` can be either a plain string (legacy) or a
+ * Record<LangCode, string> object (new multilingual format from /api/predict).
+ * Consumers must handle both shapes.
+ *
+ * `db_matched` indicates whether the food was found in the SIHAT database
+ * (true) or estimated by the AI model (false / absent).
+ */
 interface FoodItem {
   f: string;
   sugar: number;
@@ -184,11 +322,29 @@ interface FoodItem {
   db_matched?: boolean;
 }
 
+/**
+ * The minimal chat message shape sent to /api/chat as conversation history.
+ * We deliberately strip out all UI-only fields (locale, suggestions, etc.)
+ * so the API payload stays small and the LLM doesn't see internal metadata.
+ */
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
+/**
+ * The structured response returned by /api/chat.
+ *
+ *   - `reply`           — the localized text to display in the chat bubble.
+ *   - `action`          — optional cart mutation (add/remove/clear) to execute.
+ *   - `suggestions`     — DB-matched foods the user can add to their meal plan.
+ *   - `unavailableFoodName` — set when the food is not in the DB.
+ *   - `quickReplies`    — pre-built follow-up chips.
+ *   - `actionButton`    — CTA linking to /recommendation, /learn, or /food.
+ *   - `isMultiFood`     — true when the reply covers more than one food item.
+ *   - `estimatedFood`   — single AI-estimated food card.
+ *   - `estimatedFoods`  — list of AI-estimated food cards.
+ */
 interface ChatResponse {
   reply?: string;
   action?: {
@@ -207,6 +363,13 @@ interface ChatResponse {
   estimatedFoods?: EstimatedFoodCard[];
 }
 
+/**
+ * The JSON body sent with every POST to /api/chat.
+ *
+ * Sending the full cart and daily intake summary with each request means the
+ * API can give contextually relevant advice (e.g., "you've already had a lot
+ * of sugar today") without the server needing to maintain session state.
+ */
 type ChatRequestBody = {
   message: string;
   history: ChatMessage[];
@@ -217,6 +380,18 @@ type ChatRequestBody = {
 };
 
 // ─── TRANSLATIONS ─────────────────────────────────────────────────────────────
+//
+// `t` is the master translations object for all UI strings used inside the
+// chatbot panel.  It is indexed by LangCode so callers can look up the right
+// locale with `t[lang]`.
+//
+// Having all strings in one place makes it easy to add a new language or spot
+// missing translations.  Each locale object uses the same keys, so TypeScript
+// will warn us if a key is present in "en" but missing in "ms" or "zh".
+//
+// The `as const` assertion at the end freezes the object so individual string
+// values are inferred as literal types rather than `string` — this is important
+// for `starterQuestions: tx.suggestedQ` where the type must be `readonly string[]`.
 
 const t = {
   en: {
@@ -435,6 +610,18 @@ const t = {
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
+/**
+ * Reads the current food scan context from sessionStorage and parses it.
+ *
+ * The scan context is a JSON blob written by:
+ *   a) /recommendation page after running /api/predict on a menu photo
+ *   b) This chatbot component after in-chat photo analysis
+ *   c) Typed-food analysis flow (user types food names → API → saveScanContext)
+ *
+ * Returns null if nothing is stored, the stored value is invalid JSON, or the
+ * parsed object has no category data (i.e., all ranking arrays are empty).
+ * Safe to call during SSR (returns null immediately when `window` is undefined).
+ */
 /** Reads food scan results from sessionStorage (stored by recommendation page) */
 function readScanContext(): ScanContext | null {
   if (typeof window === "undefined") return null;
@@ -449,22 +636,53 @@ function readScanContext(): ScanContext | null {
 }
 
 /** Generates a simple unique ID for messages */
+// ─── Session storage keys & event names ───────────────────────────────────────
+
+/** SessionStorage key for persisting the chat message history across page refreshes. */
 const STORAGE_KEY = "sihat_assistant_messages";
+/** SessionStorage key for the food scan result shared between the chatbot and the recommendation page. */
 const SCAN_CONTEXT_KEY = "sihat_scan_results";
+/** Re-exported alias of the shared analysis session key (from analysis-hint-sync.ts). */
 const ANALYSIS_SESSION_KEY = SHARED_ANALYSIS_SESSION_KEY;
-/** Session payload when opening /recommendation from chatbot for non-database (AI-estimated) foods */
+/** SessionStorage payload key used when chatbot navigates to /recommendation for AI-estimated (non-DB) foods. */
 const CHATBOT_ESTIMATED_ANALYSIS_KEY = "sihat_chatbot_estimated_analysis";
+/** CustomEvent name dispatched whenever the scan context in sessionStorage changes (add / clear). */
 const SCAN_CONTEXT_EVENT = "sihat_scan_results_changed";
+/** Maximum number of food photos a user can stage before sending. */
 const MAX_CHAT_UPLOAD_IMAGES = 5;
 
+/**
+ * The set of analysis-ready event sources that should trigger the
+ * "I can see your food analysis is ready" hint banner inside the chatbot.
+ *
+ * We intentionally exclude "chatbot-typed-only" source so that purely
+ * text-based food lookups (no photo) don't cause a spurious hint banner
+ * to appear when the user navigates back to the chatbot.
+ */
 const ANALYSIS_HINT_EVENT_SOURCES = new Set<AnalysisReadySource>([
   "food-recognition",
   "chatbot-view-detail",
   "recommendation-restore",
 ]);
 
+/**
+ * A simplified category label used when constructing or restoring an
+ * analysis session from the chatbot.  Maps the four ScanContext bucket keys
+ * to shorter identifiers consumed by the recommendation page's session object.
+ */
 type AnalysisSessionCategory = "main" | "appetizer" | "dessert" | "drink";
 
+/**
+ * Returns the first non-empty category in the scan context as an
+ * `AnalysisSessionCategory`, in priority order: Main Dish → Appetizer →
+ * Dessert → Drinks.  Returns null if the context has no ranked items at all.
+ *
+ * The recommendation page uses this value to pre-select the active category
+ * tab when the user navigates from the chatbot via "View Detailed Analysis".
+ *
+ * @param ctx - A non-null ScanContext object.
+ * @returns The first occupied category or null.
+ */
 function getFirstAnalysisCategory(ctx: ScanContext): AnalysisSessionCategory | null {
   const categoryMap: Array<[keyof Omit<ScanContext, "uniqueFoodCount">, AnalysisSessionCategory]> = [
     ["Main Dish", "main"],
@@ -475,10 +693,33 @@ function getFirstAnalysisCategory(ctx: ScanContext): AnalysisSessionCategory | n
   return categoryMap.find(([scanCategory]) => Boolean(ctx[scanCategory]?.ranking?.length))?.[1] ?? null;
 }
 
+/**
+ * Dispatches a custom "sihat_scan_results_changed" event on the window.
+ * This tells other components (e.g., the recommendation page listener) that
+ * the scan context in sessionStorage has been modified by the chatbot so they
+ * can re-read and refresh their UI without a full page reload.
+ */
 function notifyScanContextChanged() {
   window.dispatchEvent(new CustomEvent(SCAN_CONTEXT_EVENT, { detail: { source: "chatbot" } }));
 }
 
+/**
+ * Writes a new scan context to sessionStorage and creates (or reuses) the
+ * associated analysis session record.
+ *
+ * The function tries to be idempotent: if the raw JSON is identical to what
+ * is already stored AND a valid session record already exists, it reuses the
+ * existing `analysisId` and `createdAt` timestamps so that downstream
+ * deduplication logic (in the analysis-hint-sync system) doesn't treat an
+ * unchanged scan as a new event.
+ *
+ * After writing, it dispatches SCAN_CONTEXT_EVENT so all listeners (including
+ * the recommendation page) are notified immediately.
+ *
+ * @param raw     - JSON-serialized ScanContext string.
+ * @param session - Optional metadata to write into the analysis session record
+ *                  (image previews, user text, pre-selected category).
+ */
 function saveScanContext(
   raw: string,
   session?: { imagePreviews?: string[]; userText?: string; selectedCategory?: AnalysisSessionCategory | null }
@@ -522,6 +763,17 @@ function saveScanContext(
   notifyScanContextChanged();
 }
 
+/**
+ * Removes all three chatbot-related sessionStorage entries (scan context,
+ * analysis session, and the estimated-food analysis key) and also clears the
+ * acknowledged analysis hint ID so the banner can reappear for a fresh scan.
+ * Dispatches SCAN_CONTEXT_EVENT to notify all listeners.
+ *
+ * Called when:
+ *   - The user explicitly clears the chat ("Clear chat" button)
+ *   - The user says "reset analysis" in a chat message
+ *   - The recommendation page reset button is clicked while chatbot is mounted
+ */
 function clearStoredScanContext() {
   sessionStorage.removeItem(SCAN_CONTEXT_KEY);
   sessionStorage.removeItem(ANALYSIS_SESSION_KEY);
@@ -530,6 +782,13 @@ function clearStoredScanContext() {
   notifyScanContextChanged();
 }
 
+/**
+ * Reads the analysis session metadata from sessionStorage without parsing the
+ * full result object.  Returns only the `source` and `imagePreviews` fields
+ * that are needed by the hint-banner qualification checks.
+ *
+ * @returns A partial session object, or null if nothing is stored / parsing fails.
+ */
 function readAnalysisSessionMeta(): { source?: string; imagePreviews?: string[] } | null {
   if (typeof window === "undefined") return null;
   try {
@@ -541,6 +800,18 @@ function readAnalysisSessionMeta(): { source?: string; imagePreviews?: string[] 
   }
 }
 
+/**
+ * Returns true only when the current analysis session originated from a real
+ * photo scan (either from the /recommendation page or from a chatbot photo
+ * upload).  Typed-only food queries do NOT qualify because the "Your food
+ * analysis is ready" banner would be confusing without an actual scanned image.
+ *
+ * Decision matrix:
+ *   - source === "recommendation"                           → true (always photo-based)
+ *   - source === "chatbot" AND imagePreviews.length > 0     → true (chatbot photo scan)
+ *   - source === "chatbot" AND imagePreviews.length === 0   → false (typed-only)
+ *   - no session / any other source                         → false
+ */
 /** Analysis hint only for Food Recognition (/recommendation) or chatbot photo/menu scan — not typed-only chat cards. */
 function sessionQualifiesForAnalysisHintBanner(): boolean {
   const m = readAnalysisSessionMeta();
@@ -550,6 +821,15 @@ function sessionQualifiesForAnalysisHintBanner(): boolean {
   return false;
 }
 
+/**
+ * Clears the scan context only when the current session was created by the
+ * chatbot from typed food names (i.e., no images).  Returns true if a clear
+ * was performed, false otherwise.
+ *
+ * The distinction matters because we don't want to blow away a photo-based
+ * analysis that the user still has open on the recommendation page just
+ * because they typed a new food query in the chatbot.
+ */
 /** Typed-food analysis saved for View Detailed Analysis — not menu photo scans. */
 function clearChatbotTypedFoodScanContext(): boolean {
   if (typeof window === "undefined") return false;
@@ -569,6 +849,19 @@ function clearChatbotTypedFoodScanContext(): boolean {
   }
 }
 
+/**
+ * Returns true when the user's message is a short conversational acknowledgement
+ * or correction that should NOT be treated as a food-related query.
+ *
+ * Examples: "ok", "thanks", "wrong", "never mind", "what do you mean"
+ *
+ * When this returns true, `sendMessage` clears the in-memory scan context
+ * before building the API request so that stale food data from a previous
+ * turn doesn't get forwarded and confuse the LLM.
+ *
+ * @param text - Raw text typed by the user.
+ * @returns True for known conversational phrases, false otherwise.
+ */
 function isConversationalClientMessage(text: string): boolean {
   const n = text.trim().toLowerCase();
   const exact = new Set([
@@ -593,6 +886,15 @@ function isConversationalClientMessage(text: string): boolean {
   return /^(not available|why though|ok but|but why|what do you mean)/i.test(n);
 }
 
+/**
+ * Converts a File object to a base64-encoded data URL using the FileReader API.
+ * Used to embed image previews in message state (so they survive across re-renders)
+ * and to produce the data URL strings stored in the analysis session record.
+ *
+ * @param file - The File to read.
+ * @returns A Promise that resolves with the data URL string, or rejects if the
+ *          FileReader encounters an error.
+ */
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -602,6 +904,14 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/**
+ * Returns true when the given ScanContext contains at least one food item
+ * in any of the four category buckets (Appetizer, Main Dish, Dessert, Drinks).
+ * Used as a guard before displaying food-related UI elements.
+ *
+ * @param ctx - A ScanContext object, or null.
+ * @returns True if any category has at least one ranked item.
+ */
 function hasScanContextItems(ctx: ScanContext | null): boolean {
   if (!ctx) return false;
   return (["Appetizer", "Main Dish", "Dessert", "Drinks"] as const).some(
@@ -609,6 +919,13 @@ function hasScanContextItems(ctx: ScanContext | null): boolean {
   );
 }
 
+/**
+ * Flattens all ranked food items from all four ScanContext categories into a
+ * single array.  Returns an empty array when ctx is null.
+ *
+ * @param ctx - A ScanContext object, or null.
+ * @returns A flat list of FoodItem objects from every category.
+ */
 function getScanFoodItems(ctx: ScanContext | null): FoodItem[] {
   if (!ctx) return [];
   return (["Appetizer", "Main Dish", "Dessert", "Drinks"] as const).flatMap(
@@ -616,6 +933,15 @@ function getScanFoodItems(ctx: ScanContext | null): FoodItem[] {
   );
 }
 
+/**
+ * Extracts a deduplicated list of food names from the scan context.
+ * Names are deduplicated by their lowercase-normalised form so that the
+ * same food name appearing in two categories (e.g., a drink also classified
+ * as a main) only appears once in the output.
+ *
+ * @param ctx - A ScanContext object, or null.
+ * @returns A list of unique food name strings (original casing preserved).
+ */
 function getScanFoodNames(ctx: ScanContext | null): string[] {
   const seen = new Set<string>();
   const names: string[] = [];
@@ -630,11 +956,28 @@ function getScanFoodNames(ctx: ScanContext | null): string[] {
   return names;
 }
 
+/**
+ * Returns the ScanContext category key for a given food name, or undefined if
+ * the food is not found in any category.  Useful for attaching the category
+ * label to a ScanFoodSummary so the UI can group or annotate the food card.
+ *
+ * @param ctx      - The current ScanContext.
+ * @param foodName - The exact food name to look up (case-sensitive).
+ * @returns The matching category key, or undefined.
+ */
 function getFoodScanCategory(ctx: ScanContext, foodName: string): keyof Omit<ScanContext, "uniqueFoodCount"> | undefined {
   const categories = ["Main Dish", "Appetizer", "Dessert", "Drinks"] as const;
   return categories.find((cat) => ctx[cat]?.ranking?.some((item) => item.f === foodName));
 }
 
+/**
+ * Converts a ScanContext category key to its localized display name.
+ * Used in the photo-analysis summary message and in the best-choice reply.
+ *
+ * @param category - One of the four ScanContext category keys.
+ * @param lang     - The target language.
+ * @returns The localized category name string.
+ */
 function getLocalizedScanCategory(category: keyof Omit<ScanContext, "uniqueFoodCount">, lang: LangCode): string {
   const labels = {
     "Main Dish": { en: "Main Dish", ms: "Hidangan Utama", zh: "主食" },
@@ -645,6 +988,15 @@ function getLocalizedScanCategory(category: keyof Omit<ScanContext, "uniqueFoodC
   return labels[category][lang];
 }
 
+/**
+ * Returns a list of localized category names for all non-empty categories in
+ * the scan context.  Used to build the "Food groups found:" summary line in
+ * the photo-scan reply message.
+ *
+ * @param ctx  - A ScanContext object, or null.
+ * @param lang - The target language.
+ * @returns An array of localized category name strings.
+ */
 function getScanCategoryNames(ctx: ScanContext | null, lang: LangCode): string[] {
   if (!ctx) return [];
   return (["Main Dish", "Appetizer", "Dessert", "Drinks"] as const)
@@ -652,10 +1004,30 @@ function getScanCategoryNames(ctx: ScanContext | null, lang: LangCode): string[]
     .map((category) => getLocalizedScanCategory(category, lang));
 }
 
+/**
+ * Returns true when any food item in the scan context is high in fat (>7g),
+ * sodium (>600mg), or has a "High" risk label.
+ * Used to decide whether to append the high-nutrient warning line to the
+ * photo-analysis summary message.
+ *
+ * @param ctx - A ScanContext object, or null.
+ * @returns True if any item exceeds the nutrient thresholds.
+ */
 function hasHighFatOrSodium(ctx: ScanContext | null): boolean {
   return getScanFoodItems(ctx).some((item) => item.fat > 7 || item.salt > 600 || item.risk === "High");
 }
 
+/**
+ * Returns true when the user's message text contains a phrase indicating they
+ * want to know which food is the healthiest choice.  Supports English, Malay,
+ * and Chinese phrasing.
+ *
+ * When this returns true for a photo-scan summary, the component also appends
+ * the lowest-risk food name to the reply.
+ *
+ * @param text - The user's raw input text.
+ * @returns True if a "healthier choice" intent is detected.
+ */
 function isHealthierComparisonRequest(text: string): boolean {
   const normalized = text.toLowerCase();
   return [
@@ -672,6 +1044,16 @@ function isHealthierComparisonRequest(text: string): boolean {
   ].some((phrase) => normalized.includes(phrase));
 }
 
+/**
+ * Finds and returns the food name with the lowest risk level in the scan
+ * context.  Priority order: Low < Medium < High.
+ *
+ * Used in the photo-scan summary when the user asks for the healthiest choice,
+ * and also in buildAutomaticBestChoiceSummary.
+ *
+ * @param ctx - A ScanContext object, or null.
+ * @returns The food name string with the lowest risk, or null if no items exist.
+ */
 function getLowestRiskFoodName(ctx: ScanContext | null): string | null {
   const riskRank: Record<FoodItem["risk"], number> = { Low: 1, Medium: 2, High: 3 };
   const items = getScanFoodItems(ctx).filter((item) => item.f?.trim());
@@ -679,6 +1061,19 @@ function getLowestRiskFoodName(ctx: ScanContext | null): string | null {
   return [...items].sort((a, b) => riskRank[a.risk] - riskRank[b.risk])[0]?.f ?? null;
 }
 
+/**
+ * Detects whether a chatbot API reply is actually asking the user to select a
+ * food category rather than providing a direct answer.
+ *
+ * The /api/chat backend can return a "which category?" prompt with quick-reply
+ * chips when scan context contains multiple categories and the user's question
+ * is ambiguous.  On the client side we intercept this reply and replace it with
+ * a direct best-choice summary so the user doesn't have to click a chip.
+ *
+ * @param reply       - The assistant reply text from the API.
+ * @param quickReplies - Quick reply chips accompanying the reply, if any.
+ * @returns True when the reply looks like a manual category-selection prompt.
+ */
 function isManualCategoryPrompt(reply: string, quickReplies?: string[]): boolean {
   if (!quickReplies?.length) return false;
   const normalizedReply = reply.toLowerCase();
@@ -690,10 +1085,25 @@ function isManualCategoryPrompt(reply: string, quickReplies?: string[]): boolean
   );
 }
 
+/**
+ * Generates a short random string ID for a chat message.
+ * Uses Math.random with base-36 encoding and slices 7 characters.
+ * Not cryptographically secure, but unique enough for UI keying purposes.
+ *
+ * @returns A 7-character alphanumeric string.
+ */
 function uid(): string {
   return Math.random().toString(36).slice(2, 9);
 }
 
+/**
+ * Reads the persisted chat message history from sessionStorage.
+ * Returns null during SSR, when nothing is stored, or when parsing fails.
+ * The stored value is a JSON-encoded Message[] array written by the component
+ * in a useEffect whenever `messages` state changes.
+ *
+ * @returns The stored messages array, or null.
+ */
 function readMessageHistory(): Message[] | null {
   if (typeof window === "undefined") return null;
   try {
@@ -705,31 +1115,83 @@ function readMessageHistory(): Message[] | null {
   }
 }
 
+/**
+ * Reads the user's gender preference from localStorage.
+ * The preference is set on the Food page and persisted under the key
+ * "manis-gender".  Defaults to "male" when not set.
+ *
+ * Gender is used by `buildDailyIntakeSummary` to compute the correct
+ * daily recommended intake values (RDI) for sugar, sodium, and fat.
+ *
+ * @returns "female" or "male".
+ */
 function readGenderPreference(): Gender {
   if (typeof window === "undefined") return "male";
   return localStorage.getItem("manis-gender") === "female" ? "female" : "male";
 }
 
+/**
+ * Normalizes a string to a stable lowercase key used to detect repeated
+ * "food unavailable" requests.  Collapses whitespace and lowercases so that
+ * "Nasi Lemak" and "nasi lemak" are treated as the same repeat key.
+ *
+ * @param value - The raw user input string.
+ * @returns A normalized lowercase string with collapsed whitespace.
+ */
 function normalizeRepeatKey(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Returns the localized display name for a cart food item.
+ * Falls back to the English name if the requested language key is empty.
+ *
+ * @param food - A CartFoodItem from the shared food database.
+ * @param lang - The desired language code.
+ * @returns The food name string in the requested language.
+ */
 function getCartFoodName(food: CartFoodItem, lang: LangCode): string {
   return food.name[lang] || food.name.en;
 }
 
+/**
+ * Maps a LangCode to the BCP 47 language tag expected by the Web Speech API.
+ * "ms" → "ms-MY" (Malay, Malaysia), "zh" → "zh-CN" (Simplified Chinese),
+ * anything else → "en-US".
+ *
+ * @param lang - The app language code.
+ * @returns A BCP 47 language tag string for SpeechRecognition.lang.
+ */
 function getSpeechRecognitionLanguage(lang: LangCode): string {
   if (lang === "ms") return "ms-MY";
   if (lang === "zh") return "zh-CN";
   return "en-US";
 }
 
+/**
+ * Formats an elapsed recording time in seconds as "MM:SS".
+ * Used in the voice-input status bar (e.g., "Recording... 00:42").
+ *
+ * @param seconds - Total elapsed seconds since recording started.
+ * @returns A zero-padded "MM:SS" time string.
+ */
 function formatRecordingTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+/**
+ * Applies Unicode NFKC normalization, strips all non-letter/non-digit
+ * characters, lowercases the result, and collapses whitespace.
+ *
+ * This shared normalizer is used across the language-detection markers,
+ * meal-plan intent detection, and analysis-reset detection so that
+ * punctuation and CJK width differences don't break keyword matching.
+ *
+ * @param value - Raw input string.
+ * @returns Normalized lowercase string.
+ */
 function normalizeLanguageText(value: string): string {
   return value
     .normalize("NFKC")
@@ -739,6 +1201,21 @@ function normalizeLanguageText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+/**
+ * Heuristically detects the language the user typed.
+ *
+ * Detection order:
+ *   1. If any CJK character (Unicode block U+3400–U+9FFF) is present → "zh"
+ *   2. If Malay keyword markers are found but no English ones → "ms"
+ *   3. If English keyword markers are found but no Malay ones → "en"
+ *   4. Otherwise → null (caller falls back to the current conversation language)
+ *
+ * The marker lists intentionally focus on health/food vocabulary so that
+ * short, ambiguous inputs (e.g. "ok", "add") don't flip the language.
+ *
+ * @param message - The raw user message.
+ * @returns Detected LangCode or null.
+ */
 function detectUserMessageLanguage(message: string): LangCode | null {
   const normalized = normalizeLanguageText(message);
   if (!normalized) return null;
@@ -763,10 +1240,29 @@ function detectUserMessageLanguage(message: string): LangCode | null {
   return null;
 }
 
+/**
+ * Returns the detected language for a user message, falling back to the
+ * current conversation language if detection returns null.
+ *
+ * @param message  - The user's input text.
+ * @param fallback - The current conversation language to use as fallback.
+ * @returns A LangCode that will be used for this conversation turn.
+ */
 function getUserMessageLanguage(message: string, fallback: LangCode): LangCode {
   return detectUserMessageLanguage(message) ?? fallback;
 }
 
+/**
+ * Matches a user message against the three starter question options shown in
+ * the welcome message ("Check my food or menu", "Help me plan today's meals",
+ * "Learn about diabetes, blood pressure & cholesterol") in all three languages.
+ *
+ * When matched, the component replies with a static guide message and optional
+ * CTA button WITHOUT calling the LLM, keeping the response instant.
+ *
+ * @param message - The user's input text.
+ * @returns The matched onboarding intent, or null if no match.
+ */
 type OnboardingIntent = "food-check" | "meal-plan" | "learn";
 
 function getOnboardingIntent(message: string): OnboardingIntent | null {
@@ -779,6 +1275,22 @@ function getOnboardingIntent(message: string): OnboardingIntent | null {
   return null;
 }
 
+/**
+ * Detects whether a user's message is a natural-language request to add or
+ * remove a food from their meal plan (cart), without calling the LLM.
+ *
+ * The detection uses three signals:
+ *   1. Explicit phrases like "add it", "帮我加进去", "buang ini" → immediate match
+ *   2. Combination of a cart-target keyword ("cart", "pelan makanan", "购物车")
+ *      AND an add/remove verb → match
+ *
+ * We intercept these on the client side so the cart action is executed
+ * immediately and the reply is instant, rather than having to wait for the LLM
+ * to generate a response (which would have no actual ability to modify the cart).
+ *
+ * @param message - The user's raw input text.
+ * @returns "add", "remove", or null.
+ */
 function getMealPlanIntent(message: string): "add" | "remove" | null {
   const n = normalizeLanguageText(message);
 
@@ -812,6 +1324,21 @@ function getMealPlanIntent(message: string): "add" | "remove" | null {
   return null;
 }
 
+/**
+ * Returns true when the user's message appears to be a request to reset or
+ * clear the current food analysis (scan context).
+ *
+ * The detection requires EITHER:
+ *   a) A known standalone reset phrase (e.g., "reset analysis", "清除分析"), OR
+ *   b) A reset verb (reset / clear / kosongkan / 重置) co-occurring with an
+ *      analysis noun (analysis / scan / analisis / 扫描)
+ *
+ * When detected, the component clears sessionStorage, resets all in-memory
+ * analysis refs, and dispatches ANALYSIS_RESET_EVENT — no LLM call needed.
+ *
+ * @param message - The user's raw input text.
+ * @returns True if a reset intent is detected.
+ */
 function isAnalysisResetIntent(message: string): boolean {
   const n = normalizeLanguageText(message);
   // Reset/clear verbs
@@ -837,13 +1364,39 @@ function isAnalysisResetIntent(message: string): boolean {
   return hasResetVerb && hasAnalysisNoun;
 }
 
+/**
+ * Custom event dispatched when the user requests an analysis reset via the
+ * chatbot.  The recommendation page listens for this event to clear its own
+ * UI state without requiring a page reload.
+ */
 const ANALYSIS_RESET_EVENT = "sihat-analysis-reset";
 
+/**
+ * Represents the "most recent food the chatbot has given advice about".
+ * Used by the client-side cart command handler to know which food to
+ * add/remove when the user says "add it" or "remove this".
+ *
+ *   - "available"   → a DB-matched food was found; `food` carries the CartFoodItem.
+ *   - "unavailable" → the food was mentioned but not in the database; `name` is the
+ *                     food name string from the last assistant message.
+ *   - "none"        → no food context exists in the recent message history.
+ */
 type FoodContext =
   | { status: "available"; food: CartFoodItem }
   | { status: "unavailable"; name: string }
   | { status: "none" };
 
+/**
+ * Walks the message array backwards to find the most recent food context
+ * from an assistant message.  Returns the first match found.
+ *
+ * This is used by the meal-plan intent handler to figure out WHICH food the
+ * user is referring to when they say "add it" or "remove this" — it's always
+ * the most recently discussed food in the conversation.
+ *
+ * @param messages - The full message array.
+ * @returns A FoodContext describing the latest food, or `{ status: "none" }`.
+ */
 function getLatestFoodContext(messages: Message[]): FoodContext {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
@@ -854,6 +1407,17 @@ function getLatestFoodContext(messages: Message[]): FoodContext {
   return { status: "none" };
 }
 
+/**
+ * Renders a chat message's text content as a list of React fragments.
+ *
+ * Most lines are rendered as plain text separated by `<br />` elements.
+ * Lines that start with the sentinel prefix "!HIGH_NUTRITION! " are rendered
+ * as styled warning badges (red background, bold text) so users immediately
+ * notice high-risk nutrient warnings in a food analysis reply.
+ *
+ * @param content - The raw message content string, possibly multi-line.
+ * @returns An array of React fragments (text + optional br / warning span).
+ */
 function renderMessageContent(content: string) {
   return content.split("\n").map((line, index, lines) => {
     const lineBreak = index < lines.length - 1 ? <br /> : null;
@@ -886,6 +1450,14 @@ function renderMessageContent(content: string) {
 
 // ─── FOOD SUMMARY (text-only) ─────────────────────────────────────────────────
 
+/**
+ * Maps an internal risk key ("low" / "medium" / "high") to the localized
+ * display label in the given language.
+ *
+ * @param risk - The lowercase risk level key.
+ * @param lang - The target language.
+ * @returns The translated risk label string.
+ */
 function localizedRiskFromKey(risk: "low" | "medium" | "high", lang: LangCode): string {
   return {
     low:    { en: "Low Risk",    ms: "Risiko Rendah",    zh: "低风险"   },
@@ -894,6 +1466,20 @@ function localizedRiskFromKey(risk: "low" | "medium" | "high", lang: LangCode): 
   }[risk][lang];
 }
 
+/**
+ * Formats a food name for display in the chat card.
+ * - For Chinese text or text containing Han characters, the name is returned
+ *   as-is (Title Case would mangle CJK characters).
+ * - For Latin-script names (English / Malay), each word is title-cased so
+ *   "nasi lemak" becomes "Nasi Lemak".
+ *
+ * Note: DB-matched food names already use canonical casing from the database;
+ * this function is mainly needed for AI-estimated names that may be all-lowercase.
+ *
+ * @param name - Raw food name string.
+ * @param lang - The current language (used to detect CJK context).
+ * @returns The formatted display name.
+ */
 /** Title Case for AI-estimated names; DB names already use canonical casing. */
 function formatFoodDisplayName(name: string, lang: LangCode): string {
   const trimmed = name.trim();
@@ -906,10 +1492,25 @@ function formatFoodDisplayName(name: string, lang: LangCode): string {
     .join(" ");
 }
 
+/**
+ * Returns the localized "Health tip" header text used above the tip section
+ * in all food card types.
+ *
+ * @param lang - The current language.
+ * @returns The header string ("健康提示", "Tip Kesihatan", or "Health tip").
+ */
 function foodCardTipHeader(lang: LangCode): string {
   return lang === "zh" ? "健康提示" : lang === "ms" ? "Tip Kesihatan" : "Health tip";
 }
 
+/**
+ * Shared layout component for all food card types (DB match, scan, AI estimated).
+ * Renders the food display name, risk label, and health tip in a consistent
+ * typographic style optimised for elderly users (large font, generous line height).
+ *
+ * An optional `footer` node is rendered below the tip — used by `AiFoodCard`
+ * to inject the "AI-generated analysis" disclaimer badge.
+ */
 /** Shared typography for database + AI-estimated food cards (matches single DB card). */
 function FoodCardBody({
   displayName,
@@ -950,6 +1551,19 @@ function FoodCardBody({
   );
 }
 
+/**
+ * Converts a FoodItem (from a scan-context ranking array) into the
+ * ScanFoodSummary shape used by the in-chat food card renderer.
+ *
+ * Handles the dual tip format: plain string (legacy) vs. multilingual object.
+ * Also attaches the category label from the scan context so the card can show
+ * which meal bucket the food belongs to.
+ *
+ * @param item       - A FoodItem from the scan context ranking array.
+ * @param ctx        - The full ScanContext (used to look up the category).
+ * @param messageLang - The language for resolving the multilingual tip.
+ * @returns A ScanFoodSummary ready for the FoodScanSummary component.
+ */
 function foodItemToScanSummary(item: FoodItem, ctx: ScanContext, messageLang: LangCode): ScanFoodSummary {
   const tip =
     typeof item.tip === "object" && item.tip
@@ -966,6 +1580,11 @@ function foodItemToScanSummary(item: FoodItem, ctx: ScanContext, messageLang: La
   };
 }
 
+/**
+ * Renders a food card for a single item from a photo/menu scan result.
+ * Recomputes the risk level from raw nutrient values (sugar/sodium/fat) so
+ * the displayed level is always consistent with `computeRiskFromIndicators`.
+ */
 function FoodScanSummary({ scanFood, lang }: { scanFood: ScanFoodSummary; lang: LangCode }) {
   const rk = computeRiskFromIndicators(scanFood.sugarG, scanFood.sodiumMg, scanFood.fatG, scanFood.risk);
   const riskLabel = localizedRiskFromKey(rk, lang);
@@ -979,6 +1598,13 @@ function FoodScanSummary({ scanFood, lang }: { scanFood: ScanFoodSummary; lang: 
   );
 }
 
+/**
+ * Decides which food card variant to render for a single-food assistant message.
+ * Priority:
+ *   1. If `scanFood` is present → render FoodScanSummary (photo scan result)
+ *   2. If `food` is present → render DB food card (from CartFoodItem)
+ *   3. Otherwise → fall back to plain renderMessageContent (text only)
+ */
 function FoodSummaryCard({ content, food, scanFood, lang }: {
   content: string;
   food?: CartFoodItem;
@@ -1011,6 +1637,11 @@ function FoodSummaryCard({ content, food, scanFood, lang }: {
   return <>{renderMessageContent(content)}</>;
 }
 
+/**
+ * Compact structured summary card for a single DB-matched food in a multi-food
+ * response (isMultiFood === true).  Used when the user asks about several foods
+ * at once and the API returns a `suggestions` array with multiple items.
+ */
 // Compact structured summary for each food in a multi-food typed response.
 function FoodItemCard({ food, lang }: { food: CartFoodItem; lang: LangCode }) {
   const foodName = getCartFoodName(food, lang);
@@ -1031,6 +1662,15 @@ function FoodItemCard({ food, lang }: { food: CartFoodItem; lang: LangCode }) {
   );
 }
 
+/**
+ * Food card for a single AI-estimated food (not in the SIHAT database).
+ * Shows the risk label from `computeRiskFromIndicators` when all three
+ * nutrient values are present; otherwise falls back to the raw risk key
+ * returned by the LLM.
+ *
+ * Always appends an "AI-generated analysis" label and disclaimer footer
+ * so users understand the information may be less accurate than DB data.
+ */
 function AiFoodCard({ food, lang }: { food: EstimatedFoodCard; lang: LangCode }) {
   const sugarN = food.sugar ?? Number.NaN;
   const sodiumN = food.sodium ?? Number.NaN;
@@ -1065,6 +1705,16 @@ function AiFoodCard({ food, lang }: { food: EstimatedFoodCard; lang: LangCode })
   );
 }
 
+/**
+ * Maps an `EstimatedFoodCategory` (from AI-estimated cards) to the
+ * corresponding ScanContext bucket key.
+ *
+ * "Drink" → "Drinks" (note the plural), everything else maps directly.
+ * If category is null (unknown), defaults to "Main Dish".
+ *
+ * @param category - The EstimatedFoodCategory from the AI card.
+ * @returns The ScanContext bucket key to use when storing this food.
+ */
 function scanBucketForEstimatedCategory(
   category: EstimatedFoodCategory | null
 ): keyof Omit<ScanContext, "uniqueFoodCount"> {
@@ -1074,6 +1724,19 @@ function scanBucketForEstimatedCategory(
   return "Main Dish";
 }
 
+/**
+ * Converts a CartFoodItem (from the SIHAT food database) into a FoodItem that
+ * can be stored inside a ScanContext ranking array.
+ *
+ * This is needed when the user clicks "View Detailed Analysis" after the chatbot
+ * provides a DB food card — we need to rebuild a ScanContext-shaped object so
+ * the recommendation page can render the full detailed analysis without re-calling
+ * /api/predict.
+ *
+ * @param food   - The CartFoodItem to convert.
+ * @param uiLang - The language used to resolve the food's display name.
+ * @returns A FoodItem suitable for inclusion in a ScanContext ranking array.
+ */
 function cartFoodToScanItem(food: CartFoodItem, uiLang: LangCode): FoodItem {
   const sugarN = parseNutrientNumber(food.sugar);
   const sodiumN = parseNutrientNumber(food.sodium);
@@ -1091,6 +1754,15 @@ function cartFoodToScanItem(food: CartFoodItem, uiLang: LangCode): FoodItem {
   };
 }
 
+/**
+ * Converts an AI-estimated food card into the FoodItem shape expected by
+ * ScanContext ranking arrays.  Missing nutrient values default to 0.
+ * The tip is stored as a trilingual object with the same string for all three
+ * languages (since the LLM returned a single tip without language variants).
+ *
+ * @param card - The EstimatedFoodCard returned by /api/chat.
+ * @returns A FoodItem suitable for inclusion in a ScanContext ranking array.
+ */
 function estimatedCardToScanItem(card: EstimatedFoodCard): FoodItem {
   const sugar = card.sugar ?? 0;
   const sodium = card.sodium ?? 0;
@@ -1109,6 +1781,21 @@ function estimatedCardToScanItem(card: EstimatedFoodCard): FoodItem {
   };
 }
 
+/**
+ * Reconstructs a /api/predict-shaped ScanContext from the food cards present
+ * in a single chatbot message.  This allows "View Detailed Analysis" to work
+ * for foods that were looked up via the chatbot without a full re-analysis.
+ *
+ * The function handles both DB-matched foods (`msg.suggestions`) and
+ * AI-estimated cards (`msg.estimatedFood` / `msg.estimatedFoods`), placing
+ * them into the correct ScanContext category buckets.
+ *
+ * Returns null when the message contains no food payload.
+ *
+ * @param msg     - The assistant message that contains food card data.
+ * @param uiLang  - The language used to resolve food display names.
+ * @returns A ScanContext ready to be saved to sessionStorage, or null.
+ */
 /** Build /api/predict-shaped scan context from chatbot DB + AI-estimated cards (no re-analysis). */
 function buildScanContextFromChatbotMessage(msg: Message, uiLang: LangCode): ScanContext | null {
   const ctx: ScanContext = { uniqueFoodCount: 0 };
@@ -1130,6 +1817,15 @@ function buildScanContextFromChatbotMessage(msg: Message, uiLang: LangCode): Sca
   return ctx.uniqueFoodCount ? ctx : null;
 }
 
+/**
+ * Builds a comma-separated string of food names from a chatbot message for
+ * display as the user-text label in the analysis session record.
+ * This string is shown on the recommendation page as "Analysed: Nasi Lemak, Teh Tarik".
+ *
+ * @param msg     - The assistant message containing food card data.
+ * @param uiLang  - The language used to resolve display names.
+ * @returns A comma-separated food name string (may be empty).
+ */
 function buildRecTextFromMessage(msg: Message, uiLang: LangCode): string {
   const names = [
     ...(msg.suggestions ?? []).map((f) => getCartFoodName(f, uiLang)),
@@ -1139,8 +1835,22 @@ function buildRecTextFromMessage(msg: Message, uiLang: LangCode): string {
 }
 
 /**
- * Saves analysed food to sessionStorage so /recommendation renders instantly (no /api/predict).
- * Returns true when scan context was written (caller should sync scanContext state).
+ * Prepares the sessionStorage scan context so the recommendation page can
+ * render the full detailed analysis instantly (without calling /api/predict)
+ * when the user clicks "View Detailed Analysis".
+ *
+ * Steps:
+ *   1. Rebuilds a ScanContext from the chatbot message's food cards
+ *   2. Writes it to sessionStorage via saveScanContext()
+ *   3. Stores the comma-separated food names in "rec-text" for the page subtitle
+ *
+ * Returns true when the context was successfully written (caller should update
+ * the scanContext state so the action button guard doesn't block navigation).
+ * Returns false when the message contains no food payload (no navigation).
+ *
+ * @param msg     - The assistant message whose food cards to use.
+ * @param uiLang  - The language for resolving food display names.
+ * @returns True when scan context was written successfully.
  */
 function prepareRecommendationNavigationForMessage(msg: Message, uiLang: LangCode): boolean {
   const scanCtx = buildScanContextFromChatbotMessage(msg, uiLang);
@@ -1165,18 +1875,41 @@ function prepareRecommendationNavigationForMessage(msg: Message, uiLang: LangCod
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
+/**
+ * The main AIChatbot component.
+ *
+ * Renders a fixed floating button at the bottom-right of every page.  When the
+ * user taps it, a chat panel slides up with the full conversation interface.
+ *
+ * Props:
+ *   - `lang` — the current page UI language (en / ms / zh).  This can differ
+ *     from `conversationLang`, which tracks the language the user is actually
+ *     typing in during a conversation turn.
+ *
+ * State management overview:
+ *   - `messages`           — the full in-memory conversation array (also persisted to sessionStorage).
+ *   - `conversationLang`   — the language of the current active conversation turn.
+ *   - `scanContext`        — in-memory copy of the food scan result (mirrors sessionStorage).
+ *   - `hasActiveFoodContext` — sticky boolean; stays true while any food context has been set
+ *                             in this session (drives the "Food Detected" badge in the header).
+ *   - `pendingImages`      — images staged for upload but not yet sent.
+ *   - Various UI state     — isOpen, isLoading, isListening, voiceNotice, mealPlanToast, etc.
+ */
 export function AIChatbot({ lang }: { lang: LangCode }) {
   const tx = t[lang] ?? t["en"];
   // Tracks the language the conversation is actually happening in (may differ
   // from the page lang when user types in another language).
+  // Example: page is in English but user types Malay → conversationLang becomes "ms"
+  // for that turn.  The page lang override useEffect will re-align them if the
+  // user switches the page language while still in an initial seed chat state.
   const [conversationLang, setConversationLang] = useState<LangCode>(lang);
   const ctx = t[conversationLang] ?? t["en"];
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isPhotoAnalyzing, setIsPhotoAnalyzing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);            // waiting for /api/chat response
+  const [isPhotoAnalyzing, setIsPhotoAnalyzing] = useState(false); // waiting for /api/predict response
   const [scanContext, setScanContext] = useState<ScanContext | null>(null);
   // Sticky flag: true whenever a valid food/menu context has been established.
   // Only cleared by explicit user actions (Clear chat / Reset analysis / recommendation reset).
@@ -1184,33 +1917,34 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const [hasActiveFoodContext, setHasActiveFoodContext] = useState<boolean>(
     () => typeof window !== "undefined" && hasScanContextItems(readScanContext())
   );
-  const [hasInitialised, setHasInitialised] = useState(false);
-  const [supportsVoiceInput, setSupportsVoiceInput] = useState(false);
-  const [supportsImageUpload, setSupportsImageUpload] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [hasInitialised, setHasInitialised] = useState(false);  // true after first open
+  const [supportsVoiceInput, setSupportsVoiceInput] = useState(false);   // Web Speech API available
+  const [supportsImageUpload, setSupportsImageUpload] = useState(false);  // FormData/File/FileReader available
+  const [isListening, setIsListening] = useState(false);         // microphone actively recording
+  const [recordingSeconds, setRecordingSeconds] = useState(0);   // elapsed recording time counter
   const [messageImagePreviews, setMessageImagePreviews] = useState<Record<string, string[]>>({});
-  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
-  const [voiceNotice, setVoiceNotice] = useState("");
-  const [mealPlanToast, setMealPlanToast] = useState("");
-  const [isFoodDetailModalOpen, setIsFoodDetailModalOpen] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(false);
+  // Map from message ID to array of object-URL strings for user messages with photo uploads
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]); // staged for upload
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null); // enlarged image modal
+  const [voiceNotice, setVoiceNotice] = useState("");    // status/error notice below the input bar
+  const [mealPlanToast, setMealPlanToast] = useState(""); // transient toast for cart add/remove
+  const [isFoodDetailModalOpen, setIsFoodDetailModalOpen] = useState(false); // hides floating button
+  const [isDesktop, setIsDesktop] = useState(false);     // drives textarea min-height / placeholder
   const { cart, addToCart, removeFromCart, clearCart, isInCart } = useCart();
 
   const pathname = usePathname();
   const router = useRouter();
-  const lastRequestedLangRef = useRef<LangCode>(lang);
-  const conversationLangRef = useRef<LangCode>(lang);
-  const lastUnavailableRequestRef = useRef<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesScrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const chatAbortRef = useRef<AbortController | null>(null);
-  const imagePreviewUrlsRef = useRef<Set<string>>(new Set());
-  const pendingVoiceTranscriptRef = useRef("");
+  const lastRequestedLangRef = useRef<LangCode>(lang);          // last page-level lang that was acknowledged
+  const conversationLangRef = useRef<LangCode>(lang);           // ref mirror of conversationLang (for stable callbacks)
+  const lastUnavailableRequestRef = useRef<string | null>(null); // dedupes "food not available" retries
+  const messagesEndRef = useRef<HTMLDivElement>(null);           // scroll sentinel at the bottom of the list
+  const messagesScrollRef = useRef<HTMLDivElement>(null);        // the scrollable messages container
+  const inputRef = useRef<HTMLTextAreaElement>(null);            // the textarea for user input
+  const imageInputRef = useRef<HTMLInputElement>(null);          // hidden file input for photo uploads
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null); // active SpeechRecognition instance
+  const chatAbortRef = useRef<AbortController | null>(null);    // lets stopResponding() cancel the fetch
+  const imagePreviewUrlsRef = useRef<Set<string>>(new Set());   // tracks object URLs for revocation on unmount
+  const pendingVoiceTranscriptRef = useRef("");                  // accumulates voice transcript during recording
   const lastScanContextRawRef = useRef<string | null>(null);
   // Last analysis id we processed for the scan/menu hint (dedupes events, session flush, and welcome).
   const lastHandledAnalysisHintIdRef = useRef<string | null>(null);
@@ -1223,6 +1957,8 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const pendingImagesRef = useRef<PendingChatImage[]>([]);
 
   const revokeImagePreview = useCallback((url: string) => {
+    // Revoke an object URL to free memory and remove it from the tracking set.
+    // Called when a pending image is removed before sending, or on component unmount.
     URL.revokeObjectURL(url);
     imagePreviewUrlsRef.current.delete(url);
   }, []);
@@ -1289,7 +2025,19 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     return () => clearTimeout(t);
   }, [messages.length, isOpen, scrollChatToBottom]);
 
-  // Append the scan/menu hint once per unique analysis result id.
+  /**
+   * Appends the "I can see your food analysis is ready" hint once per unique
+   * analysis ID to avoid showing the same hint multiple times.
+   *
+   * Deduplication logic:
+   *   1. If analysisId matches the last-handled ID → skip (already shown).
+   *   2. If analysisId matches the stored acknowledged ID in sessionStorage
+   *      → mark as handled without showing (user already saw it before reload).
+   *   3. Otherwise → mark as acknowledged, append the hint message, and scroll.
+   *
+   * The ref `lastHandledAnalysisHintIdRef` is updated in all cases so
+   * subsequent calls with the same ID are no-ops.
+   */
   const appendScanHintIfNew = useCallback((analysisId: string) => {
     if (!analysisId || analysisId === lastHandledAnalysisHintIdRef.current) return;
     const storedAck = readAcknowledgedAnalysisHintId();
@@ -1507,6 +2255,17 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
   // ─── SEND MESSAGE ───────────────────────────────────────────────────────────
 
+  /**
+   * Toggles a food between "in meal plan" and "not in meal plan" when the user
+   * clicks the add/remove button on a food card in the chat bubble.
+   *
+   * If the food is already in the cart → remove it and show a brief toast.
+   * If not yet in the cart → add it (no toast; the button itself changes to a
+   * green check-mark as feedback).
+   *
+   * Also clears `lastUnavailableRequestRef` so the user can re-query the same
+   * food without the "that food is unavailable" deduplication guard firing.
+   */
   const toggleSuggestedFood = useCallback(
     (food: CartFoodItem) => {
       const foodName = getCartFoodName(food, conversationLang);
@@ -1526,6 +2285,15 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     [addToCart, cart, conversationLang, isInCart, removeFromCart]
   );
 
+  /**
+   * Returns the initial message array for a fresh or just-cleared conversation.
+   * Reads the latest scan context from sessionStorage so the welcome message
+   * reflects the current state (e.g., the "Food Detected" badge is set).
+   *
+   * Always produces at minimum a welcome message with starter questions.
+   * Does NOT add the scan hint — that is handled separately by appendScanHintIfNew
+   * via a queued microtask in the language-change effect.
+   */
   const getFreshWelcomeMessages = useCallback((): Message[] => {
     const ctx = readScanContext();
     const freshMessages: Message[] = [
@@ -1588,6 +2356,19 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     setTimeout(() => scrollChatToBottom(false), 300);
   }, [lang, isOpen, hasInitialised, getFreshWelcomeMessages, tx.languageSwitched, scrollChatToBottom, appendScanHintIfNew]);
 
+  /**
+   * Resets the entire chat session to a clean welcome state.
+   * Called when the user confirms the "Clear chat" action.
+   *
+   * Steps:
+   *   1. Asks for browser confirmation (window.confirm)
+   *   2. Cancels any in-flight API request and voice recognition session
+   *   3. Revokes all pending image object URLs to prevent memory leaks
+   *   4. Clears scan context from sessionStorage and in-memory state
+   *   5. Resets language tracking refs to the current page language
+   *   6. Generates fresh welcome messages and persists them to sessionStorage
+   *   7. Focuses the input field
+   */
   const clearConversation = useCallback(() => {
     if (typeof window !== "undefined" && !window.confirm(tx.clearConfirm)) return;
     chatAbortRef.current?.abort();
@@ -1619,6 +2400,17 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     setTimeout(() => inputRef.current?.focus(), 100);
   }, [getFreshWelcomeMessages, lang, tx.clearConfirm]);
 
+  /**
+   * Builds the text summary shown in a photo-analysis reply message.
+   * Lists up to 5 detected food names, category groups, and optionally the
+   * healthiest choice (when the user's text asked for a comparison).
+   * Appends a high-nutrient warning line when any item is high in fat/sodium.
+   *
+   * @param ctx          - The scan context produced by /api/predict.
+   * @param userText     - The user's message text (used to detect comparison intent).
+   * @param responseLang - Language for all localized strings in the reply.
+   * @returns A newline-separated multi-line summary string.
+   */
   const buildPhotoSummary = useCallback(
     (ctx: ScanContext, userText = "", responseLang: LangCode): string => {
       const txR = t[responseLang] ?? t.en;
@@ -1647,6 +2439,16 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     []
   );
 
+  /**
+   * Builds an automatic best-choice summary reply for cases where the API
+   * returned a "which category?" prompt instead of a direct answer.
+   * The component intercepts such replies client-side and uses this function
+   * to generate a direct response instead, avoiding the extra user interaction.
+   *
+   * @param ctx          - The current scan context.
+   * @param responseLang - Language for all localized strings.
+   * @returns A newline-separated summary string.
+   */
   const buildAutomaticBestChoiceSummary = useCallback(
     (ctx: ScanContext, responseLang: LangCode): string => {
       const txR = t[responseLang] ?? t.en;
@@ -1679,6 +2481,20 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     []
   );
 
+  /**
+   * Handles the "View Detailed Analysis" button click.
+   * Validates that a scan context exists, then either:
+   *   a) Dispatches a same-page scroll event if already on /recommendation
+   *   b) Navigates to /recommendation with a fromChatbot=1 query param
+   *
+   * The navigation URL includes a cache-busting timestamp so the browser
+   * doesn't serve a stale cached version of the recommendation page.
+   *
+   * Guards against navigation when no valid scan context is available
+   * (defensive check to prevent the recommendation page from rendering empty).
+   *
+   * @param href - The target href, typically "/recommendation".
+   */
   const openFullAnalysis = useCallback((href: string) => {
     // Safety guard: if no valid scan context exists in sessionStorage, block everything.
     const guardCtx = readScanContext();
@@ -1724,6 +2540,12 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     setIsOpen(false);
   }, [pathname, router]);
 
+  /**
+   * Handles file selection from the hidden image input element.
+   * Filters for image files only, respects the MAX_CHAT_UPLOAD_IMAGES cap,
+   * and creates object URLs for preview.  Shows a notice if the limit would
+   * be exceeded.  Does nothing if loading or photo analysis is in progress.
+   */
   const handleImageUpload = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []);
@@ -1760,6 +2582,13 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     [isLoading, isPhotoAnalyzing, pendingImages.length, supportsImageUpload, tx.imageUnsupported, tx.maxPhotos, tx.photoFailed]
   );
 
+  /**
+   * Removes a single staged image from the pending images list and revokes
+   * its object URL.  Clears the voice/notice area so any old messages don't
+   * linger after the image is gone.
+   *
+   * @param imageId - The unique ID of the PendingChatImage to remove.
+   */
   const removePendingImage = useCallback(
     (imageId: string) => {
       setPendingImages((prev) => {
@@ -1773,10 +2602,32 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     [revokeImagePreview]
   );
 
+  /**
+   * Opens a pending image in a new browser tab for a full-size preview.
+   * We open in a new tab rather than using a modal here because this is the
+   * pre-send preview; the in-conversation image modal is handled by
+   * `previewImageUrl` state + the overlay in the render.
+   *
+   * @param url - The object URL of the pending image.
+   */
   const previewPendingImage = useCallback((url: string) => {
     window.open(url, "_blank", "noopener,noreferrer");
   }, []);
 
+  /**
+   * Sends the staged images to /api/predict and processes the response.
+   *
+   * Steps:
+   *   1. Detects the language from the user's text (or falls back to conversationLang)
+   *   2. Appends the user message to the conversation with image previews attached
+   *   3. Converts images to data URLs for sessionStorage and sends via FormData to /api/predict
+   *   4. If no food is detected → clears scan context and shows noFoodDetected message
+   *   5. If food is detected → saves to sessionStorage, updates in-memory scan context,
+   *      and shows a photo summary message with individual food cards and an action button
+   *   6. On any error → shows photoFailed message
+   *
+   * @param text - The optional user text entered alongside the images.
+   */
   const analysePendingImages = useCallback(
     async (text: string) => {
       const imagesToSend = pendingImages;
@@ -1880,6 +2731,13 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     [buildPhotoSummary, isLoading, isPhotoAnalyzing, pendingImages]
   );
 
+  /**
+   * Adjusts the textarea height dynamically as the user types.
+   * On mobile the bar stays compact (single-line minimum), while on desktop
+   * the empty placeholder is taller to show the full hint text.
+   * The height is capped at `maxH` to prevent the input bar from taking up
+   * too much of the panel on very long messages.
+   */
   const resizeInput = useCallback(() => {
     const textarea = inputRef.current;
     if (!textarea) return;
@@ -1895,6 +2753,29 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     resizeInput();
   }, [input, resizeInput, tx.placeholder]);
 
+  /**
+   * Core message-sending function.  Handles the full pipeline for a user
+   * message turn, including all pre-API client-side interceptions.
+   *
+   * Pre-API intercept order:
+   *   1. If pending images → delegate to analysePendingImages and return.
+   *   2. Empty / loading guard → return early.
+   *   3. Language detection → set conversationLang; insert language-switch notice if changed.
+   *   4. Onboarding intent (starter questions) → static reply, no API call.
+   *   5. Meal-plan intent (add/remove cart) → execute cart action, static reply, no API call.
+   *   6. Analysis reset intent → clear scan context, static reply, no API call.
+   *   7. Repeat unavailable guard → reply with stillUnavailable, no API call.
+   *
+   * API call path:
+   *   8. Build request body (message, history, language, scanContext, cart, intakeSummary).
+   *   9. POST to /api/chat via fetch with an AbortController for stopResponding().
+   *  10. Handle response: execute cart action if present, update lastUnavailable ref,
+   *      rebuild in-memory scan context from food payload, append assistant message.
+   *  11. On abort → do nothing (user stopped); on other error → show errorRetry.
+   *
+   * @param text    - The user's message text.
+   * @param options - `{ retry: true }` when this is a retry of a previous failed message.
+   */
   const sendMessage = useCallback(
     async (text: string, options?: { retry?: boolean }) => {
       const trimmed = text.trim();
@@ -2198,6 +3079,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     [addToCart, analysePendingImages, buildAutomaticBestChoiceSummary, cart, clearCart, isLoading, isPhotoAnalyzing, lang, messages, pendingImages.length, removeFromCart, tx]
   );
 
+  /**
+   * Cancels the current in-flight API request and appends a system message
+   * informing the user that the response was stopped.
+   * No-ops when not currently loading (e.g., double-click guard).
+   */
   const stopResponding = useCallback(() => {
     if (!isLoading) return;
     chatAbortRef.current?.abort();
@@ -2209,6 +3095,17 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     setTimeout(() => inputRef.current?.focus(), 100);
   }, [isLoading, tx.responseStopped]);
 
+  /**
+   * Copies an assistant message to the clipboard.
+   * Strips the "!HIGH_NUTRITION! " sentinel prefix before copying so the
+   * user doesn't paste internal formatting markers.
+   *
+   * Strategy:
+   *   1. Try the modern Clipboard API (works on HTTPS desktop/mobile).
+   *   2. Fall back to a hidden textarea + document.execCommand("copy") for
+   *      mobile Safari and older browsers that don't support the Clipboard API.
+   *   3. Show a brief notice ("Copied" or "Copy failed") via voiceNotice state.
+   */
   const copyAssistantMessage = useCallback(
     async (content: string) => {
       const text = content.replace(/^!HIGH_NUTRITION! /gm, "");
@@ -2245,6 +3142,14 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     [tx.copied, tx.copyFailed]
   );
 
+  /**
+   * Finds the user message that immediately precedes a given assistant message
+   * in the conversation array.  Used to extract the original question when
+   * the user clicks "Try again" on a failed assistant response.
+   *
+   * @param assistantIndex - The index of the assistant message in `messages`.
+   * @returns The user message content string, or null if not found.
+   */
   const getPreviousUserMessage = useCallback(
     (assistantIndex: number): string | null => {
       for (let index = assistantIndex - 1; index >= 0; index -= 1) {
@@ -2255,6 +3160,14 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     [messages]
   );
 
+  /**
+   * Retries a failed or unsatisfactory assistant message by re-sending the
+   * user message that preceded it with the `retry: true` flag.
+   * The retry flag bypasses pre-API client-side intercepts (onboarding intent,
+   * meal-plan intent, etc.) and goes straight to the API call.
+   *
+   * @param assistantIndex - The index of the assistant message to retry from.
+   */
   const retryAssistantMessage = useCallback(
     (assistantIndex: number) => {
       const previousUserMessage = getPreviousUserMessage(assistantIndex);
@@ -2272,6 +3185,20 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     }
   };
 
+  /**
+   * Toggles the Web Speech API voice input session.
+   *
+   * If currently listening → stops recognition (transcript is applied in `onend`).
+   * If not listening → creates a new recognition instance, sets the language,
+   *   enables continuous + interim results, and starts.
+   *
+   * Voice input behaviour:
+   *   - Transcript is accumulated in `pendingVoiceTranscriptRef` during the session.
+   *   - On `onend`, the transcript is inserted into the input textarea (NOT auto-sent)
+   *     so the user can review and edit before sending.
+   *   - If no speech was detected, shows the voiceNoSpeech notice.
+   *   - If the API is not available, hides the microphone button.
+   */
   const toggleVoiceInput = useCallback(() => {
     if (typeof window === "undefined" || isLoading || isPhotoAnalyzing) return;
 
