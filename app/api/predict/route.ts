@@ -385,11 +385,13 @@ Formatting:
 async function processSingleImage(arrayBuffer: ArrayBuffer, mimeType: string): Promise<string[]> {
   const base64 = Buffer.from(arrayBuffer).toString("base64");
 
-  const primaryKey = process.env.GOOGLE_API_KEY;
-  const backupKey = process.env.GOOGLE_API_KEY_2;
+  const googleKey1 = process.env.GOOGLE_API_KEY;
+  const googleKey2 = process.env.GOOGLE_API_KEY_2;
+  const googleKey3 = process.env.GOOGLE_API_KEY_3;
+  const googleKey4 = process.env.GOOGLE_API_KEY_4;
   const groqKey = process.env.GROQ_API_KEY;
 
-  if (!primaryKey && !backupKey && !groqKey) return [];
+  if (!googleKey1 && !googleKey2 && !googleKey3 && !googleKey4 && !groqKey) return [];
 
   const tryWithGoogleKey = async (apiKey: string) => {
     const ocrResult = await executeGemma4OcrRequest(apiKey, base64, mimeType);
@@ -407,31 +409,53 @@ async function processSingleImage(arrayBuffer: ArrayBuffer, mimeType: string): P
   };
 
   // 1. Try Google primary key (Gemma 4 31B)
-  if (primaryKey) {
+  if (googleKey1) {
     try {
-      const result = await tryWithGoogleKey(primaryKey);
-      console.log("[predict] ✅ OCR succeeded (Google primary key, Gemma 4 31B)");
+      const result = await tryWithGoogleKey(googleKey1);
+      console.log("[predict] ✅ OCR succeeded (GOOGLE_API_KEY, Gemma 4 31B)");
       return result;
     } catch (err) {
-      console.warn("[predict] ⚠️ OCR primary Google key failed:", (err as any)?.message ?? err);
+      console.warn("[predict] ⚠️ OCR GOOGLE_API_KEY failed:", (err as any)?.message ?? err);
     }
   }
 
-  // 2. Try Google backup key (Gemma 4 31B)
-  if (backupKey) {
+  // 2. Try Google backup key 2 (Gemma 4 31B)
+  if (googleKey2) {
     try {
-      const result = await tryWithGoogleKey(backupKey);
-      console.log("[predict] ✅ OCR succeeded (Google backup key, Gemma 4 31B)");
+      const result = await tryWithGoogleKey(googleKey2);
+      console.log("[predict] ✅ OCR succeeded (GOOGLE_API_KEY_2, Gemma 4 31B)");
       return result;
     } catch (err) {
-      console.warn("[predict] ⚠️ OCR backup Google key failed:", (err as any)?.message ?? err);
+      console.warn("[predict] ⚠️ OCR GOOGLE_API_KEY_2 failed:", (err as any)?.message ?? err);
     }
   }
 
-  // 3. Last resort: Llama-4-Scout via Groq
+  // 3. Try Google backup key 3 (Gemma 4 31B)
+  if (googleKey3) {
+    try {
+      const result = await tryWithGoogleKey(googleKey3);
+      console.log("[predict] ✅ OCR succeeded (GOOGLE_API_KEY_3, Gemma 4 31B)");
+      return result;
+    } catch (err) {
+      console.warn("[predict] ⚠️ OCR GOOGLE_API_KEY_3 failed:", (err as any)?.message ?? err);
+    }
+  }
+
+  // 4. Try Google backup key 4 (Gemma 4 31B)
+  if (googleKey4) {
+    try {
+      const result = await tryWithGoogleKey(googleKey4);
+      console.log("[predict] ✅ OCR succeeded (GOOGLE_API_KEY_4, Gemma 4 31B)");
+      return result;
+    } catch (err) {
+      console.warn("[predict] ⚠️ OCR GOOGLE_API_KEY_4 failed:", (err as any)?.message ?? err);
+    }
+  }
+
+  // 5. Last resort: Llama-4-Scout via Groq
   try {
     const result = await tryWithLlama4Scout();
-    console.log("[predict] ✅ OCR succeeded (Groq backup, Llama-4-Scout 17B)");
+    console.log("[predict] ✅ OCR succeeded (GROQ_API_KEY backup, Llama-4-Scout 17B)");
     return result;
   } catch (err) {
     console.error("[predict] ❌ All OCR attempts failed:", (err as any)?.message ?? err);
@@ -658,20 +682,27 @@ async function analyzeWithFallback(
 ): Promise<string> {
   try {
     const result = await analyzeWithGroq(combinedOcr, userText, process.env.GROQ_API_KEY);
-    console.log("[predict] ✅ Analysis succeeded (Key 1, llama-3.3-70b)");
+    console.log("[predict] ✅ Analysis succeeded (GROQ_API_KEY, llama-3.3-70b)");
     return result;
   } catch (err) {
-    console.warn(`[predict] ⚠️ Key 1 failed — trying Key 2. Error: ${err}`);
+    console.warn(`[predict] ⚠️ GROQ_API_KEY failed — trying GROQ_API_KEY_2. Error: ${err}`);
     try {
       const result = await analyzeWithGroq(combinedOcr, userText, process.env.GROQ_API_KEY_2);
-      console.log("[predict] ✅ Analysis succeeded (Key 2, llama-3.3-70b)");
+      console.log("[predict] ✅ Analysis succeeded (GROQ_API_KEY_2, llama-3.3-70b)");
       return result;
     } catch (err2) {
-      console.warn(`[predict] ⚠️ Key 2 also failed — retrying with gpt-oss-120b. Error: ${err2}`);
-      // Last resort: Chinese-capable model for better trilingual output
-      const result = await analyzeWithChineseModel(combinedOcr, userText, process.env.GROQ_API_KEY);
-      console.log("[predict] ✅ Analysis succeeded (gpt-oss-120b fallback)");
-      return result;
+      console.warn(`[predict] ⚠️ GROQ_API_KEY_2 failed — trying GROQ_API_KEY_5. Error: ${err2}`);
+      try {
+        const result = await analyzeWithGroq(combinedOcr, userText, process.env.GROQ_API_KEY_5);
+        console.log("[predict] ✅ Analysis succeeded (GROQ_API_KEY_5, llama-3.3-70b)");
+        return result;
+      } catch (err3) {
+        console.warn(`[predict] ⚠️ GROQ_API_KEY_5 also failed — retrying with gpt-oss-120b. Error: ${err3}`);
+        // Last resort: Chinese-capable model for better trilingual output
+        const result = await analyzeWithChineseModel(combinedOcr, userText, process.env.GROQ_API_KEY);
+        console.log("[predict] ✅ Analysis succeeded (gpt-oss-120b fallback)");
+        return result;
+      }
     }
   }
 }
