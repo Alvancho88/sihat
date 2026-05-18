@@ -274,8 +274,8 @@ export function MalaysiaChoroplethMap({ dataByYear, availableYears, lang, t }: C
           {lang === "ms"
             ? "Warna peta menunjukkan prevalens diabetes. Ketik mana-mana negeri untuk melihat data tekanan darah dan kolesterol juga."
             : lang === "zh"
-            ? "地图颜色显示糖尿病患病率。点击任何州属查看血压和胆固醇数据。"
-            : "Map colour shows diabetes prevalence. Tap any state to see blood pressure and cholesterol data too."}
+            ? "颜色越深，糖尿病患病率越高。点击任何州属查看血压和胆固醇数据。"
+            : "Darker colour shows higher diabetes rates. Tap a state for blood pressure and cholesterol data."}
         </p>
       </div>
 

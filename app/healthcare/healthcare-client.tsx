@@ -62,10 +62,11 @@ const content = {
     private_sector: "Private",
     tags_label: "Screening Available:",
     back_to_search: "Back to Search",
+    phone_not_available: "Not available",
   },
   ms: {
     title: "Cari Klinik Berdekatan",
-    subtitle: "Cari klinik dan hospital yang menawarkan saringan Tiga Tinggi (diabetes, tekanan darah & kolesterol).",
+    subtitle: "Cari klinik dan hospital yang menawarkan saringan Penyakit Tiga Serangkai (diabetes, tekanan darah & kolesterol).",
     consent_title: "Aktifkan Lokasi?",
     consent_desc: "Kami boleh menyusun klinik mengikut jarak jika anda berkongsi lokasi anda. Lokasi anda tidak disimpan.",
     consent_allow: "Ya, Guna Lokasi Saya",
@@ -106,6 +107,7 @@ const content = {
     private_sector: "Swasta",
     tags_label: "Saringan Tersedia:",
     back_to_search: "Kembali ke Carian",
+    phone_not_available: "Tidak ada",
   },
   zh: {
     title: "查找附近诊所",
@@ -150,6 +152,7 @@ const content = {
     private_sector: "私立",
     tags_label: "可用筛查：",
     back_to_search: "返回搜索",
+    phone_not_available: "无",
   },
 }
 
@@ -244,7 +247,7 @@ function FacilityCard({ facility, t }: { facility: FacilityWithDistance; t: type
         </div>
 
         {/* Phone */}
-        {facility.phone && (
+        {facility.phone ? (
           <a
             href={`tel:${phoneClean}`}
             className="flex items-center gap-2.5 text-primary hover:text-primary/80 active:opacity-60 transition-colors"
@@ -252,6 +255,11 @@ function FacilityCard({ facility, t }: { facility: FacilityWithDistance; t: type
             <Phone className="w-5 h-5 shrink-0" />
             <span className="text-base font-semibold">{facility.phone}</span>
           </a>
+        ) : (
+          <div className="flex items-center gap-2.5 text-foreground/60">
+            <Phone className="w-5 h-5 shrink-0" />
+            <span className="text-base italic">{t.phone_not_available}</span>
+          </div>
         )}
 
         {/* Specialty tags */}
