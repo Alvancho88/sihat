@@ -10,12 +10,15 @@
 
 | Feature | Description |
 |---|---|
-| **AI Menu Analyser** | Upload a photo of a restaurant menu and get an instant nutritional breakdown ranked by diabetes risk (sugar, salt, saturated fat) |
-| **Food Explorer** | Browse common Malaysian foods with their sugar, calorie, salt, fat, and Glycaemic Index (GI) levels — with multilingual health tips |
-| **Diabetes Overview** | Interactive choropleth map and charts showing diabetes prevalence across Malaysian states and ethnic groups |
-| **Myth Buster** | Debunks common diabetes misconceptions with evidence-based facts |
-| **Healthcare Finder** | *(Coming in Iteration 3)* Locating nearby diabetes healthcare facilities |
-| **Multilingual Support** | Full UI in English 🇬🇧, Bahasa Malaysia 🇲🇾, and Mandarin 🇨🇳 |
+| **AI Food Recommendation** | Upload a photo of a restaurant menu or a food and get an instant nutritional breakdown ranked by "three high" risk (sugar, salt, saturated fat) with food recommendation. |
+| **Food Explorer** | Browse an extensive database of everyday Malaysian dishes detailing calories, sugar, sodium, fat, and Glycemic Index (GI) levels, complete with localised, multilingual health tips. |
+| **Dietary Planner** | Track and aggregate daily sugar, sodium, and fat intake against recommended daily allowances to build balanced, heart-healthy meal plans. |
+| **Three Highs Overview** | Explore interactive choropleth maps and dynamic charts tracking the prevalence of "three highs" prevalence across Malaysian states and ethnic groups. |
+| **Three Highs Literacy Hub** | Access a curated library of bite-sized education cards introducing the "three highs", their symptoms, factors and practical prevention strategies. |
+| **Interactive Body Map** | Visually explore an interactive anatomical map to understand exactly how "three highs" impact different organs. |
+| **Myth Buster** | Debunks common "three highs" misconceptions with evidence-based facts. |
+| **Healthcare Facility Finder** | Easily locate nearby public and private healthcare facilities specialising in "three highs" screening. |
+| **Multilingual Support** | Full UI in English 🇬🇧, Bahasa Malaysia 🇲🇾, and Mandarin 🇨🇳. |
 
 ---
 
@@ -87,21 +90,29 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 📖 Usage Examples
 
-### AI Menu Analyser
+### AI Food Recommendation
 
 1. Navigate to the **Home** page (or `/recommendation`).
-2. Upload up to **5 photos** of a restaurant menu, or type food items manually.
+2. Upload up to **5 photos** of restaurant menu and food, or type food items manually.
 3. Click **Analyse** — the app extracts every food item using Llama-4-Scout OCR, then ranks them by diabetes risk (Low / Medium / High) across four categories: Appetizer, Main Dish, Dessert, and Drinks.
-4. Each result shows estimated **sugar (g)**, **sodium (mg)**, **saturated fat (g)**, a **health tip**, and the top-ranked item's **reason for recommendation**.
+4. Each result shows estimated **sugar (g)**, **sodium (mg)**, **fat (g)**, a **health tip**, and the top-ranked item's **reason for recommendation**.
+5. If all recommended food in a food category are all high risk, an alternative food will be suggested.
 
 ### Food Explorer
 
 1. Go to `/food`.
 2. Filter by cuisine category (Malaysian, Chinese, Indian, etc.) or search by name.
-3. Tap any food card to view its calorie count, GI, daily sugar impact, and a personalised health tip.
+3. Tap any food card to view its **calorie count**, **GI**, **daily sugar impact**, and a **personalised health tip**.
 4. Switch languages using the flag selector in the navbar.
 
-### Diabetes Statistics Overview
+### Dietary Planner
+
+1. Go to `/food`.
+2. Tap the **Add to Plan** button on any food card to add the food into the meal plan.
+3. Tap **View Plan** button on the top right corner.
+4. View the **total sugar**, **sodium**, and **fat** intake against recommended daily allowances and **total calories**.
+
+### "Three Highs" Statistics
 
 1. Go to `/statistics`.
 2. View the **national trend chart** to see how prevalence has changed over the years.
@@ -109,12 +120,19 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 4. Check the **ethnicity breakdown** chart for community-level insights.
 5. Get additional useful information 
 
-### Learn Overview
+### "Three Highs" Learn 
 
 1. Go to `/learn`.
-2. Learn about Diabetes and Its Partners (The Three Highs)
-3. How the Three Highs affect your body
-4. Myth Debunker
+2. Learn about diabetes and its partners (The "Three Highs") at **"Three Highs" Literacy Hub**.
+3. Explore how the "Three Highs" affect your body at **Interactive Body Map**.
+4. Debunk myth and learn about facts at **Myth Debunker**.
+
+### Healthcare Facility Finder
+
+1. Go to `/healthcare`.
+2. Enable location to find out the nearest healthcare facility.
+3. Filter healthcare facility by **state**, **sector**, and **specialty**.
+4. View healthcare facility information such as **name**, **address**, **contact number**, **ratings**, **sector**, and **get directions**.
 
 
 ---
@@ -124,13 +142,13 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ```
 manis/
 ├── app/
-│   ├── api/predict/        # AI menu analysis API route (Groq)
+│   ├── api/predict/        # AI food & menu analysis API route (Groq)
 │   ├── archive/            # Archived content / past iterations
-│   ├── learn/            # Myth Buster page
-│   ├── food/               # Food Explorer page
-│   ├── healthcare/         # Healthcare Finder (coming in Iteration 2)
-│   ├── statistics/           # Diabetes statistics & map
-│   └── recommendation/     # AI Menu Analyser (home page)
+│   ├── learn/              # "Three Highs" Literacy Hub, Interactive Body MapMyth Buster page
+│   ├── food/               # Food Explorer, Dietary Planner page
+│   ├── healthcare/         # Healthcare Facility Finder
+│   ├── statistics/         # "Three Highs" statistics & map
+│   └── recommendation/     # AI Food Recommendation (home page)
 ├── components/
 │   ├── ui/                 # shadcn/ui component library
 │   ├── ai-chatbot.tsx      # AI chat interface
@@ -170,13 +188,13 @@ Set the same environment variables (`DATABASE_URL`, `GROQ_API_KEY`, `GROQ_API_KE
 - AI Recommendation & Decision Support
 - Diabetes Education & Awareness
 
-### Iteration 2 (Current)
+### Iteration 2 (Archived)
 - Food explorer with the three highs for common Malaysian foods
 - Three highs statistics overview with state-level map
-- Learning about the three highs and Myth Buster feature
+- Learning about the three highs, interactive body map and Myth Buster feature
 - Multilingual support (EN / MS / ZH)
 
-### Iteration 3 (Future)
+### Iteration 3 (Current)
 - Healthcare Facility Finder (nearby clinic/hospital locator)
 - AI Conversational Health Assistant
 
