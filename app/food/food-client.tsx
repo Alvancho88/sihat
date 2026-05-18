@@ -175,7 +175,7 @@ const pageContent = {
     nutrition_gi: "GI",
     nutrition_fat: "Lemak",
     nutrition_sodium: "Natrium",
-    portion: "Sajian",
+    portion: "Saiz hidangan",
     portion_plate: "pinggan",
     portion_bowl: "mangkuk",
     portion_piece: "keping",
@@ -246,7 +246,7 @@ const pageContent = {
     no_items_hint: "Ketik '+' pada makanan untuk mula merancang",
     view_cart: "Lihat Pelan",
     items: "item",
-    three_highs_tip: "Tip Kesihatan Tiga Tinggi",
+    three_highs_tip: "Tip Kesihatan Penyakit Tiga Serangkai",
     clear_filters: "Kosongkan Penapis",
     filter_summary_label: "Menunjukkan:",
     filter_summary_all: "Semua makanan",
@@ -550,7 +550,7 @@ function FoodCard({ food, t, lang, onOpen }: { food: FoodItem; t: typeof pageCon
 
         {/* Top row: Sugar | Calories | GI */}
         <div className="grid grid-cols-3 gap-2 mb-2">
-          <div className={`rounded-xl px-2 py-2 text-center border ${getLevelPillStyle(sugarLevel)}`}>
+          <div className={`rounded-xl px-2 py-2 text-center ${getLevelPillStyle(sugarLevel)}`}>
             <div className="flex items-center justify-center gap-1">
               <LevelIcon level={sugarLevel} />
               <span className="text-base font-bold">{food.sugar}</span>
@@ -561,7 +561,7 @@ function FoodCard({ food, t, lang, onOpen }: { food: FoodItem; t: typeof pageCon
             <div className="text-base font-bold text-foreground">{food.calories}</div>
             <div className="text-xs md:text-sm font-medium text-muted-foreground">{t.nutrition_cal}</div>
           </div>
-          <div className={`rounded-xl px-2 py-2 text-center border ${getLevelPillStyle(giLevel)}`}>
+          <div className={`rounded-xl px-2 py-2 text-center ${getLevelPillStyle(giLevel)}`}>
             <div className="flex items-center justify-center gap-1">
               <LevelIcon level={giLevel} />
               <span className="text-base font-bold">{food.gi}</span>
@@ -571,14 +571,14 @@ function FoodCard({ food, t, lang, onOpen }: { food: FoodItem; t: typeof pageCon
         </div>
         {/* Bottom row: Fat | Sodium */}
         <div className="grid grid-cols-2 gap-2">
-          <div className={`rounded-xl px-2 py-2 text-center border ${getLevelPillStyle(fatLevel)}`}>
+          <div className={`rounded-xl px-2 py-2 text-center ${getLevelPillStyle(fatLevel)}`}>
             <div className="flex items-center justify-center gap-1">
               <LevelIcon level={fatLevel} />
               <span className="text-base font-bold">{food.fat}</span>
             </div>
             <div className="text-xs md:text-sm font-medium">{t.nutrition_fat}</div>
           </div>
-          <div className={`rounded-xl px-2 py-2 text-center border ${getLevelPillStyle(sodiumLevel)}`}>
+          <div className={`rounded-xl px-2 py-2 text-center ${getLevelPillStyle(sodiumLevel)}`}>
             <div className="flex items-center justify-center gap-1">
               <LevelIcon level={sodiumLevel} />
               <span className="text-base font-bold">{food.sodium}</span>
@@ -775,7 +775,7 @@ function FoodDetailModal({
 
             {/* Nutrition grid: Sugar | Cal | GI */}
             <div className="grid grid-cols-3 gap-1.5 sm:gap-3 mb-2 sm:mb-3">
-              <div className={`rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-center border min-h-[44px] ${getLevelPillStyle(sugarLevel)}`}>
+              <div className={`rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-center min-h-[44px] ${getLevelPillStyle(sugarLevel)}`}>
                 <div className="flex items-center justify-center gap-1">
                   <LevelIcon level={sugarLevel} />
                   <span className="text-base sm:text-lg font-bold">{food.sugar}</span>
@@ -786,7 +786,7 @@ function FoodDetailModal({
                 <div className="text-base sm:text-lg font-bold text-foreground">{food.calories}</div>
                 <div className="text-xs sm:text-sm font-medium text-muted-foreground">{t.nutrition_cal}</div>
               </div>
-              <div className={`rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-center border min-h-[44px] ${getLevelPillStyle(giLevel)}`}>
+              <div className={`rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-center min-h-[44px] ${getLevelPillStyle(giLevel)}`}>
                 <div className="flex items-center justify-center gap-1">
                   <LevelIcon level={giLevel} />
                   <span className="text-base sm:text-lg font-bold">{food.gi}</span>
@@ -797,14 +797,14 @@ function FoodDetailModal({
 
             {/* Nutrition grid: Fat | Sodium */}
             <div className="grid grid-cols-2 gap-1.5 sm:gap-3 mb-3 sm:mb-4">
-              <div className={`rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-center border min-h-[44px] ${getLevelPillStyle(fatLevel)}`}>
+              <div className={`rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-center min-h-[44px] ${getLevelPillStyle(fatLevel)}`}>
                 <div className="flex items-center justify-center gap-1">
                   <LevelIcon level={fatLevel} />
                   <span className="text-base sm:text-lg font-bold">{food.fat}</span>
                 </div>
                 <div className="text-xs sm:text-sm font-medium">{t.nutrition_fat}</div>
               </div>
-              <div className={`rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-center border min-h-[44px] ${getLevelPillStyle(sodiumLevel)}`}>
+              <div className={`rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-center min-h-[44px] ${getLevelPillStyle(sodiumLevel)}`}>
                 <div className="flex items-center justify-center gap-1">
                   <LevelIcon level={sodiumLevel} />
                   <span className="text-base sm:text-lg font-bold">{food.sodium}</span>
@@ -1537,6 +1537,8 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
   const [selectedFoodIndex, setSelectedFoodIndex] = useState<number | null>(null)
   // Fade transition flag during modal food navigation
   const [modalTransitioning, setModalTransitioning] = useState(false)
+  // The full list of foods, shuffled once on initial load to provide variety
+  const [shuffledFoods, setShuffledFoods] = useState(initialFoods)
 
   /**
    * Dispatches a custom "sihat_food_detail_modal" event whenever the food detail
@@ -1762,21 +1764,19 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
    * This ensures variety in the displayed order without full randomisation.
    * Memoised so it only runs once per component mount.
    */
-  const shuffledFoods = useMemo(() => {
-    const malaysian = initialFoods.filter(f => f.category === "Malaysian")
-    const others = initialFoods.filter(f => f.category !== "Malaysian")
-
-    const shuffle = (arr: typeof initialFoods) => {
-      const a = [...arr]
-      for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]]
-      }
-      return a
+  useEffect(() => {
+  const shuffle = (arr: typeof initialFoods) => {
+    const a = [...arr]
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]]
     }
-
-    return [...shuffle(malaysian), ...shuffle(others)]
-  }, [])
+    return a
+  }
+  const malaysian = initialFoods.filter(f => f.category === "Malaysian")
+  const others = initialFoods.filter(f => f.category !== "Malaysian")
+  setShuffledFoods([...shuffle(malaysian), ...shuffle(others)])
+}, [])
 
   /**
    * filtered
@@ -2059,15 +2059,15 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sugar_guide_title}:</span>
                     <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
                         <span className="text-xs md:text-base">≤5g</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
                         <span className="text-xs md:text-base">6-15g</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
                         <span className="text-xs md:text-base">≥16g</span>
                       </span>
@@ -2078,15 +2078,15 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.fat_guide_title}:</span>
                     <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
                         <span className="text-xs md:text-base">≤5g</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
                         <span className="text-xs md:text-base">6-15g</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
                         <span className="text-xs md:text-base">≥16g</span>
                       </span>
@@ -2097,15 +2097,15 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.sodium_guide_title}:</span>
                     <div className="flex w-full gap-1 md:flex-nowrap md:gap-3 md:w-auto md:items-center">
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
                         <span className="text-xs md:text-base">≤300mg</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
                         <span className="text-xs md:text-base">301-600mg</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
                         <span className="text-xs md:text-base">≥601mg</span>
                       </span>
@@ -2123,15 +2123,15 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.gi_legend_title}:</span>
                     <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#B5E0F1] border-[#1a5276] text-[#1a5276] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><TrendingDown className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_low}</span>
                         <span className="text-xs md:text-base">≤55</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#E6EAC7] border-[#4a5a23] text-[#4a5a23] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><Minus className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_medium}</span>
                         <span className="text-xs md:text-base">56-69</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[#FFF3CD] border-[#856404] text-[#856404] font-extrabold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high}</span>
                         <span className="text-xs md:text-base">≥70</span>
                       </span>
@@ -2149,11 +2149,11 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
                   <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:gap-3 text-sm md:text-base">
                     <span className="font-bold text-primary shrink-0 whitespace-nowrap text-base md:text-base">{t.daily_sugar_title}</span>
                     <div className="flex w-full gap-1 md:flex-wrap md:gap-3 md:w-auto">
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[var(--cb-blue)]/15 text-[var(--cb-blue-text)] font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[var(--cb-blue)]/50 text-[var(--cb-blue-text)] font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><User className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0" />{t.risk_high === "High" ? "Men" : t.risk_high === "Tinggi" ? "Lelaki" : "男性"}</span>
                         <span className="text-xs md:text-base">&lt;36g</span>
                       </span>
-                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[var(--cb-pink)]/15 text-foreground font-semibold text-sm md:text-base md:px-4 md:py-2">
+                      <span className="flex-1 md:flex-none inline-flex flex-col md:flex-row items-center justify-center gap-0 md:gap-1 px-2 py-1.5 rounded-xl md:rounded-full bg-[var(--cb-pink)]/50 text-foreground font-semibold text-sm md:text-base md:px-4 md:py-2">
                         <span className="inline-flex items-center gap-0.5"><User className="w-3.5 h-3.5 md:w-5 md:h-5 shrink-0 text-[var(--cb-pink-text)]" />{t.risk_high === "High" ? "Women" : t.risk_high === "Tinggi" ? "Wanita" : "女性"}</span>
                         <span className="text-xs md:text-base">&lt;25g</span>
                       </span>

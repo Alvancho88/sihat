@@ -51,7 +51,7 @@ type LangCode = "en" | "ms" | "zh"
 const content = {
   en: {
     page_title: "Check Your Food",
-    page_subtitle: "Snap a photo of your menu or food to get health recommendations",
+    page_subtitle: "Snap a photo of your menu or food to get healthier recommendations.",
     guide_title: "How to Take a Good Photo",
     guide_steps: [
       { icon: "camera", text: "Hold your phone steady above the menu" },
