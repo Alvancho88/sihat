@@ -28,7 +28,7 @@
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS v4, Radix UI, shadcn/ui
 - **Database:** PostgreSQL via [Neon](https://neon.tech/) (serverless), [Drizzle ORM](https://orm.drizzle.team/)
-- **AI / LLM:** [Groq API](https://groq.com/) — Llama-4-Scout (OCR) + Llama-3.3-70B (analysis)
+- **AI / LLM:** [Google AI Studio API](https://aistudio.google.com/) — gemma-4-31b-it and llama-4-scout-17b-16e-instruct (OCR) + [Groq API](https://groq.com/) — Llama-3.3-70B (analysis and chatbot)
 - **Charts & Maps:** Recharts, react-simple-maps, D3
 - **Deployment:** [Vercel](https://vercel.com/)
 - **Package Manager:** pnpm
@@ -42,6 +42,7 @@
 - Node.js 18+
 - [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
 - A [Neon](https://neon.tech/) PostgreSQL database (free tier works)
+- A [Google AI Studio](https://aistudio.google.com/) API key (free tier available)
 - A [Groq](https://console.groq.com/) API key (free tier available)
 
 ### Installation
@@ -64,9 +65,18 @@ Edit `.env.local` and fill in the required values:
 # Neon PostgreSQL connection string
 DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 
-# Groq API keys (Key 2 is primary, Key 1 is fallback)
+# Google API keys (Key 1 is primary, Key 2,3,4 is fallback)
+GOOGLE_API_KEY=AIz_your_primary_key
+GOOGLE_API_KEY_2=AIz_your_backup_key
+GOOGLE_API_KEY_3=AIz_your_backup_key
+GOOGLE_API_KEY_4=AIz_your_backup_key
+
+# Groq API keys (Key 1 and 3 is primary, Key 2,4,5 is fallback)
 GROQ_API_KEY=gsk_your_primary_key
 GROQ_API_KEY_2=gsk_your_secondary_key
+GROQ_API_KEY_3=gsk_your_primary_key
+GROQ_API_KEY_4=gsk_your_secondary_key
+GROQ_API_KEY_5=gsk_your_secondary_key
 ```
 
 ### Database Setup
@@ -86,86 +96,120 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
----
-
 ## 📖 Usage Examples
-
+ 
 ### AI Food Recommendation
-
+ 
 1. Navigate to the **Home** page (or `/recommendation`).
-2. Upload up to **5 photos** of restaurant menu and food, or type food items manually.
-3. Click **Analyse** — the app extracts every food item using Llama-4-Scout OCR, then ranks them by diabetes risk (Low / Medium / High) across four categories: Appetizer, Main Dish, Dessert, and Drinks.
-4. Each result shows estimated **sugar (g)**, **sodium (mg)**, **fat (g)**, a **health tip**, and the top-ranked item's **reason for recommendation**.
-5. If all recommended food in a food category are all high risk, an alternative food will be suggested.
-
+2. Upload up to **5 photos** of restaurant menus or food dishes, or type food items manually.
+3. Click **Analyse** — the app extracts every food item using Gemma-4 / Llama-4-Scout OCR, then ranks them by Three Highs risk (Low / Medium / High) across four categories: Appetizer, Main Dish, Dessert, and Drinks.
+4. Each result shows estimated **sugar (g)**, **sodium (mg)**, **saturated fat (g)**, a **health tip**, and the top-ranked item's **reason for recommendation**.
+5. If all items in a category are High Risk, a **healthier alternative food** is automatically suggested above the ranking.
+6. Tap the floating **Siti** chatbot button to ask follow-up health questions about any scanned item.
 ### Food Explorer
-
+ 
 1. Go to `/food`.
 2. Filter by cuisine category (Malaysian, Chinese, Indian, etc.) or search by name.
-3. Tap any food card to view its **calorie count**, **GI**, **daily sugar impact**, and a **personalised health tip**.
-4. Switch languages using the flag selector in the navbar.
-
+3. Sort by any nutrient (Sugar / Calories / GI / Fat / Sodium) in ascending or descending order.
+4. Tap any food card to view its **calorie count**, **GI**, **daily sugar impact**, **fat**, **sodium**, and a **personalised health tip**.
+5. Switch languages using the flag selector in the navbar.
 ### Dietary Planner
-
+ 
 1. Go to `/food`.
-2. Tap the **Add to Plan** button on any food card to add the food into the meal plan.
-3. Tap **View Plan** button on the top right corner.
-4. View the **total sugar**, **sodium**, and **fat** intake against recommended daily allowances and **total calories**.
-
+2. Tap the **Add to Plan** button on any food card to add the food to your daily meal plan.
+3. Tap **View Plan** on the top right corner to open the Daily Intake panel.
+4. Select your **gender** to apply the correct recommended daily limits.
+5. View **total sugar**, **sodium**, **fat**, and **calories** tracked against recommended daily allowances with visual progress bars.
 ### "Three Highs" Statistics
-
+ 
 1. Go to `/statistics`.
-2. View the **national trend chart** to see how prevalence has changed over the years.
-3. Interact with the **choropleth map** to explore diabetes prevalence by Malaysian state.
-4. Check the **ethnicity breakdown** chart for community-level insights.
-5. Get additional useful information 
-
-### "Three Highs" Learn 
-
+2. View the **national trend chart** to see how prevalence of diabetes, hypertension, and hyperlipidemia has changed over the last decade.
+3. Interact with the **choropleth map** to explore Three Highs prevalence by Malaysian state — tap a state for a detailed breakdown of all three conditions.
+4. Check the **ethnicity breakdown** grouped bar chart for community-level insights across ethnic groups in Malaysia.
+5. Review the **summary statistics cards** for a quick overview of the Three Highs crisis in Malaysia.
+### "Three Highs" Learn
+ 
 1. Go to `/learn`.
-2. Learn about diabetes and its partners (The "Three Highs") at **"Three Highs" Literacy Hub**.
-3. Explore how the "Three Highs" affect your body at **Interactive Body Map**.
-4. Debunk myth and learn about facts at **Myth Debunker**.
-
+2. Learn about the Three Highs (diabetes, hypertension, hyperlipidemia) at the **Three Highs Literacy Hub**.
+3. Explore how the Three Highs affect your body at the **Interactive Body Map** — tap any organ to see its comorbidity breakdown.
+4. Debunk myths and learn evidence-based facts at **Myth Buster**.
 ### Healthcare Facility Finder
-
+ 
 1. Go to `/healthcare`.
-2. Enable location to find out the nearest healthcare facility.
-3. Filter healthcare facility by **state**, **sector**, and **specialty**.
-4. View healthcare facility information such as **name**, **address**, **contact number**, **ratings**, **sector**, and **get directions**.
-
-
+2. Allow location access to automatically sort clinics by **nearest distance**, or search manually by area.
+3. Filter by **state**, **sector** (Public / Private), and **specialty** (Diabetes / Blood Pressure / Cholesterol).
+4. View each facility's **name**, **address**, **contact number**, **rating**, **sector**, and **distance**.
+5. Tap **Call Clinic** to dial directly from your device, or **Get Directions** to open navigation in Google Maps.
+### Siti — AI Conversational Health Assistant
+ 
+1. Tap the floating **Siti** chat button available on any page.
+2. Ask health questions about the Three Highs in **English, Bahasa Malaysia, or Simplified Chinese**.
+3. Reference foods from your current scan (e.g. *"Can I eat the Char Kway Teow I just scanned?"*) for context-aware advice.
+4. Add foods mentioned in the chat directly to your **Daily Plan** via Siti's cart commands.
+5. Ask *"What's my daily intake so far?"* for an instant summary of your nutrition plan.
+6. All responses are general dietary guidance only — a disclaimer is shown in the chat interface.
 ---
 
 ## 📁 Project Structure
-
+ 
 ```
-manis/
+sihat/
 ├── app/
-│   ├── api/predict/        # AI food & menu analysis API route (Groq)
-│   ├── archive/            # Archived content / past iterations
-│   ├── learn/              # "Three Highs" Literacy Hub, Interactive Body MapMyth Buster page
-│   ├── food/               # Food Explorer, Dietary Planner page
-│   ├── healthcare/         # Healthcare Facility Finder
-│   ├── statistics/         # "Three Highs" statistics & map
-│   └── recommendation/     # AI Food Recommendation (home page)
+│   ├── api/
+│   │   ├── chat/route.ts       # Siti chatbot API (Groq Llama-3.3-70B, intent routing, multi-key fallback)
+│   │   └── predict/route.ts    # AI food & menu analysis API (OCR + nutritional analysis, Groq/Google AI)
+│   ├── archive/                # Archived content from past iterations
+│   ├── food/                   # Food Explorer & Dietary Planner
+│   │   ├── food-client.tsx     # Client component (search, filter, sort, cart)
+│   │   └── page.tsx
+│   ├── healthcare/             # Healthcare Facility Finder
+│   │   ├── healthcare-client.tsx  # Client component (geolocation, filters, pagination)
+│   │   └── page.tsx
+│   ├── learn/                  # Three Highs Literacy Hub, Interactive Body Map, Myth Buster
+│   │   ├── learn-client.tsx
+│   │   └── page.tsx
+│   ├── recommendation/         # AI Food Recommendation (home page)
+│   │   ├── recommendation-client.tsx  # Client component (upload, OCR, analysis, alternative suggestion)
+│   │   └── page.tsx
+│   └── statistics/             # Three Highs statistics, choropleth map, trend charts
+│       ├── statistics-client.tsx
+│       └── page.tsx
 ├── components/
-│   ├── ui/                 # shadcn/ui component library
-│   ├── ai-chatbot.tsx      # AI chat interface
-│   ├── malaysia-choropleth-map.tsx  # Interactive state map
-│   └── navbar.tsx          # Navigation with language switcher
+│   ├── ui/                          # shadcn/ui component library
+│   ├── ai-chatbot.tsx               # Siti floating chatbot (intent classification, scan context, cart commands)
+│   ├── body-map.tsx                 # Interactive SVG anatomical body map
+│   ├── cart-context.tsx             # Global cart/daily-intake state (React Context)
+│   ├── daily-intake-panel.tsx       # Daily nutrition summary panel with progress bars
+│   ├── malaysia-choropleth-map.tsx  # Interactive state-level choropleth map (D3 + react-simple-maps)
+│   ├── menu-scan-cta.tsx            # "Scan your menu" call-to-action component
+│   ├── navbar.tsx                   # Navigation with language switcher (EN / MS / ZH)
+│   ├── page-layout.tsx              # Shared page wrapper with header and footer
+│   ├── three-highs-insights.tsx     # Three Highs statistics insight cards
+│   └── three-highs-popup.tsx        # Three Highs detail pop-up panel
 ├── db/
-│   ├── index.ts            # Neon database client
-│   └── schema.ts           # Drizzle ORM table definitions
+│   ├── index.ts                     # Neon serverless database client
+│   └── schema.ts                    # Drizzle ORM table definitions (foods, facilities, statistics)
 ├── lib/
-│   ├── queries.ts          # Database query functions
-│   └── utils.ts            # Utility helpers
+│   ├── analysis-hint-sync.ts        # Syncs chatbot AI estimates with recommendation page
+│   ├── daily-intake-summary.ts      # Daily nutrition aggregation helpers
+│   ├── food-data-transform.ts       # Food data normalisation and transformation utilities
+│   ├── food-functions.ts            # Food search, filter, and sort logic
+│   ├── food-recognition-risk.ts     # Three Highs risk threshold calculations
+│   ├── queries.ts                   # Database query functions (foods, facilities, statistics)
+│   └── utils.ts                     # General utility helpers
 ├── public/
-│   ├── data/malaysia.geojson  # GeoJSON for state map
-│   └── images/             # Food and educational images
-└── drizzle.config.ts       # Drizzle Kit configuration
+│   ├── data/
+│   │   └── malaysia.geojson         # GeoJSON boundaries for Malaysian state choropleth map
+│   └── images/
+│       ├── body-map/                # Organ and body map SVG/image assets
+│       ├── edu/                     # Educational content images
+│       ├── food-page/               # Food card images
+│       └── home-page/               # Recommendation page images
+├── drizzle.config.ts                # Drizzle Kit configuration
+├── next.config.mjs                  # Next.js configuration
+└── vercel.json                      # Vercel deployment configuration
 ```
-
+ 
 ---
 
 ## 🌐 Deployment
@@ -182,29 +226,30 @@ Set the same environment variables (`DATABASE_URL`, `GROQ_API_KEY`, `GROQ_API_KE
 ---
 
 ## 🔁 Iteration Notes
-
+ 
 ### Iteration 1 (Archived)
-- AI Input & Food Detection
-- AI Recommendation & Decision Support
-- Diabetes Education & Awareness
-
+- AI menu image upload and food item extraction (OCR via LLM)
+- AI-powered nutritional analysis with Low / Medium / High Three Highs risk ranking
+- Best choice recommendation with health tips per food item
+- Baseline English UI
 ### Iteration 2 (Archived)
-- Food explorer with the three highs for common Malaysian foods
-- Three highs statistics overview with state-level map
-- Learning about the three highs, interactive body map and Myth Buster feature
-- Multilingual support (EN / MS / ZH)
-
+- Food Explorer with nutritional details (sugar, calories, GI, fat, sodium) for common Malaysian foods
+- Dietary Planner (shopping cart) with daily intake tracking and progress bars against recommended limits
+- Three Highs statistics overview with interactive choropleth map, national trend chart, and ethnicity breakdown
+- Three Highs Literacy Hub, Interactive Body Map, and Myth Buster
+- Multilingual support (EN / MS / ZH) across all pages
 ### Iteration 3 (Current)
-- Healthcare Facility Finder (nearby clinic/hospital locator)
-- AI Conversational Health Assistant
+- **Healthcare Facility Finder** — GPS-based nearest clinic/hospital locator with filter by state, sector, and Three Highs specialty; direct dial and Google Maps navigation
+- **Siti — AI Conversational Health Assistant** — floating multilingual chatbot (EN / MS / ZH) with context-aware food scan advice, daily intake queries, cart commands, and safe health guidance (Groq Llama-3.3-70B)
+- **High-Risk Alternative Suggestion** — when all items in a food category are High Risk, a contextually relevant healthier alternative is automatically recommended
+- **Upgraded OCR model** — switched to Gemma-4-31b-it (Google AI Studio) as primary OCR model with Llama-4-Scout as fallback, improving accuracy on dense and image-heavy menus
 
 ### Tagging a Release
-
+ 
 ```bash
-git tag -a v1.0 -m "End of Iteration 1"
-git push origin v1.0
+git tag -a v3.0 -m "End of Iteration 3"
+git push origin v3.0
 ```
-
 ---
 
 ## 🤝 Contributing
