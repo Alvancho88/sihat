@@ -38,7 +38,7 @@ import {
 import Image from "next/image"
 import {
   Camera, Upload, X, Star, TrendingDown, TrendingUp, Minus, ArrowRightLeft,
-  CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ArrowLeft, ImageIcon, ShoppingCart, Type, ChevronLeft, ChevronRight, Sun, Smartphone
+  CheckCircle, Info, Loader2, ZoomIn, Utensils, GlassWater, Cake, Salad, Plus, Trash2, ArrowRight, ArrowLeft, ImageIcon, ShoppingCart, Type, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Sun, Smartphone
 } from "lucide-react"
 
 // Define language codes for multi-language support
@@ -129,6 +129,8 @@ const content = {
     top3_disclaimer: "We are showing you the Top 3 Healthiest Choices identified in your photo. These are the safest options for managing your blood sugar, blood pressure, and cholesterol.",
     analyze_new_food: "Start Over",
     back_to_category: "Back to Categories",
+    see_more_items: "See More",
+    see_less_items: "See Less",
     all_high_risk_warning: "All options in this category are High Risk. Consider this healthier alternative:",
     alternative_label: "Suggested Alternative",
     alternative_why: "Why this alternative?",
@@ -237,6 +239,8 @@ const content = {
     top3_disclaimer: "Kami menunjukkan kepada anda 3 Pilihan Paling Sihat daripada apa yang dijumpai dalam foto makanan anda. Ini adalah pilihan paling selamat untuk gula darah anda.",
     analyze_new_food: "Mula Semula",
     back_to_category: "Kembali ke Kategori",
+    see_more_items: "Lihat Lebih",
+    see_less_items: "Sembunyikan",
     all_high_risk_warning: "Semua pilihan dalam kategori ini berisiko Tinggi. Pertimbangkan alternatif yang lebih sihat ini:",
     alternative_label: "Alternatif Dicadangkan",
     alternative_why: "Mengapa alternatif ini?",
@@ -343,6 +347,8 @@ const content = {
     top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
     analyze_new_food: "重新开始",
     back_to_category: "返回类别",
+    see_more_items: "查看更多",
+    see_less_items: "收起",
     all_high_risk_warning: "此类别中所有选项均为高风险。建议考虑以下更健康的替代选择：",
     alternative_label: "建议替代食物",
     alternative_why: "为什么选择这个替代品？",
@@ -1162,6 +1168,9 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   // Alternative suggestion visibility — keyed by category, hidden by default
   const [showAltByCategory, setShowAltByCategory] = useState<Record<string, boolean>>({})
 
+  // "See More" expanded state — keyed by category, collapsed by default
+  const [showMoreByCategory, setShowMoreByCategory] = useState<Record<string, boolean>>({})
+
   // Panel navigation state - "upload" or "results"
   const [currentPanel, setCurrentPanel] = useState<"upload" | "results">(() =>
     initialBootstrap ? "results" : "upload"
@@ -1705,6 +1714,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     setResults(categoryResults)
     // Reset alternative visibility when switching categories
     setShowAltByCategory(prev => ({ ...prev, [category]: false }))
+    // Reset see-more expanded state when switching categories
+    setShowMoreByCategory(prev => ({ ...prev, [category]: false }))
   }
 
   const handleAnalyzeAnother = () => {
@@ -2169,6 +2180,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                         const fL = fat <= 5 ? "low" : fat <= 15 ? "medium" : "high"
                         return sL === "high" || slL === "high" || fL === "high"
                       })
+
                       if (!allItemsHighRisk) return null
 
                       // Get the alternative — prefer AI-generated backend alternative, fall back to built-in
@@ -2269,16 +2281,39 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
                     {/* Food cards */}
                     <div className="space-y-4">
-                      {results.map((food, i) => (
-                        <FoodResultCard
-                          key={i}
-                          food={food}
-                          isBest={i === 0}
-                          t={t}
-                          lang={lang}
-                          mealPlanFood={findMealPlanFood(food.name, initialFoods)}
-                        />
-                      ))}
+                      {(() => {
+                        const catKey = selectedCategory ?? ""
+                        const isExpanded = showMoreByCategory[catKey] ?? false
+                        const visibleResults = isExpanded ? results : results.slice(0, 3)
+                        const hasMore = results.length > 3
+                        return (
+                          <>
+                            {visibleResults.map((food, i) => (
+                              <FoodResultCard
+                                key={i}
+                                food={food}
+                                isBest={i === 0}
+                                t={t}
+                                lang={lang}
+                                mealPlanFood={findMealPlanFood(food.name, initialFoods)}
+                              />
+                            ))}
+                            {hasMore && (
+                              <button
+                                type="button"
+                                onClick={() => setShowMoreByCategory(prev => ({ ...prev, [catKey]: !isExpanded }))}
+                                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl border-2 border-border bg-muted text-foreground font-bold text-base hover:bg-muted/80 transition-colors"
+                              >
+                                {isExpanded ? (
+                                  <><ChevronUp className="w-5 h-5 shrink-0" />{(t as any).see_less_items}</>
+                                ) : (
+                                  <><ChevronDown className="w-5 h-5 shrink-0" />{(t as any).see_more_items} ({results.length - 3})</>
+                                )}
+                              </button>
+                            )}
+                          </>
+                        )
+                      })()}
                     </div>
                   </div>
                 )}

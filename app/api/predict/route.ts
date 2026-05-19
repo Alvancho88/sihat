@@ -525,16 +525,16 @@ TASK:
 4. Write a short practical health tip for EVERY item (one sentence) in all three languages:
    - NORMAL CASE: Focus on reducing salt, sugar, or fat for that specific item.
 5. For EVERY item, include a "best_reason" object in all three languages explaining WHY this item is the best choice in its category.
-6. ALTERNATIVE SUGGESTION RULE: For EVERY category that has at least one item, ALWAYS provide an "alternative_suggestion" object. The alternative MUST be a specific, contextually relevant healthier food that is NOT from the scanned/inputted items. Choose the alternative based on what is scanned — for example, if the scanned items are Malaysian hawker foods, suggest a lighter Malaysian alternative, not a generic western salad. The alternative must include: "f" (food name), "tip" (trilingual health tip), "reason" (trilingual explanation of why it's a healthier alternative), "sugar" (estimated sugar in grams, number), "salt" (estimated sodium in mg, number), "fat" (estimated fat in grams, number), "risk" ("Low", "Medium", or "High" based on the nutrition values). Also set "all_high_risk": true if ALL items in that category are "High" risk (even if only 1 or 2 items exist). Keep the top 3 scanned/inputted items as the main "ranking" — the alternative is displayed separately ABOVE the ranking only when all items are high risk.
+6. ALTERNATIVE SUGGESTION RULE: For EVERY category that has at least one item, ALWAYS provide an "alternative_suggestion" object. The alternative MUST be a specific, contextually relevant healthier food that is NOT from the scanned/inputted items. Choose the alternative based on what is scanned — for example, if the scanned items are Malaysian hawker foods, suggest a lighter Malaysian alternative, not a generic western salad. The alternative must include: "f" (food name), "tip" (trilingual health tip), "reason" (trilingual explanation of why it's a healthier alternative), "sugar" (estimated sugar in grams, number), "salt" (estimated sodium in mg, number), "fat" (estimated fat in grams, number), "risk" ("Low", "Medium", or "High" based on the nutrition values). Also set "all_high_risk": true if ALL items in that category are "High" risk (even if only 1 or 2 items exist). Keep ALL scanned/inputted items as the main "ranking" in sorted order — the alternative is displayed separately ABOVE the ranking only when all items are high risk.
 
 RANKING LOGIC (apply per category):
 1. Highest Priority: Risk (Low first, then Medium, then High)
 2. Tie Breaker (same risk level): Salt (lower mg first), then Sugar (lower g first), then Saturated Fat (lower g first)
 
 IMPORTANT OUTPUT RULES:
-- Output ONLY the top 3 best items per category (already ranked). If fewer than 3, output all. If 0, output empty array.
+- Output ALL items per category in ranked order (best first). If 0, output empty array.
 - Output ONLY valid JSON. No markdown, no code fences, no extra text.
-- Include "uniqueFoodCount" at root level: total unique real food items identified before filtering to top 3.
+- Include "uniqueFoodCount" at root level: total unique real food items identified.
 - Every category object must follow this shape:
   {"ranking":[...items...],"all_high_risk":boolean,"alternative_suggestion":{"f":"<specific food name>","sugar":number,"salt":number,"fat":number,"risk":"Low"|"Medium"|"High","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}}
 - CRITICAL: "alternative_suggestion" must ALWAYS be a real object with "f", "sugar", "salt", "fat", "risk", "tip", and "reason" — NEVER null, NEVER omitted. Every category that has any items must have a specific alternative food suggestion.
@@ -577,7 +577,7 @@ function buildChineseTrilingualPrompt(combinedOcr: string, userText: string): st
 5. 排序: 风险等级(Low > Medium > High)，其次按盐 > 糖 > 脂肪从小到大排序。
 
 输出格式要求:
-- 每个类别只输出前3个最佳项目。
+- 输出每个类别的所有项目，按排名顺序（最佳在前）。
 - 包含 "uniqueFoodCount" 字段。
 - 必须严格遵守以下JSON结构，且确保括号完全闭合:
 
@@ -871,7 +871,7 @@ export async function POST(req: NextRequest) {
     //   • Look up the food in the SIHAT DB and override with verified values
     //   • Normalise the risk string (handles "High Risk", "high", etc.)
     //   • Sort by risk → salt → sugar → fat (ascending)
-    //   • Keep only top 3 results per category
+    //   • Return all results per category (frontend handles top 3 display + see more)
     //   • Normalise alternative_suggestion fields for frontend consumption
     for (const cat of ["Appetizer", "Main Dish", "Dessert", "Drinks"]) {
       // Support both old format (array) and new format (object with ranking key)
@@ -925,12 +925,12 @@ export async function POST(req: NextRequest) {
         return a.fat - b.fat;
       });
 
-      const top3 = sorted.slice(0, 3);
+      const allSorted = sorted;
 
       // Determine if all items in this category are high risk
-      const allHighRisk = allHighRiskFromLLM || (top3.length > 0 && top3.every((item) => normaliseRisk(item.risk) === "High"));
+      const allHighRisk = allHighRiskFromLLM || (allSorted.length > 0 && allSorted.every((item) => normaliseRisk(item.risk) === "High"));
 
-      top3.forEach((item: any, idx: number) => {
+      allSorted.forEach((item: any, idx: number) => {
         delete item.risk_score;
         // Promote _db_matched to clean field name, default false
         item.db_matched = item._db_matched === true;
@@ -992,7 +992,7 @@ export async function POST(req: NextRequest) {
       }
 
       finalResults[cat] = {
-        ranking: top3,
+        ranking: allSorted,
         all_high_risk: allHighRisk,
         // Always include alternative_suggestion so the frontend can use it
         // when it independently detects all items are high risk.
