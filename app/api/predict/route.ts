@@ -1060,8 +1060,8 @@ export async function POST(req: NextRequest) {
         return a.fat - b.fat;
       });
 
-      // All items returned (ranked); frontend handles the top-3 display with "See more"
-      const allSorted = sorted;
+      // At most 5 per category — frontend shows top 3 + “See more” for up to 2 extras
+      const allSorted = sorted.slice(0, 5);
 
       // Determine if ALL items in this category are high risk (using top 3 as representative sample)
       const top3ForRiskCheck = allSorted.slice(0, 3);
