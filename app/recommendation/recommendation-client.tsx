@@ -2047,27 +2047,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     <ChevronRight className="w-6 h-6" />
                   </button>
                 )}
-
-                {/* Photo Tips - Simplified */}
-                <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4 md:p-6">
-                  <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-primary">
-                    <Info className="w-7 h-7" />
-                    {t.guide_title}
-                  </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {t.guide_steps.map((step, i) => (
-                      <div key={i} className="bg-card rounded-xl p-2 text-center border border-border">
-                        <div className="w-12 h-12 mx-auto mb-3 bg-primary/10 rounded-full flex items-center justify-center">
-                          {i === 0 && <Camera className="w-6 h-6 text-primary" />}
-                          {i === 1 && <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
-                          {i === 2 && <Utensils className="w-6 h-6 text-primary" />}
-                          {i === 3 && <CheckCircle className="w-6 h-6 text-primary" />}
-                        </div>
-                        <p className="text-base font-medium">{step.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
             )}
 
@@ -2299,9 +2278,9 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     {(() => {
                       const catKey = selectedCategory ?? ""
                       const isPopupOpen = showExpandedByCategory[catKey] ?? false
-                      // Show top 3 always; popup shows items 4-10 (max 7 more)
+                      // Show top 3 always; popup shows items 4-5 only (max 2 more); API caps at 5 per category
                       const top3 = results.slice(0, 3)
-                      const moreItems = results.slice(3, 10)
+                      const moreItems = results.slice(3, 5)
                       const hasMore = results.length > 3
 
                       return (
@@ -2332,13 +2311,16 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                           {/* See More Popup Modal */}
                           {isPopupOpen && hasMore && (
                             <div
-                              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                              className="fixed inset-0 z-[10050] overflow-y-auto overscroll-contain flex flex-col md:justify-center pt-[calc(3rem+env(safe-area-inset-top,0px))] pb-[max(1rem,env(safe-area-inset-bottom,0px))] px-4"
                               style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
+                              role="presentation"
                               onClick={() => setShowExpandedByCategory(prev => ({ ...prev, [catKey]: false }))}
                             >
                               <div
-                                className="relative w-full max-w-md rounded-3xl bg-background shadow-2xl flex flex-col"
-                                style={{ maxHeight: "82vh" }}
+                                className="relative w-full max-w-2xl md:max-w-4xl lg:max-w-5xl mx-auto my-auto rounded-3xl bg-background shadow-2xl flex flex-col"
+                                style={{ maxHeight: "min(82vh, calc(100dvh - 4rem))" }}
+                                role="dialog"
+                                aria-modal="true"
                                 onClick={e => e.stopPropagation()}
                               >
                                 {/* Fixed header with close button */}
