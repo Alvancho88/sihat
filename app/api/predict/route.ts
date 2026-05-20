@@ -513,8 +513,8 @@ Rules:
 - Per ranked item: f (MUST be exact food name string from list — NEVER a number), sugar(g), salt(mg), fat(g), risk (Low/Medium/High)
 - Risk: High if sugar>15 OR salt>600 OR fat>15; Medium if any 6-15g / 201-600mg / 6-15g; else Low
 - Max ${TOP_RANKED_PER_CATEGORY} items per category ranking array
-- tip: {"en","ms","zh"} — max 10 words each language
-- best_reason on rank #1 per category only — max 10 words each language
+- tip: {"en","ms","zh"} — (reducing salt/sugar/fat for example)
+- best_reason on rank #1 per category only — (Why this item is the best choice, it has the lowest sugar for example)
 - Each non-empty category: alternative_suggestion (food NOT in list) with f, sugar, salt, fat, risk, tip, reason (trilingual, max 10 words each)
 - Normalize: Char Kway Teow variants → "Char Kway Teow"; Hainanese Chicken Rice → "Chicken Rice"
 - uniqueFoodCount: ${expectedCount} (total items scanned, not items in ranking arrays)
