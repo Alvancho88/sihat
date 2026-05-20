@@ -988,7 +988,7 @@ function buildApiResultsCache(data: PredictResults): ApiResultsCache {
       all_high_risk: catData?.all_high_risk ?? false,
       alternative_suggestion: catData?.alternative_suggestion ?? null,
     }
-    cache[pageKey] = raw.map((item, index) => {
+    cache[pageKey] = raw.flatMap((item, index): FoodItem[] => {
       // Tip: backend now returns a trilingual object; gracefully handle legacy string
       const tipObj: { en: string; ms: string; zh: string } =
         item.tip && typeof item.tip === "object"
@@ -1004,8 +1004,17 @@ function buildApiResultsCache(data: PredictResults): ApiResultsCache {
             : { en: String(item.best_reason), ms: String(item.best_reason), zh: String(item.best_reason) }
       }
 
-      return {
-        name: item.f,
+      const rawName = item.f
+      const name =
+        typeof rawName === "string"
+          ? rawName.trim()
+          : typeof rawName === "number"
+            ? ""
+            : String(rawName ?? "").trim()
+      if (!name || /^\d+(\.\d+)?$/.test(name)) return []
+
+      return [{
+        name,
         risk: item.risk?.toLowerCase() ?? "medium",
         sugar: `${item.sugar}g`,
         salt: `${item.salt}mg`,
@@ -1013,15 +1022,16 @@ function buildApiResultsCache(data: PredictResults): ApiResultsCache {
         tip: tipObj,
         db_matched: item.db_matched === true,
         ...(bestReasonObj ? { best_reason: bestReasonObj } : {}),
-      }
+      }]
     })
   }
   cache._meta = meta
   return cache
 }
 
-function normalizeFoodName(value: string): string {
-  return value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim()
+function normalizeFoodName(value: unknown): string {
+  const s = typeof value === "string" ? value : String(value ?? "")
+  return s.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim()
 }
 
 function isPageRefreshNavigation(): boolean {

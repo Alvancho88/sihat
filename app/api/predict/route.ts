@@ -1,6 +1,6 @@
 // app/api/predict/route.ts
 // Backend API endpoint for food analysis and recommendation system
-// Uses Groq AI models: Llama-4-Scout for OCR and Llama-3.3-70B / GPT-OSS-120B for nutritional analysis
+// Uses Groq AI models: Llama-4-Scout for OCR backup and openai/gpt-oss-120b for nutritional analysis (trilingual en/ms/zh)
 // Returns trilingual results (en/ms/zh) in a single response so the frontend can
 // switch languages without re-calling the API.
 
@@ -123,6 +123,19 @@ function buildDbFoodMap(rows: FoodDataRow[]): DbFood[] {
     if (row.food_name) entry.names.push(row.food_name);
   }
   return Array.from(byId.values());
+}
+
+/** "f" must be a food name string — LLM sometimes returns numeric salt/sugar values by mistake. */
+function coerceFoodNameField(raw: unknown): string {
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    if (s && !/^\d+(\.\d+)?$/.test(s)) return s;
+    return "";
+  }
+  if (typeof raw === "number") return "";
+  const s = String(raw ?? "").trim();
+  if (!s || /^\d+(\.\d+)?$/.test(s)) return "";
+  return s;
 }
 
 function normalizeForMatch(value: string): string {
@@ -463,17 +476,6 @@ async function processSingleImage(arrayBuffer: ArrayBuffer, mimeType: string): P
   }
 }
 
-// ─── MODEL SELECTION ────────────────────────────────────────────────────────────────
-
-/**
- * Returns the best Groq model for the given language.
- * Chinese (zh) uses gpt-oss-120b for better multilingual output quality.
- */
-function getModelForLanguage(language: string): string {
-  if (language === "zh") return "openai/gpt-oss-120b";
-  return "llama-3.3-70b-versatile";
-}
-
 // ─── PROMPT BUILDERS ──────────────────────────────────────────────────────────────
 
 /**
@@ -484,11 +486,11 @@ function getModelForLanguage(language: string): string {
  * three keys — en, ms, zh — so the frontend can switch languages without
  * making another API call.
  *
- * English/Malay are handled by llama-3.3-70b-versatile (good multilingual).
- * Chinese is routed to gpt-oss-120b via buildChineseTrilingualPrompt().
+ * Analysis uses openai/gpt-oss-120b (Groq) for all three locales in one response.
  */
+const TOP_RANKED_PER_CATEGORY = 5;
+
 function buildAnalysisPrompt(combinedOcr: string, userText: string, itemList?: string[]): string {
-  // Build an explicit numbered checklist so the model cannot skip any item
   const allItems = itemList && itemList.length > 0
     ? itemList
     : [
@@ -499,105 +501,36 @@ function buildAnalysisPrompt(combinedOcr: string, userText: string, itemList?: s
   const numberedChecklist = allItems.map((item: string, i: number) => `${i + 1}. ${item}`).join("\n");
   const expectedCount = allItems.length;
 
-  return `You are a nutritional analysis API. Output ONLY a single valid JSON object. No markdown, no explanation.
+  return `Nutrition API. Output ONE JSON object only. No markdown.
 
-YOU MUST PROCESS EXACTLY THESE ${expectedCount} FOOD ITEMS — ALL OF THEM, NONE SKIPPED:
+Categorize ALL ${expectedCount} items below, but in each category's "ranking" array include ONLY the top ${TOP_RANKED_PER_CATEGORY} healthiest items (Low→Medium→High risk; ties: salt, sugar, fat ascending). Omit lower-ranked items from output.
+
+Items:
 ${numberedChecklist}
 
-YOUR OUTPUT MUST CONTAIN EXACTLY ${expectedCount} ITEMS ACROSS ALL CATEGORIES COMBINED.
-Before finishing, count your items. If the count is less than ${expectedCount}, add the missing ones.
+Rules:
+- Categories: Appetizer | Main Dish | Dessert | Drinks (beverages in cups/glasses = Drinks)
+- Per ranked item: f (MUST be exact food name string from list — NEVER a number), sugar(g), salt(mg), fat(g), risk (Low/Medium/High)
+- Risk: High if sugar>15 OR salt>600 OR fat>15; Medium if any 6-15g / 201-600mg / 6-15g; else Low
+- Max ${TOP_RANKED_PER_CATEGORY} items per category ranking array
+- tip: {"en","ms","zh"} — max 10 words each language
+- best_reason on rank #1 per category only — max 10 words each language
+- Each non-empty category: alternative_suggestion (food NOT in list) with f, sugar, salt, fat, risk, tip, reason (trilingual, max 10 words each)
+- Normalize: Char Kway Teow variants → "Char Kway Teow"; Hainanese Chicken Rice → "Chicken Rice"
+- uniqueFoodCount: ${expectedCount} (total items scanned, not items in ranking arrays)
 
-LANGUAGE: Return "tip" and "best_reason" as objects with THREE keys: "en" (English), "ms" (Bahasa Malaysia), "zh" (Simplified Chinese).
-Food names (field "f") stay in their original language.
-
-FOOD NAME NORMALIZATION (apply first):
-- Any spelling variant of "Char Kway Teow" (Char Kuey Teow, Char Kwey Teow, Char Koay Teow, etc.) use "Char Kway Teow"
-- "Hainanese Chicken Rice" use "Chicken Rice". Do NOT rename any other dish.
-
-STEP 1 - CATEGORIZE every item into exactly one category:
-- Drinks: juices, shakes, water, tea, coffee, any beverage in a cup or glass (Coconut Shakes, Mango Lassi, Orange Juice, Apple Juice, Honeydew Juice, Lemon & Ginger are all Drinks)
-- Dessert: iced sweets, ice kacang, cendol, pudding, kuih, cake (NOT drinks)
-- Main Dish: rice dishes, noodles, curries, meat/fish mains, any substantial meal
-- Appetizer: satay, popiah, salads as starters, small sides
-
-STEP 2 - ESTIMATE nutrition per item: Sugar(g), Salt/Sodium(mg), Saturated Fat(g)
-STEP 3 - ASSIGN Risk:
-- High if ANY: sugar>15g OR salt>600mg OR fat>15g
-- Medium if ANY: sugar 6-15g OR salt 201-600mg OR fat 6-15g (and none High)
-- Low if ALL: sugar<=5g AND salt<=200mg AND fat<=5g
-
-STEP 4 - For EVERY item write a "tip" object (reducing salt/sugar/fat for example).
-STEP 5 - For the FIRST item per category only, add "best_reason" object (Why this item is the best choice, it has the lowest sugar for example). Omit for all others.
-STEP 6 - RANK each category: Low risk first, then Medium, then High. Ties: lower salt first, then lower sugar, then lower fat.
-STEP 7 - For EVERY non-empty category add "alternative_suggestion" (a healthier food NOT from the list, contextually relevant). Include: f, sugar, salt, fat, risk, tip (trilingual), reason (trilingual).
-
-OUTPUT SHAPE (output ONLY this JSON):
-{
-  "Appetizer": {"ranking": [],"all_high_risk": false,"alternative_suggestion": {"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Main Dish": {"ranking": [],"all_high_risk": false,"alternative_suggestion": {"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Dessert":   {"ranking": [],"all_high_risk": false,"alternative_suggestion": {"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Drinks":    {"ranking": [],"all_high_risk": false,"alternative_suggestion": {"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "uniqueFoodCount": ${expectedCount}
+Shape:
+{"Appetizer":{"ranking":[],"all_high_risk":false,"alternative_suggestion":{...}},"Main Dish":{...},"Dessert":{...},"Drinks":{...},"uniqueFoodCount":${expectedCount}}`;
 }
 
-Each ranking item: {"f":"name","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."}}
-First item per category also has: "best_reason":{"en":"...","ms":"...","zh":"..."}
-"alternative_suggestion" is NEVER null.
-`;}
+// ─── NUTRITIONAL ANALYSIS WITH GROQ (GPT-OSS 120B, trilingual en/ms/zh) ───────────
 
-/**
- * Builds the trilingual Chinese prompt for gpt-oss-120b.
- * Same trilingual structure but with Chinese reinforcement instructions.
- */
-function buildChineseTrilingualPrompt(combinedOcr: string, userText: string, itemList?: string[]): string {
-  const allItems = itemList && itemList.length > 0
-    ? itemList
-    : [
-        ...combinedOcr.split("\n").map((s: string) => s.trim()).filter(Boolean),
-        ...userText.split(",").map((s: string) => s.trim()).filter(Boolean),
-      ];
-  const numberedChecklist = allItems.map((item: string, i: number) => `${i + 1}. ${item}`).join("\n");
-  const expectedCount = allItems.length;
+const GROQ_ANALYSIS_MODEL = "openai/gpt-oss-120b";
+/** Groq on_demand tier caps prompt + max_tokens at 8000 per request. */
+const GROQ_TPM_BUDGET = 8000;
+const GROQ_ANALYSIS_MAX_TOKENS = 7300;
 
-  return `你是一个专业的营养分析API。你的输出必须仅包含一个有效的JSON对象，严禁包含任何Markdown格式、解释性文字或开场白。
-
-你必须处理以下全部 ${expectedCount} 个食物项目，一个都不能遗漏:
-${numberedChecklist}
-
-输出中所有类别合计必须恰好包含 ${expectedCount} 个项目。完成后请自行核查数量。
-
-重要要求:
-1. tip 和 best_reason 必须是包含三个语言键的对象: "en"(英文), "ms"(马来文), "zh"(简体中文)。食物原名(字段"f")保持不变。
-2. 严禁虚构食物，仅分析提供的项目。
-3. tip 和 reason 文字请保持简短（每种语言不超过15个词）。
-
-食物名称规范化: "Char Kway Teow"变体统一为"Char Kway Teow"。"Hainanese Chicken Rice"记为"Chicken Rice"。
-
-任务:
-1. 分类: 将所有项目归入 'Appetizer', 'Main Dish', 'Dessert', 'Drinks'。
-   - Drinks: 果汁、奶昔、水、茶、咖啡等饮品（Coconut Shakes、Mango Lassi、果汁等均为Drinks）
-   - Dessert: 刨冰甜品、布丁、糕点等
-   - Main Dish: 米饭、面条、咖喱、肉类主菜
-   - Appetizer: 沙爹、小食、开胃沙拉等
-2. 评估: 糖(g)、盐/钠(mg)、脂肪(g)。风险: 任一高=High; 无高有中=Medium; 全低=Low。
-3. 排序: Low优先，同级按盐→糖→脂肪升序。
-4. 每个非空类别提供"alternative_suggestion"（具体的更健康替代食物，不在列表中）。
-5. 每个类别第一个项目包含"best_reason"，其他项目省略。
-
-输出结构:
-{
-  "Appetizer": {"ranking": [],"all_high_risk": false,"alternative_suggestion": {"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Main Dish": {"ranking": [],"all_high_risk": false,"alternative_suggestion": {"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Dessert":   {"ranking": [],"all_high_risk": false,"alternative_suggestion": {"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "Drinks":    {"ranking": [],"all_high_risk": false,"alternative_suggestion": {"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"...","ms":"...","zh":"..."},"reason":{"en":"...","ms":"...","zh":"..."}}},
-  "uniqueFoodCount": ${expectedCount}
-}
-注意: "alternative_suggestion"绝对不能为null。`;
-}
-
-// ─── NUTRITIONAL ANALYSIS WITH GROQ ────────────────────────────────────────────────
-
-async function analyzeWithGroq(
+async function analyzeWithGptOss(
   combinedOcr: string,
   userText: string,
   apiKey: string | undefined,
@@ -606,9 +539,15 @@ async function analyzeWithGroq(
   if (!apiKey) throw new Error("API Key missing");
 
   const prompt = buildAnalysisPrompt(combinedOcr, userText, itemList);
-  const model = "llama-3.3-70b-versatile"; // handles trilingual JSON reliably
 
-  console.log(`[predict] Using model: ${model} (trilingual)`);
+  // Groq on_demand rejects when prompt_tokens + max_tokens exceeds ~8000
+  const estimatedPromptTokens = Math.ceil(prompt.length / 3.5);
+  const maxTokens = Math.min(
+    GROQ_ANALYSIS_MAX_TOKENS,
+    Math.max(2000, GROQ_TPM_BUDGET - 200 - estimatedPromptTokens),
+  );
+
+  console.log(`[predict] Using model: ${GROQ_ANALYSIS_MODEL} (trilingual en/ms/zh, max_tokens=${maxTokens}, est_prompt≈${estimatedPromptTokens})`);
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -617,20 +556,23 @@ async function analyzeWithGroq(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model,
+      model: GROQ_ANALYSIS_MODEL,
       messages: [
-        { role: "system", content: "You are a health assistant. Always output valid JSON." },
+        {
+          role: "system",
+          content: "Output valid JSON only. tip, best_reason, reason: {en, ms, zh}, max 10 words each.",
+        },
         { role: "user", content: prompt },
       ],
       temperature: 0.1,
-      max_tokens: 8000,
-      response_format: { type: "json_object" },
+      max_tokens: maxTokens,
+      // gpt-oss-120b: omit response_format (stricter JSON validation on Groq)
     }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Groq Analysis error ${res.status}: ${err}`);
+    throw new Error(`Groq GPT-OSS analysis error ${res.status}: ${err}`);
   }
 
   const data = await res.json();
@@ -641,7 +583,7 @@ async function analyzeWithGroq(
   const usage = data?.usage ?? {};
   const rawContent = choice?.message?.content ?? "{}";
 
-  console.log(`[predict] 📊 Model response stats (${model}):`);
+  console.log(`[predict] 📊 Model response stats (${GROQ_ANALYSIS_MODEL}):`);
   console.log(`[predict]   finish_reason   : ${finishReason}`);
   console.log(`[predict]   prompt_tokens   : ${usage.prompt_tokens ?? "N/A"}`);
   console.log(`[predict]   completion_tokens: ${usage.completion_tokens ?? "N/A"}`);
@@ -649,77 +591,16 @@ async function analyzeWithGroq(
   console.log(`[predict]   raw JSON length : ${rawContent.length} chars`);
 
   if (finishReason === "length") {
-    console.error(`[predict] ❌ TRUNCATION DETECTED — finish_reason is "length". The model hit max_tokens (${8000}) before completing the JSON. Increase max_tokens or reduce input size.`);
+    console.error(`[predict] ❌ TRUNCATION DETECTED — finish_reason is "length". The model hit max_tokens (${maxTokens}) before completing the JSON.`);
+    throw new Error(`GPT-OSS response truncated at ${maxTokens} completion tokens`);
   } else if (finishReason === "stop") {
     console.log(`[predict] ✅ Model finished normally (finish_reason: stop).`);
   } else {
     console.warn(`[predict] ⚠️ Unexpected finish_reason: "${finishReason}"`);
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
-  return rawContent;
-}
-
-/**
- * Fallback: if llama fails for Chinese quality, retry with gpt-oss-120b.
- * This is the secondary fallback specifically for zh output quality.
- */
-async function analyzeWithChineseModel(
-  combinedOcr: string,
-  userText: string,
-  apiKey: string | undefined,
-  itemList?: string[],
-): Promise<string> {
-  if (!apiKey) throw new Error("API Key missing");
-  const prompt = buildChineseTrilingualPrompt(combinedOcr, userText, itemList);
-  const model = "openai/gpt-oss-120b";
-
-  console.log(`[predict] Using model: ${model} (trilingual Chinese-capable)`);
-
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "请始终输出有效的JSON格式。" },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.1,
-      max_tokens: 8000,
-      // gpt-oss-120b has stricter JSON validation; omit response_format
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`GPT-OSS Analysis error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
-
-  // ── TRUNCATION DETECTION ──────────────────────────────────────────────────
-  const choice = data?.choices?.[0];
-  const finishReason = choice?.finish_reason ?? "unknown";
-  const usage = data?.usage ?? {};
-  const rawContent = choice?.message?.content ?? "{}";
-
-  console.log(`[predict] 📊 Model response stats (${model}):`);
-  console.log(`[predict]   finish_reason   : ${finishReason}`);
-  console.log(`[predict]   prompt_tokens   : ${usage.prompt_tokens ?? "N/A"}`);
-  console.log(`[predict]   completion_tokens: ${usage.completion_tokens ?? "N/A"}`);
-  console.log(`[predict]   total_tokens    : ${usage.total_tokens ?? "N/A"}`);
-  console.log(`[predict]   raw JSON length : ${rawContent.length} chars`);
-
-  if (finishReason === "length") {
-    console.error(`[predict] ❌ TRUNCATION DETECTED — finish_reason is "length". The model hit max_tokens (${8000}) before completing the JSON.`);
-  } else if (finishReason === "stop") {
-    console.log(`[predict] ✅ Model finished normally (finish_reason: stop).`);
-  } else {
-    console.warn(`[predict] ⚠️ Unexpected finish_reason: "${finishReason}"`);
+  if (!rawContent.trim()) {
+    throw new Error("GPT-OSS returned empty analysis content");
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -749,18 +630,16 @@ async function analyzeWithFallback(
     }
   }
 
-  // Helper: attempt analysis and validate completeness
+  // Helper: attempt analysis — accept top-N-per-category output (not every scanned item)
   async function attemptAnalysis(fn: () => Promise<string>, label: string): Promise<string | null> {
     try {
       const result = await fn();
+      const got = countReturnedItems(result);
       console.log(`[predict] ✅ Analysis succeeded (${label})`);
-      if (expectedCount > 0) {
-        const got = countReturnedItems(result);
-        console.log(`[predict] 🔢 Item count check: expected ${expectedCount}, got ${got}`);
-        if (got < expectedCount) {
-          console.warn(`[predict] ⚠️ INCOMPLETE: ${label} returned only ${got}/${expectedCount} items. Will try next option.`);
-          return null; // trigger retry
-        }
+      console.log(`[predict] 🔢 Ranked items returned: ${got} (scanned ${expectedCount}, max ${TOP_RANKED_PER_CATEGORY} per category)`);
+      if (got === 0) {
+        console.warn(`[predict] ⚠️ EMPTY: ${label} returned no ranked items. Will try next option.`);
+        return null;
       }
       return result;
     } catch (err) {
@@ -769,31 +648,22 @@ async function analyzeWithFallback(
     }
   }
 
-  // Try each key/model in order, accepting the first complete response
-  const result1 = await attemptAnalysis(
-    () => analyzeWithGroq(combinedOcr, userText, process.env.GROQ_API_KEY, itemList),
-    "GROQ_API_KEY, llama-3.3-70b"
-  );
-  if (result1) return result1;
+  // Try each key in order (same model): GROQ_API_KEY → _2 → _5 → _6
+  const groqKey6 = process.env.GROQ_API_KEY_6 ?? process.env.GROQ_API_KEY6;
+  const groqKeyAttempts: { env: string | undefined; label: string }[] = [
+    { env: process.env.GROQ_API_KEY, label: "GROQ_API_KEY" },
+    { env: process.env.GROQ_API_KEY_2, label: "GROQ_API_KEY_2" },
+    { env: process.env.GROQ_API_KEY_5, label: "GROQ_API_KEY_5" },
+    { env: groqKey6, label: "GROQ_API_KEY_6" },
+  ];
 
-  const result2 = await attemptAnalysis(
-    () => analyzeWithGroq(combinedOcr, userText, process.env.GROQ_API_KEY_2, itemList),
-    "GROQ_API_KEY_2, llama-3.3-70b"
-  );
-  if (result2) return result2;
-
-  const result3 = await attemptAnalysis(
-    () => analyzeWithGroq(combinedOcr, userText, process.env.GROQ_API_KEY_5, itemList),
-    "GROQ_API_KEY_5, llama-3.3-70b"
-  );
-  if (result3) return result3;
-
-  // Last resort: Chinese-capable model
-  const result4 = await attemptAnalysis(
-    () => analyzeWithChineseModel(combinedOcr, userText, process.env.GROQ_API_KEY, itemList),
-    "GROQ_API_KEY, gpt-oss-120b fallback"
-  );
-  if (result4) return result4;
+  for (const { env, label } of groqKeyAttempts) {
+    const result = await attemptAnalysis(
+      () => analyzeWithGptOss(combinedOcr, userText, env, itemList),
+      `${label}, ${GROQ_ANALYSIS_MODEL}`,
+    );
+    if (result) return result;
+  }
 
   throw new Error("All analysis attempts failed or returned incomplete results");
 }
@@ -892,7 +762,7 @@ const FALLBACK_ALTERNATIVES: Record<string, { f: string; sugar?: number; salt?: 
  *   1. OCR  — each image is processed by Gemma 4 31B (Google AI Studio).
  *             Falls back to Llama-4-Scout (Groq) if Google keys fail.
  *   2. Merge — OCR items + userText are deduplicated and normalised.
- *   3. LLM analysis — llama-3.3-70b-versatile (Groq) classifies each item into
+ *   3. LLM analysis — openai/gpt-oss-120b (Groq; keys GROQ_API_KEY, _2, _5, _6) classifies each item into
  *             Appetizer / Main Dish / Dessert / Drinks, estimates Sugar/Sodium/Fat,
  *             assigns risk, and writes trilingual tips in a single JSON response.
  *   4. DB merge — matched items get verified nutrition values from the SIHAT DB.
@@ -965,9 +835,9 @@ export async function POST(req: NextRequest) {
       console.log(`[predict] 🗂️  LLM returned ${items.length} item(s) for "${cat}": [${items.map((i: any) => i.f ?? "?").join(", ")}]`);
     }
     console.log(`[predict] 📦 Total items returned by LLM across all categories: ${totalLlmItems}`);
-    console.log(`[predict]    uniqueFoodCount from LLM: ${(rawData as any).uniqueFoodCount ?? "N/A"}`);
-    if (totalLlmItems < totalOcrDeduped) {
-      console.warn(`[predict] ⚠️  ITEM LOSS DETECTED: OCR sent ${totalOcrDeduped} items but LLM only returned ${totalLlmItems}. Possible truncation or hallucination.`);
+    console.log(`[predict]    uniqueFoodCount from LLM: ${(rawData as any).uniqueFoodCount ?? "N/A"} (top ${TOP_RANKED_PER_CATEGORY} ranked per category in response)`);
+    if (totalLlmItems === 0) {
+      console.warn(`[predict] ⚠️  No ranked items returned by LLM.`);
     }
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1001,7 +871,15 @@ export async function POST(req: NextRequest) {
     for (const cat of ["Appetizer", "Main Dish", "Dessert", "Drinks"]) {
       // Support both old format (array) and new format (object with ranking key)
       const catData = rawData[cat];
-      const items = (Array.isArray(catData) ? catData : (catData as any)?.ranking ?? []) as Record<string, any>[];
+      const rawItems = (Array.isArray(catData) ? catData : (catData as any)?.ranking ?? []) as Record<string, any>[];
+      const items = rawItems.flatMap((item): Record<string, any>[] => {
+        const f = coerceFoodNameField(item.f ?? item.name ?? item.food);
+        if (!f) return [];
+        return [{ ...item, f }];
+      });
+      if (rawItems.length > items.length) {
+        console.warn(`[predict] ⚠️ Dropped ${rawItems.length - items.length} item(s) in "${cat}" with invalid food name (f was numeric or empty)`);
+      }
       const allHighRiskFromLLM: boolean = !Array.isArray(catData) && (catData as any)?.all_high_risk === true;
       const alternativeSuggestionFromLLM = !Array.isArray(catData) ? (catData as any)?.alternative_suggestion ?? null : null;
 
@@ -1061,7 +939,7 @@ export async function POST(req: NextRequest) {
       });
 
       // At most 5 per category — frontend shows top 3 + “See more” for up to 2 extras
-      const allSorted = sorted.slice(0, 5);
+      const allSorted = sorted.slice(0, TOP_RANKED_PER_CATEGORY);
 
       // Determine if ALL items in this category are high risk (using top 3 as representative sample)
       const top3ForRiskCheck = allSorted.slice(0, 3);

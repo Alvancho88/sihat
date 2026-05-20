@@ -33,7 +33,7 @@ export function buildStableAnalysisSessionId(
 ): string {
   const slug = foodNames
     .map((n) =>
-      n
+      String(n ?? "")
         .normalize("NFKC")
         .trim()
         .toLowerCase()
@@ -94,7 +94,10 @@ export function extractFoodNamesFromPredictResults(
   for (const key of ["Main Dish", "Appetizer", "Dessert", "Drinks"]) {
     const cat = data[key] as { ranking?: Array<{ f?: string }> } | undefined;
     for (const item of cat?.ranking ?? []) {
-      if (item?.f) names.push(item.f);
+      const f = item?.f;
+      if (f == null || f === "") continue;
+      const name = typeof f === "string" ? f.trim() : typeof f === "number" ? "" : String(f).trim();
+      if (name && !/^\d+(\.\d+)?$/.test(name)) names.push(name);
     }
   }
   return names;
