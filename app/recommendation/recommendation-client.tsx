@@ -2175,17 +2175,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     {/* Alternative Suggestion — toggle button + collapsible panel */}
                     {(() => {
                       // Check if ALL items currently shown are High Risk using correct thresholds
-                      const categoryItems = results ?? []
-                      if (categoryItems.length === 0) return null
-                      const allItemsHighRisk = categoryItems.every((item) => {
-                        const sugar = parseFloat(item.sugar.replace(/[^0-9.]/g, ""))
-                        const salt = parseFloat(item.salt.replace(/[^0-9.]/g, ""))
-                        const fat = parseFloat(item.fat.replace(/[^0-9.]/g, ""))
-                        const sL = sugar <= 5 ? "low" : sugar <= 15 ? "medium" : "high"
-                        const slL = salt <= 200 ? "low" : salt <= 600 ? "medium" : "high"
-                        const fL = fat <= 5 ? "low" : fat <= 15 ? "medium" : "high"
-                        return sL === "high" || slL === "high" || fL === "high"
-                      })
+                      if (!results?.length) return null
+                      const allItemsHighRisk = apiResultsCache?._meta?.[selectedCategory ?? ""]?.all_high_risk ?? false
                       if (!allItemsHighRisk) return null
 
                       // Get the alternative — prefer AI-generated backend alternative, fall back to built-in
