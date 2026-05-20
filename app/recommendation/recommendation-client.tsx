@@ -1158,6 +1158,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
   const [cartOpen, setCartOpen] = useState(false)
   const [showImageModal, setShowImageModal] = useState(false)
   const [modalImage, setModalImage] = useState<string | null>(null)
+  const [showPhotoGuide, setShowPhotoGuide] = useState(false)
 
   // Alternative suggestion visibility — keyed by category, hidden by default
   const [showAltByCategory, setShowAltByCategory] = useState<Record<string, boolean>>({})
@@ -1790,10 +1791,20 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
               <div ref={uploadPanelRef} className="space-y-4">
                 {/* Main Upload Area */}
                 <div className="bg-card rounded-2xl border-2 border-primary/20 p-6 shadow-sm">
-                  <h3 className="text-xl md:text-2xl font-bold mb-4 flex items-center gap-2 text-center justify-center">
-                    <Camera className="w-6 h-6 md:w-7 md:h-7 text-primary" />
-                    {t.upload_title}
-                  </h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+                      <Camera className="w-6 h-6 md:w-7 md:h-7 text-primary" />
+                      {t.upload_title}
+                    </h3>
+                    <button
+                      onClick={() => setShowPhotoGuide(true)}
+                      className="flex items-center gap-1.5 px-2 py-2 md:px-3 md:py-1.5 text-base font-semibold text-primary bg-primary/10 hover:bg-primary/20 active:bg-primary/30 rounded-full border border-primary/20 transition-colors shrink-0"
+                      aria-label={t.guide_title}
+                    >
+                      <Info className="w-5 h-5 shrink-0" />
+                      <span className="hidden md:inline">{t.guide_title}</span>
+                    </button>
+                  </div>
 
                   {isUploading ? (
                     <div className="border-2 border-dashed border-primary/40 rounded-2xl p-8 flex flex-col items-center justify-center min-h-[280px]">
@@ -2020,26 +2031,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                   </button>
                 )}
 
-                {/* Photo Tips - Simplified */}
-                <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4 md:p-6">
-                  <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-primary">
-                    <Info className="w-7 h-7" />
-                    {t.guide_title}
-                  </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {t.guide_steps.map((step, i) => (
-                      <div key={i} className="bg-card rounded-xl p-2 text-center border border-border">
-                        <div className="w-12 h-12 mx-auto mb-3 bg-primary/10 rounded-full flex items-center justify-center">
-                          {i === 0 && <Camera className="w-6 h-6 text-primary" />}
-                          {i === 1 && <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
-                          {i === 2 && <Utensils className="w-6 h-6 text-primary" />}
-                          {i === 3 && <CheckCircle className="w-6 h-6 text-primary" />}
-                        </div>
-                        <p className="text-base font-medium">{step.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
             )}
 
@@ -2333,6 +2324,66 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                 </div>
               </div>
             )}
+
+      {/* Photo Guide Modal */}
+      {showPhotoGuide && (
+        <div
+          className="fixed inset-0 bg-foreground/60 z-50 flex items-end md:items-center justify-center p-0 p-4"
+          onClick={() => setShowPhotoGuide(false)}
+        >
+          <div
+            className="bg-card w-full max-w-2xl md:max-w-4xl rounded-3xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Handle bar for mobile */}
+            <div className="flex justify-center pt-3 pb-1 md:hidden">
+              <div className="w-10 h-1.5 rounded-full bg-muted-foreground/30" />
+            </div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-border">
+              <h2 className="text-2xl md:text-3xl font-extrabold text-primary flex items-center gap-2">
+                <Info className="w-7 h-7 shrink-0" />
+                {t.guide_title}
+              </h2>
+              <button
+                onClick={() => setShowPhotoGuide(false)}
+                className="w-12 h-12 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 active:bg-muted/60 transition-colors"
+                aria-label={t.close}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Steps */}
+            <div className="px-6 py-1">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {t.guide_steps.map((step, i) => (
+                  <div key={i} className="bg-card rounded-xl p-2 text-center border border-border">
+                    <div className="w-12 h-12 mx-auto mb-3 bg-primary/10 rounded-full flex items-center justify-center">
+                      {i === 0 && <Camera className="w-6 h-6 text-primary" />}
+                      {i === 1 && <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
+                      {i === 2 && <Utensils className="w-6 h-6 text-primary" />}
+                      {i === 3 && <CheckCircle className="w-6 h-6 text-primary" />}
+                    </div>
+                    <p className="text-base font-medium">{step.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Close button */}
+            <div className="px-6 pb-6 pt-2">
+              <button
+                onClick={() => setShowPhotoGuide(false)}
+                className="w-full py-4 rounded-2xl bg-primary text-primary-foreground text-xl font-extrabold hover:opacity-90 active:opacity-80 transition-opacity shadow-md"
+              >
+                {t.close}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
 {/* Image Modal */}
       {showImageModal && modalImage && (
