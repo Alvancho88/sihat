@@ -1031,22 +1031,32 @@ export async function POST(req: NextRequest) {
         }
         // ─────────────────────────────────────────────────────────────────────
 
-        // ── RANKING BUG FIX: normalise risk before mapping ──────────────
-        const normalisedRisk = normaliseRisk(item.risk);
-        item.risk = normalisedRisk; // write back the clean value
-        item.risk_score = riskMap[normalisedRisk] ?? 2;
+        // ── RECALCULATE RISK from actual nutrition values (after DB merge) ──
+        // Never trust the LLM risk label after DB values may have changed
+        // sugar/salt/fat. Recompute deterministically from thresholds.
+        const rSugar = item.sugar as number;
+        const rSalt  = item.salt  as number;
+        const rFat   = item.fat   as number;
+        let recalcRisk: "Low" | "Medium" | "High";
+        if (rSugar > 15 || rSalt > 600 || rFat > 15) {
+          recalcRisk = "High";
+        } else if (rSugar > 5 || rSalt > 200 || rFat > 5) {
+          recalcRisk = "Medium";
+        } else {
+          recalcRisk = "Low";
+        }
+        item.risk = recalcRisk;
+        item.risk_score = riskMap[recalcRisk];
         // ─────────────────────────────────────────────────────────────────
       }
 
       // ── RANKING ──────────────────────────────────────────────────────────────
-      // Primary sort: risk score (Low=1, Medium=2, High=3) — healthiest first.
-      // Tie-breakers within the same risk band: Salt → Sugar → Fat (lower = better).
-      // This ranking logic matches the UI disclaimer shown to users.
-      // Sort: risk ascending (Low=1 first), then salt, sugar, fat
+      // Primary: risk score (Low=1 → Medium=2 → High=3), healthiest first.
+      // Tie-breakers (same risk band): Sugar → Salt → Fat (lower = better).
       const sorted = [...items].sort((a, b) => {
         if (a.risk_score !== b.risk_score) return a.risk_score - b.risk_score;
-        if (a.salt !== b.salt) return a.salt - b.salt;
         if (a.sugar !== b.sugar) return a.sugar - b.sugar;
+        if (a.salt  !== b.salt)  return a.salt  - b.salt;
         return a.fat - b.fat;
       });
 

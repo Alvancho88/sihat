@@ -126,7 +126,7 @@ const content = {
     scanning_steps: ["Reading menu...", "Identifying food items...", "Calculating nutrition values...", "Almost done..."],
     success_found: "items found!",
     success_none: "No items detected",
-    top3_disclaimer: "We are showing you the Top 3 Healthiest Choices identified in your photo. These are the safest options for managing your blood sugar, blood pressure, and cholesterol. Tap 'See more items' below to view all scanned items.",
+    top3_disclaimer: "We are showing you the Top 3 Healthiest Choices identified in your photo. These are the safest options for managing your blood sugar, blood pressure, and cholesterol. Tap 'See More' to view additional scanned items.",
     analyze_new_food: "Start Over",
     back_to_category: "Back to Categories",
     all_high_risk_warning: "All options in this category are High Risk. Consider this healthier alternative:",
@@ -134,8 +134,9 @@ const content = {
     alternative_why: "Why this alternative?",
     show_alternative_btn: "Show me an alternative",
     hide_alternative_btn: "Hide alternative",
-    see_more_items: "See more items",
-    see_less_items: "See less",
+    see_more_items: "See More",
+    see_more_popup_title: "All Items",
+    see_more_close: "Close",
     best_choice_reason_label: "Why we pick this as the Best Choice",
     add_to_meal_plan: "Add to Meal Plan",
     in_meal_plan: "In Meal Plan",
@@ -244,8 +245,9 @@ const content = {
     alternative_why: "Mengapa alternatif ini?",
     show_alternative_btn: "Tunjukkan alternatif",
     hide_alternative_btn: "Sembunyikan alternatif",
-    see_more_items: "Lihat lebih banyak item",
-    see_less_items: "Lihat lebih sedikit",
+    see_more_items: "Lihat Lebih",
+    see_more_popup_title: "Semua Item",
+    see_more_close: "Tutup",
     best_choice_reason_label: "Kenapa Pilihan Terbaik",
     add_to_meal_plan: "Tambah ke Pelan Makanan",
     in_meal_plan: "Dalam Pelan Makanan",
@@ -344,7 +346,7 @@ const content = {
     scanning_steps: ["正在读取菜单...", "正在识别食物...", "正在计算营养值...", "即将完成..."],
     success_found: "个食物已找到！",
     success_none: "未检测到食物",
-    top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。点击下方查看更多项目可查看所有扫描项目。",
+    top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。点击下方'查看更多'可查看所有扫描项目。",
     analyze_new_food: "重新开始",
     back_to_category: "返回类别",
     all_high_risk_warning: "此类别中所有选项均为高风险。建议考虑以下更健康的替代选择：",
@@ -352,8 +354,9 @@ const content = {
     alternative_why: "为什么选择这个替代品？",
     show_alternative_btn: "显示替代选择",
     hide_alternative_btn: "隐藏替代选择",
-    see_more_items: "查看更多项目",
-    see_less_items: "收起",
+    see_more_items: "查看更多",
+    see_more_popup_title: "全部项目",
+    see_more_close: "关闭",
     best_choice_reason_label: "为何是最佳选择",
     add_to_meal_plan: "加入饮食计划",
     in_meal_plan: "已在饮食计划中",
@@ -2044,6 +2047,27 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     <ChevronRight className="w-6 h-6" />
                   </button>
                 )}
+
+                {/* Photo Tips - Simplified */}
+                <div className="bg-primary/5 rounded-2xl border border-primary/20 p-4 md:p-6">
+                  <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-primary">
+                    <Info className="w-7 h-7" />
+                    {t.guide_title}
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {t.guide_steps.map((step, i) => (
+                      <div key={i} className="bg-card rounded-xl p-2 text-center border border-border">
+                        <div className="w-12 h-12 mx-auto mb-3 bg-primary/10 rounded-full flex items-center justify-center">
+                          {i === 0 && <Camera className="w-6 h-6 text-primary" />}
+                          {i === 1 && <svg className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
+                          {i === 2 && <Utensils className="w-6 h-6 text-primary" />}
+                          {i === 3 && <CheckCircle className="w-6 h-6 text-primary" />}
+                        </div>
+                        <p className="text-base font-medium">{step.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -2271,45 +2295,91 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                       )
                     })()}
 
-                    {/* Food cards */}
+                    {/* Food cards — top 3 always visible */}
                     {(() => {
                       const catKey = selectedCategory ?? ""
-                      const isExpanded = showExpandedByCategory[catKey] ?? false
-                      const visibleResults = isExpanded ? results : results.slice(0, 3)
+                      const isPopupOpen = showExpandedByCategory[catKey] ?? false
+                      // Show top 3 always; popup shows items 4-10 (max 7 more)
+                      const top3 = results.slice(0, 3)
+                      const moreItems = results.slice(3, 10)
                       const hasMore = results.length > 3
 
                       return (
-                        <div className="space-y-4">
-                          {visibleResults.map((food, i) => (
-                            <FoodResultCard
-                              key={i}
-                              food={food}
-                              isBest={i === 0}
-                              t={t}
-                              lang={lang}
-                              mealPlanFood={findMealPlanFood(food.name, initialFoods)}
-                            />
-                          ))}
-                          {hasMore && (
-                            <button
-                              type="button"
-                              onClick={() => setShowExpandedByCategory(prev => ({ ...prev, [catKey]: !isExpanded }))}
-                              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl border-2 border-primary/30 bg-primary/5 text-primary font-bold text-base hover:bg-primary/10 transition-colors"
+                        <>
+                          <div className="space-y-4">
+                            {top3.map((food, i) => (
+                              <FoodResultCard
+                                key={i}
+                                food={food}
+                                isBest={i === 0}
+                                t={t}
+                                lang={lang}
+                                mealPlanFood={findMealPlanFood(food.name, initialFoods)}
+                              />
+                            ))}
+                            {hasMore && (
+                              <button
+                                type="button"
+                                onClick={() => setShowExpandedByCategory(prev => ({ ...prev, [catKey]: true }))}
+                                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl border-2 border-primary/30 bg-primary/5 text-primary font-bold text-base hover:bg-primary/10 transition-colors"
+                              >
+                                <ChevronRight className="w-5 h-5" />
+                                {(t as any).see_more_items} ({moreItems.length})
+                              </button>
+                            )}
+                          </div>
+
+                          {/* See More Popup Modal */}
+                          {isPopupOpen && hasMore && (
+                            <div
+                              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                              style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
+                              onClick={() => setShowExpandedByCategory(prev => ({ ...prev, [catKey]: false }))}
                             >
-                              {isExpanded ? (
-                                <>
-                                  <ChevronLeft className="w-5 h-5" />
-                                  {(t as any).see_less_items}
-                                </>
-                              ) : (
-                                <>
-                                  <ChevronRight className="w-5 h-5" />
-                                  {(t as any).see_more_items} ({results.length - 3})
-                                </>
-                              )}
-                            </button>
+                              <div
+                                className="relative w-full max-w-md rounded-3xl bg-background shadow-2xl flex flex-col"
+                                style={{ maxHeight: "82vh" }}
+                                onClick={e => e.stopPropagation()}
+                              >
+                                {/* Fixed header with close button */}
+                                <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/40 flex-shrink-0">
+                                  <span className="text-lg font-bold text-foreground">{(t as any).see_more_popup_title}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowExpandedByCategory(prev => ({ ...prev, [catKey]: false }))}
+                                    className="flex items-center justify-center w-10 h-10 rounded-full bg-muted text-foreground font-bold text-xl hover:bg-muted/80 transition-colors flex-shrink-0"
+                                    aria-label="Close"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                                {/* Scrollable content */}
+                                <div className="overflow-y-auto px-5 py-4 space-y-4 flex-1">
+                                  {moreItems.map((food, i) => (
+                                    <FoodResultCard
+                                      key={i + 3}
+                                      food={food}
+                                      isBest={false}
+                                      t={t}
+                                      lang={lang}
+                                      mealPlanFood={findMealPlanFood(food.name, initialFoods)}
+                                    />
+                                  ))}
+                                </div>
+                                {/* Fixed footer close button for easy access */}
+                                <div className="px-5 pb-5 pt-3 border-t border-border/40 flex-shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowExpandedByCategory(prev => ({ ...prev, [catKey]: false }))}
+                                    className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-base hover:bg-primary/90 transition-colors"
+                                  >
+                                    {(t as any).see_more_close}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
                           )}
-                        </div>
+                        </>
                       )
                     })()}
                   </div>
@@ -2425,7 +2495,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
           </div>
         </div>
       )}
-      
+
 {/* Image Modal */}
       {showImageModal && modalImage && (
         <div className="fixed inset-0 bg-foreground/80 z-50 flex items-center justify-center p-4 pt-20" onClick={() => setShowImageModal(false)}>
