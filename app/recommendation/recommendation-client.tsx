@@ -126,7 +126,7 @@ const content = {
     scanning_steps: ["Reading menu...", "Identifying food items...", "Calculating nutrition values...", "Almost done..."],
     success_found: "items found!",
     success_none: "No items detected",
-    top3_disclaimer: "We are showing you the Top 3 Healthiest Choices identified in your photo. These are the safest options for managing your blood sugar, blood pressure, and cholesterol.",
+    top3_disclaimer: "We are showing you the Top 3 Healthiest Choices identified in your photo. These are the safest options for managing your blood sugar, blood pressure, and cholesterol. Tap 'See more items' below to view all scanned items.",
     analyze_new_food: "Start Over",
     back_to_category: "Back to Categories",
     all_high_risk_warning: "All options in this category are High Risk. Consider this healthier alternative:",
@@ -134,6 +134,8 @@ const content = {
     alternative_why: "Why this alternative?",
     show_alternative_btn: "Show me an alternative",
     hide_alternative_btn: "Hide alternative",
+    see_more_items: "See more items",
+    see_less_items: "See less",
     best_choice_reason_label: "Why we pick this as the Best Choice",
     add_to_meal_plan: "Add to Meal Plan",
     in_meal_plan: "In Meal Plan",
@@ -234,7 +236,7 @@ const content = {
     scanning_steps: ["Membaca menu...", "Mengenal pasti item makanan...", "Mengira nilai nutrisi...", "Hampir selesai..."],
     success_found: "item dijumpai!",
     success_none: "Tiada item dikesan",
-    top3_disclaimer: "Kami menunjukkan kepada anda 3 Pilihan Paling Sihat daripada apa yang dijumpai dalam foto makanan anda. Ini adalah pilihan paling selamat untuk gula darah anda.",
+    top3_disclaimer: "Kami menunjukkan kepada anda 3 Pilihan Paling Sihat daripada apa yang dijumpai dalam foto makanan anda. Ini adalah pilihan paling selamat untuk gula darah anda. Ketik 'Lihat lebih banyak item' di bawah untuk melihat semua item yang diimbas.",
     analyze_new_food: "Mula Semula",
     back_to_category: "Kembali ke Kategori",
     all_high_risk_warning: "Semua pilihan dalam kategori ini berisiko Tinggi. Pertimbangkan alternatif yang lebih sihat ini:",
@@ -242,6 +244,8 @@ const content = {
     alternative_why: "Mengapa alternatif ini?",
     show_alternative_btn: "Tunjukkan alternatif",
     hide_alternative_btn: "Sembunyikan alternatif",
+    see_more_items: "Lihat lebih banyak item",
+    see_less_items: "Lihat lebih sedikit",
     best_choice_reason_label: "Kenapa Pilihan Terbaik",
     add_to_meal_plan: "Tambah ke Pelan Makanan",
     in_meal_plan: "Dalam Pelan Makanan",
@@ -340,7 +344,7 @@ const content = {
     scanning_steps: ["正在读取菜单...", "正在识别食物...", "正在计算营养值...", "即将完成..."],
     success_found: "个食物已找到！",
     success_none: "未检测到食物",
-    top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。",
+    top3_disclaimer: "我们为您展示了食物照片中发现的前3个最健康的选择。这些是对您血糖最安全的选项。点击下方查看更多项目可查看所有扫描项目。",
     analyze_new_food: "重新开始",
     back_to_category: "返回类别",
     all_high_risk_warning: "此类别中所有选项均为高风险。建议考虑以下更健康的替代选择：",
@@ -348,6 +352,8 @@ const content = {
     alternative_why: "为什么选择这个替代品？",
     show_alternative_btn: "显示替代选择",
     hide_alternative_btn: "隐藏替代选择",
+    see_more_items: "查看更多项目",
+    see_less_items: "收起",
     best_choice_reason_label: "为何是最佳选择",
     add_to_meal_plan: "加入饮食计划",
     in_meal_plan: "已在饮食计划中",
@@ -1162,6 +1168,8 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
 
   // Alternative suggestion visibility — keyed by category, hidden by default
   const [showAltByCategory, setShowAltByCategory] = useState<Record<string, boolean>>({})
+  /** Tracks which categories have the "See more" items expanded */
+  const [showExpandedByCategory, setShowExpandedByCategory] = useState<Record<string, boolean>>({})
 
   // Panel navigation state - "upload" or "results"
   const [currentPanel, setCurrentPanel] = useState<"upload" | "results">(() =>
@@ -1676,7 +1684,12 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
       succeeded = true
 
       //const totalFound = Object.values(cache).flat().length
-      const totalFound = data.uniqueFoodCount ?? Object.entries(cache).filter(([k]) => k !== "_meta").flatMap(([, v]) => Array.isArray(v) ? v : []).length
+      // Count actual items in the cache (excludes _meta key), not the LLM's uniqueFoodCount
+      // which was the pre-filter count and may not match what's actually renderable.
+      const totalFound = Object.entries(cache)
+        .filter(([k]) => k !== "_meta")
+        .flatMap(([, v]) => Array.isArray(v) ? v : [])
+        .length
       setIsAnalyzing(false)
       setSuccessCount(totalFound)
       await new Promise(resolve => setTimeout(resolve, 2000))
@@ -1704,8 +1717,9 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
     setShowCategories(true)
     const categoryResults = apiResultsCache?.[category] ?? []
     setResults(categoryResults)
-    // Reset alternative visibility when switching categories
+    // Reset alternative and expanded visibility when switching categories
     setShowAltByCategory(prev => ({ ...prev, [category]: false }))
+    setShowExpandedByCategory(prev => ({ ...prev, [category]: false }))
   }
 
   const handleAnalyzeAnother = () => {
@@ -2030,7 +2044,6 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     <ChevronRight className="w-6 h-6" />
                   </button>
                 )}
-
               </div>
             )}
 
@@ -2259,18 +2272,46 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
                     })()}
 
                     {/* Food cards */}
-                    <div className="space-y-4">
-                      {results.map((food, i) => (
-                        <FoodResultCard
-                          key={i}
-                          food={food}
-                          isBest={i === 0}
-                          t={t}
-                          lang={lang}
-                          mealPlanFood={findMealPlanFood(food.name, initialFoods)}
-                        />
-                      ))}
-                    </div>
+                    {(() => {
+                      const catKey = selectedCategory ?? ""
+                      const isExpanded = showExpandedByCategory[catKey] ?? false
+                      const visibleResults = isExpanded ? results : results.slice(0, 3)
+                      const hasMore = results.length > 3
+
+                      return (
+                        <div className="space-y-4">
+                          {visibleResults.map((food, i) => (
+                            <FoodResultCard
+                              key={i}
+                              food={food}
+                              isBest={i === 0}
+                              t={t}
+                              lang={lang}
+                              mealPlanFood={findMealPlanFood(food.name, initialFoods)}
+                            />
+                          ))}
+                          {hasMore && (
+                            <button
+                              type="button"
+                              onClick={() => setShowExpandedByCategory(prev => ({ ...prev, [catKey]: !isExpanded }))}
+                              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl border-2 border-primary/30 bg-primary/5 text-primary font-bold text-base hover:bg-primary/10 transition-colors"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  <ChevronLeft className="w-5 h-5" />
+                                  {(t as any).see_less_items}
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronRight className="w-5 h-5" />
+                                  {(t as any).see_more_items} ({results.length - 3})
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
 
@@ -2384,7 +2425,7 @@ export default function RecommendationClient({ initialFoods }: { initialFoods: M
           </div>
         </div>
       )}
-
+      
 {/* Image Modal */}
       {showImageModal && modalImage && (
         <div className="fixed inset-0 bg-foreground/80 z-50 flex items-center justify-center p-4 pt-20" onClick={() => setShowImageModal(false)}>
