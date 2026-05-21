@@ -1943,7 +1943,6 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   const imageInputRef = useRef<HTMLInputElement>(null);          // hidden file input for photo uploads
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null); // active SpeechRecognition instance
   const chatAbortRef = useRef<AbortController | null>(null);    // lets stopResponding() cancel the fetch
-  const isSendingRef = useRef(false);                            // synchronous in-flight lock to prevent double-send races
   const imagePreviewUrlsRef = useRef<Set<string>>(new Set());   // tracks object URLs for revocation on unmount
   const pendingVoiceTranscriptRef = useRef("");                  // accumulates voice transcript during recording
   const lastScanContextRawRef = useRef<string | null>(null);
@@ -1954,9 +1953,6 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   // Ref mirrors of volatile state so stable callbacks can read current values.
   const isOpenRef = useRef(false);
   const txRef = useRef<typeof tx>(tx);
-  // Mirrors ctx (t[conversationLang]) so async callbacks always read the active
-  // conversation language even when the page UI language differs.
-  const conversationTxRef = useRef<typeof ctx>(ctx);
   const messagesRef = useRef<Message[]>([]);
   const pendingImagesRef = useRef<PendingChatImage[]>([]);
 
@@ -1988,7 +1984,6 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   // Keep volatile-state mirrors up to date so stable callbacks can read them.
   useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
   useEffect(() => { txRef.current = tx; }, [tx]);
-  useEffect(() => { conversationTxRef.current = ctx; }, [ctx]);
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -2056,7 +2051,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     pendingAnalysisHintIdRef.current = null;
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: conversationTxRef.current.scanFound, id: uid() },
+      { role: "assistant", content: txRef.current.scanFound, id: uid() },
     ]);
     setTimeout(() => scrollChatToBottom(true), 100);
   }, [scrollChatToBottom]);
@@ -2091,13 +2086,9 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     }
   }, []);
 
-  const lastPersistedMessagesRef = useRef<string>("");
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const serialised = JSON.stringify(messages);
-    if (serialised === lastPersistedMessagesRef.current) return;
-    lastPersistedMessagesRef.current = serialised;
-    sessionStorage.setItem(STORAGE_KEY, serialised);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
   }, [messages]);
 
   useEffect(() => {
@@ -2561,21 +2552,20 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       event.target.value = "";
       if (!files.length || isLoading || isPhotoAnalyzing) return;
 
-      const uploadTx = t[conversationLangRef.current];
       if (!supportsImageUpload) {
-        setMessages((prev) => [...prev, { role: "assistant", content: uploadTx.imageUnsupported, id: uid() }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: tx.imageUnsupported, id: uid() }]);
         return;
       }
 
       const imageFiles = files.filter((file) => file.type.startsWith("image/"));
       if (!imageFiles.length) {
-        setMessages((prev) => [...prev, { role: "assistant", content: uploadTx.photoFailed, id: uid() }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: tx.photoFailed, id: uid() }]);
         return;
       }
 
       const remainingSlots = Math.max(0, MAX_CHAT_UPLOAD_IMAGES - pendingImages.length);
       if (remainingSlots === 0) {
-        setVoiceNotice(uploadTx.maxPhotos);
+        setVoiceNotice(tx.maxPhotos);
         return;
       }
 
@@ -2586,10 +2576,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       });
 
       setPendingImages((prev) => [...prev, ...nextImages]);
-      setVoiceNotice(imageFiles.length > remainingSlots ? uploadTx.maxPhotos : "");
+      setVoiceNotice(imageFiles.length > remainingSlots ? tx.maxPhotos : "");
       setTimeout(() => inputRef.current?.focus(), 100);
     },
-    [isLoading, isPhotoAnalyzing, pendingImages.length, supportsImageUpload]
+    [isLoading, isPhotoAnalyzing, pendingImages.length, supportsImageUpload, tx.imageUnsupported, tx.maxPhotos, tx.photoFailed]
   );
 
   /**
@@ -2793,8 +2783,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         await analysePendingImages(trimmed);
         return;
       }
-      if (!trimmed || isLoading || isPhotoAnalyzing || isSendingRef.current) return;
-      isSendingRef.current = true;
+      if (!trimmed || isLoading || isPhotoAnalyzing) return;
       const repeatKey = normalizeRepeatKey(trimmed);
       const messageLang = getUserMessageLanguage(trimmed, conversationLangRef.current);
       const shouldShowTypedLanguageSwitch = messageLang !== conversationLangRef.current;
@@ -2810,18 +2799,17 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
 
       if (onboardingIntent) {
         const userMsg: Message = { role: "user", content: trimmed, id: uid() };
-        const msgTx = t[messageLang];
         const onboardingContent =
           onboardingIntent === "food-check"
-            ? msgTx.foodCheckGuide
+            ? tx.foodCheckGuide
             : onboardingIntent === "meal-plan"
-            ? msgTx.mealPlanGuide
-            : msgTx.learnGuide;
+            ? tx.mealPlanGuide
+            : tx.learnGuide;
         const onboardingActionButton =
           onboardingIntent === "meal-plan"
-            ? { label: msgTx.openFoodPage, href: "/food" }
+            ? { label: tx.openFoodPage, href: "/food" }
             : onboardingIntent === "learn"
-            ? { label: msgTx.openLearnPage, href: "/learn" }
+            ? { label: tx.openLearnPage, href: "/learn" }
             : undefined;
         const assistantMsg: Message = {
           role: "assistant",
@@ -2839,7 +2827,6 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         conversationLangRef.current = messageLang;
         setConversationLang(messageLang);
         setInput("");
-        isSendingRef.current = false;
         return;
       }
 
@@ -2849,31 +2836,30 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
       if (mealPlanIntent) {
         const userMsg: Message = { role: "user", content: trimmed, id: uid() };
         const foodCtx = getLatestFoodContext(messages);
-        const msgTx = t[messageLang];
         let replyContent: string;
 
         if (foodCtx.status === "none") {
-          replyContent = msgTx.cartNoContext;
+          replyContent = tx.cartNoContext;
         } else if (foodCtx.status === "unavailable") {
-          replyContent = msgTx.cartNotAvailable;
+          replyContent = tx.cartNotAvailable;
         } else {
           // status === "available"
           const food = foodCtx.food;
           const foodName = getCartFoodName(food, messageLang);
           if (mealPlanIntent === "add") {
             if (isInCart(food.name.en)) {
-              replyContent = `${foodName} ${msgTx.cartAlreadyIn}`;
+              replyContent = `${foodName} ${tx.cartAlreadyIn}`;
             } else {
               addToCart(food);
-              replyContent = `✓ ${foodName} ${msgTx.cartAdded}`;
+              replyContent = `✓ ${foodName} ${tx.cartAdded}`;
             }
           } else {
             const cartIndex = cart.findIndex((item) => item.name.en === food.name.en);
             if (cartIndex === -1) {
-              replyContent = `${foodName} ${msgTx.cartNotIn}`;
+              replyContent = `${foodName} ${tx.cartNotIn}`;
             } else {
               removeFromCart(cartIndex);
-              replyContent = `✓ ${foodName} ${msgTx.cartRemoved}`;
+              replyContent = `✓ ${foodName} ${tx.cartRemoved}`;
             }
           }
         }
@@ -2887,7 +2873,6 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         conversationLangRef.current = messageLang;
         setConversationLang(messageLang);
         setInput("");
-        isSendingRef.current = false;
         return;
       }
 
@@ -2911,7 +2896,6 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         conversationLangRef.current = messageLang;
         setConversationLang(messageLang);
         setInput("");
-        isSendingRef.current = false;
         return;
       }
 
@@ -2926,7 +2910,6 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         conversationLangRef.current = messageLang;
         setConversationLang(messageLang);
         setInput("");
-        isSendingRef.current = false;
         return;
       }
 
@@ -2986,7 +2969,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         });
 
         const data = (await res.json()) as ChatResponse;
-        const apiReply = data.reply || t[messageLang].errorRetry;
+        const apiReply = data.reply || tx.errorRetry;
         const categoryPrompt =
           isManualCategoryPrompt(apiReply, data.quickReplies) && hasScanContextItems(scanContextForRequest);
         const reply = categoryPrompt
@@ -3089,12 +3072,11 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
         ]);
       } finally {
         chatAbortRef.current = null;
-        isSendingRef.current = false;
         setIsLoading(false);
         setTimeout(() => inputRef.current?.focus(), 100);
       }
     },
-    [addToCart, analysePendingImages, buildAutomaticBestChoiceSummary, cart, clearCart, isLoading, isPhotoAnalyzing, lang, messages, pendingImages.length, removeFromCart]
+    [addToCart, analysePendingImages, buildAutomaticBestChoiceSummary, cart, clearCart, isLoading, isPhotoAnalyzing, lang, messages, pendingImages.length, removeFromCart, tx]
   );
 
   /**
@@ -3108,10 +3090,10 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
     setIsLoading(false);
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", kind: "system", content: conversationTxRef.current.responseStopped, id: uid() },
+      { role: "assistant", kind: "system", content: tx.responseStopped, id: uid() },
     ]);
     setTimeout(() => inputRef.current?.focus(), 100);
-  }, [isLoading]);
+  }, [isLoading, tx.responseStopped]);
 
   /**
    * Copies an assistant message to the clipboard.
@@ -3196,12 +3178,12 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
   );
 
   // Handle Enter key (Shift+Enter for newline)
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage(input);
     }
-  }, [input, sendMessage]);
+  };
 
   /**
    * Toggles the Web Speech API voice input session.
@@ -3380,13 +3362,7 @@ export function AIChatbot({ lang }: { lang: LangCode }) {
           </div>
 
           {/* ── Messages ── */}
-          <div
-            ref={messagesScrollRef}
-            className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4 bg-gray-50"
-            style={{ touchAction: "pan-y" }}
-            aria-live="polite"
-            aria-atomic="false"
-          >
+          <div ref={messagesScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-gray-50" aria-live="polite" aria-atomic="false">
             {messages.map((msg, index) => {
               const cardLang = msg.locale ?? conversationLang ?? lang;
               const mctx = t[cardLang] ?? t.en;
