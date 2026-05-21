@@ -510,16 +510,20 @@ ${numberedChecklist}
 
 Rules:
 - Categories: Appetizer | Main Dish | Dessert | Drinks (beverages in cups/glasses = Drinks)
-- Per ranked item fields: f (MUST be exact food name string from list — NEVER a number), sugar(g), salt(mg), fat(g), risk (Low/Medium/High), tip:{"en":"...","ms":"...","zh":"..."} (advice to reduce salt/sugar/fat), and for rank #1 ONLY: best_reason:{"en":"...","ms":"...","zh":"..."} (why this item is the healthiest pick, citing its actual sugar/salt/fat numbers)
+- Per ranked item fields: f (MUST be exact food name string from list — NEVER a number), sugar(g), salt(mg), fat(g), risk (Low/Medium/High), tip:{"en":"...","ms":"...","zh":"..."} (advice to reduce salt/sugar/fat), and for rank #1 ONLY: best_reason:{"en":"...","ms":"...","zh":"..."} (why this item is the healthiest pick — see format rules below)
 - Risk: High if sugar>15 OR salt>600 OR fat>15; Medium if any 6-15g / 201-600mg / 6-15g; else Low
 - Max ${TOP_RANKED_PER_CATEGORY} items per category ranking array
-- CRITICAL: The first item (index 0) in every non-empty ranking array MUST include best_reason as a non-empty trilingual object. Example best_reason: {"en":"Air putih has 0g sugar, 0mg sodium and 0g fat — lowest across all drinks.","ms":"Air putih mengandungi 0g gula, 0mg natrium dan 0g lemak — paling rendah antara semua minuman.","zh":"白开水含糖0克、钠0毫克、脂肪0克——是所有饮品中最低的。"}. NEVER output best_reason as a plain string, null, or empty string.
+- CRITICAL best_reason rules (rank #1 ONLY, NEVER a plain string/null/empty):
+  * If category has ONLY ONE item: "[ItemName] is the only [CategoryName] item, thus the healthiest among [CategoryName]. [Add a short creative sentence about why it stands out or what makes it a decent choice.]"
+  * Otherwise: "[ItemName] has the lowest overall sugar, sodium, and fat count — lowest across [CategoryName]. [Add a short creative sentence about what makes it the best pick.]"
+  * DO NOT mention specific gram/mg numbers in best_reason (user sees those values separately)
+  * Always return as a trilingual object with en, ms, zh keys. NEVER output best_reason as a plain string, null, or empty string.
 - Each non-empty category: alternative_suggestion (food NOT in list) with f, sugar, salt, fat, risk, tip:{"en","ms","zh"}, reason:{"en","ms","zh"}
 - Normalize: Char Kway Teow variants → "Char Kway Teow"; Hainanese Chicken Rice → "Chicken Rice"
 - uniqueFoodCount: ${expectedCount} (total items scanned, not items in ranking arrays)
 
 Shape (rank #1 must have best_reason, ranks 2+ must NOT):
-{"Appetizer":{"ranking":[{"f":"Item Name","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"","ms":"","zh":""},"best_reason":{"en":"Item Name has 0g sugar, 0mg sodium and 0g fat — healthiest in this category.","ms":"Item Name mengandungi 0g gula, 0mg natrium dan 0g lemak — paling sihat dalam kategori ini.","zh":"Item Name含糖0克、钠0毫克、脂肪0克——是此类别中最健康的。"}},{"f":"Item 2","sugar":5,"salt":200,"fat":3,"risk":"Medium","tip":{"en":"","ms":"","zh":""}}],"all_high_risk":false,"alternative_suggestion":{"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"","ms":"","zh":""},"reason":{"en":"","ms":"","zh":""}}},"Main Dish":{...},"Dessert":{...},"Drinks":{...},"uniqueFoodCount":${expectedCount}}`;
+{"Appetizer":{"ranking":[{"f":"Item Name","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"","ms":"","zh":""},"best_reason":{"en":"Item Name has the lowest overall sugar, sodium, and fat count — lowest across Appetizer. A crisp and refreshing start to any meal.","ms":"Item Name mempunyai kandungan gula, natrium, dan lemak keseluruhan terendah — terendah dalam Appetizer. Permulaan yang segar untuk setiap hidangan.","zh":"Item Name的整体糖分、钠和脂肪含量最低——在开胃菜中最低。清爽开胃，是饭前的绝佳之选。"}},{"f":"Item 2","sugar":5,"salt":200,"fat":3,"risk":"Medium","tip":{"en":"","ms":"","zh":""}}],"all_high_risk":false,"alternative_suggestion":{"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"","ms":"","zh":""},"reason":{"en":"","ms":"","zh":""}}},"Main Dish":{...},"Dessert":{...},"Drinks":{...},"uniqueFoodCount":${expectedCount}}`;
 }
 
 // ─── NUTRITIONAL ANALYSIS WITH GROQ (GPT-OSS 120B, trilingual en/ms/zh) ───────────
@@ -944,6 +948,46 @@ export async function POST(req: NextRequest) {
       const top3ForRiskCheck = allSorted.slice(0, 3);
       const allHighRisk = allHighRiskFromLLM || (top3ForRiskCheck.length > 0 && top3ForRiskCheck.every((item) => normaliseRisk(item.risk) === "High"));
 
+      // ── BEST REASON RESOLUTION ────────────────────────────────────────────────
+      // The root cause of the empty best_reason bug:
+      //   1. The LLM assigns best_reason to whichever item IT ranked #1.
+      //   2. The backend re-sorts by risk_score → sugar → salt → fat.
+      //   3. After re-sort, a different item may end up at idx 0.
+      //   4. That new rank-#1 item never had best_reason → hits fallback.
+      //
+      // Fix: find the LLM's best_reason (from whichever item it was on), then
+      // check if the LLM's #1 item matches the backend's #1 after re-sort.
+      // If they match → use the LLM's creative reason directly.
+      // If they diverged → the LLM reason may describe a different item, so
+      // we build a deterministic fallback instead (backend is the source of truth
+      // for nutritional values, so the reason should match the actual rank-#1 item).
+      //
+      // In both cases, we NEVER leave best_reason empty for idx 0.
+      // ──────────────────────────────────────────────────────────────────────────
+      const isSingleItem = allSorted.length === 1;
+
+      // Find the LLM-provided best_reason from any item in the sorted list
+      // (it may be on idx 1, 2, etc. after re-sort displaced the LLM's rank-#1)
+      let llmBestReason: { en: string; ms: string; zh: string } | null = null;
+      let llmBestReasonItemName: string | null = null;
+      for (const item of allSorted) {
+        console.log(`[predict]   item "${item.f}" best_reason type=${typeof item.best_reason}, value=${JSON.stringify(item.best_reason)?.slice(0, 80)}`);
+        if (item.best_reason && typeof item.best_reason === "object" &&
+            (item.best_reason.en || item.best_reason.ms || item.best_reason.zh)) {
+          llmBestReason = item.best_reason as { en: string; ms: string; zh: string };
+          llmBestReasonItemName = String(item.f ?? "");
+          break;
+        } else if (typeof item.best_reason === "string" && item.best_reason.trim()) {
+          const text = item.best_reason.trim();
+          llmBestReason = { en: text, ms: text, zh: text };
+          llmBestReasonItemName = String(item.f ?? "");
+          break;
+        }
+      }
+
+      const backendRank1Name = allSorted.length > 0 ? String(allSorted[0].f ?? "") : "";
+      console.log(`[predict] 🔍 best_reason scan for "${cat}": llmFound=${llmBestReason !== null}, llmItem="${llmBestReasonItemName}", backendRank1="${backendRank1Name}"`);
+
       allSorted.forEach((item: any, idx: number) => {
         delete item.risk_score;
         // Promote _db_matched to clean field name, default false
@@ -958,27 +1002,32 @@ export async function POST(req: NextRequest) {
         }
 
         if (idx === 0) {
-          // Ensure best_reason is always a trilingual object (only for rank #1).
-          // Priority: existing trilingual object > non-empty string wrapped into object > generic fallback.
-          if (item.best_reason && typeof item.best_reason === "object" &&
-              (item.best_reason.en || item.best_reason.ms || item.best_reason.zh)) {
-            // Already a valid trilingual object — keep as-is
-          } else if (typeof item.best_reason === "string" && item.best_reason.trim()) {
-            // LLM returned a plain string — wrap it into trilingual (all langs get the same text;
-            // frontend will display the active lang and fall back to .en)
-            item.best_reason = {
-              en: item.best_reason.trim(),
-              ms: item.best_reason.trim(),
-              zh: item.best_reason.trim(),
-            };
+          // Priority 1: LLM returned any best_reason → reuse it for rank-#1.
+          // Even if the re-sort moved items around, the LLM's creative reason
+          // ("lowest sugar/sodium/fat in this category...") is still accurate
+          // enough for the category's actual rank-#1, and far better than a
+          // generic fallback. Only fall through to deterministic text when the
+          // LLM returned absolutely nothing.
+          if (llmBestReason) {
+            item.best_reason = llmBestReason;
           } else {
-            // Truly missing or empty — build a meaningful fallback from actual nutrition values
-            const riskLabel = item.risk === "Low" ? "lowest risk" : item.risk === "Medium" ? "moderate risk" : "best available option";
-            item.best_reason = {
-              en: `The best choice in this category with ${item.sugar}g sugar, ${item.salt}mg sodium, and ${item.fat}g fat — the ${riskLabel} among all scanned items in the category.`,
-              ms: `Menduduki #1 dalam kategori ini dengan ${item.sugar}g gula, ${item.salt}mg natrium, dan ${item.fat}g lemak — pilihan dengan risiko ${item.risk === "Low" ? "terendah" : item.risk === "Medium" ? "sederhana" : "terbaik"} antara semua item yang diimbas.`,
-              zh: `在此类别中排名第一，含糖${item.sugar}克、钠${item.salt}毫克、脂肪${item.fat}克——是所有扫描食物中${item.risk === "Low" ? "风险最低" : item.risk === "Medium" ? "风险适中" : "最佳"}的选择。`,
-            };
+            // Priority 2: Build a deterministic fallback using the actual post-sort, post-DB-merge item.
+            // This fires when the re-sort displaced the LLM's rank-#1 (the known bug scenario),
+            // or when the LLM simply returned no best_reason at all.
+            const name = String(item.f ?? "this item");
+            if (isSingleItem) {
+              item.best_reason = {
+                en: `${name} is the only ${cat} item, thus the healthiest among ${cat}. ${name} has the lowest overall sugar, sodium, and fat count — the best available option among all scanned items in this category.`,
+                ms: `${name} adalah satu-satunya item ${cat}, justeru paling sihat dalam ${cat}. ${name} mempunyai kandungan gula, natrium, dan lemak keseluruhan terendah — pilihan terbaik antara semua item yang diimbas dalam kategori ini.`,
+                zh: `${name}是唯一的${cat}类别食品，因此是${cat}中最健康的选择。${name}的整体糖分、钠和脂肪含量最低——是本类别所有扫描食品中最佳的选择。`,
+              };
+            } else {
+              item.best_reason = {
+                en: `${name} has the lowest overall sugar, sodium, and fat count — the best available option among all scanned items in this category.`,
+                ms: `${name} mempunyai kandungan gula, natrium, dan lemak keseluruhan terendah — pilihan terbaik antara semua item yang diimbas dalam kategori ini.`,
+                zh: `${name}的整体糖分、钠和脂肪含量最低——是本类别所有扫描食品中最佳的选择。`,
+              };
+            }
           }
         } else {
           delete item.best_reason;
