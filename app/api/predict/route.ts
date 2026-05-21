@@ -513,7 +513,7 @@ Rules:
 - - Per ranked item: f (MUST be exact food name string from list — NEVER a number), sugar(g), salt(mg), fat(g), risk (Low/Medium/High), tip:{"en","ms","zh"} (advice to reduce salt/sugar/fat)
 - Risk: High if sugar>15 OR salt>600 OR fat>15; Medium if any 6-15g / 201-600mg / 6-15g; else Low
 - Max ${TOP_RANKED_PER_CATEGORY} items per category ranking array
-- best_reason on rank #1 per category only — (Best reason is why this item is the best choice in that category, for example: Air putih is the best because it contain the lowest sugar, etc)
+- best_reason on rank #1 per category ONLY — MUST be a trilingual object {"en":"...","ms":"...","zh":"..."} explaining why this item is the healthiest pick, referencing its actual sugar/salt/fat values. Example: {"en":"Air putih has 0g sugar, 0mg sodium and 0g fat — lowest across all drinks.","ms":"Air putih mengandungi 0g gula, 0mg natrium dan 0g lemak — paling rendah antara semua minuman.","zh":"白开水含糖0克、钠0毫克、脂肪0克——是所有饮品中最低的。"} — NEVER omit best_reason on rank #1 and NEVER output it as a plain string
 - Each non-empty category: alternative_suggestion (food NOT in list) with f, sugar, salt, fat, risk, tip, reason (trilingual)
 - Normalize: Char Kway Teow variants → "Char Kway Teow"; Hainanese Chicken Rice → "Chicken Rice"
 - uniqueFoodCount: ${expectedCount} (total items scanned, not items in ranking arrays)
@@ -958,14 +958,26 @@ export async function POST(req: NextRequest) {
         }
 
         if (idx === 0) {
-          // Ensure best_reason is always a trilingual object (only for rank #1)
-          if (typeof item.best_reason === "string") {
-            item.best_reason = { en: item.best_reason, ms: item.best_reason, zh: item.best_reason };
-          } else if (!item.best_reason || typeof item.best_reason !== "object") {
+          // Ensure best_reason is always a trilingual object (only for rank #1).
+          // Priority: existing trilingual object > non-empty string wrapped into object > generic fallback.
+          if (item.best_reason && typeof item.best_reason === "object" &&
+              (item.best_reason.en || item.best_reason.ms || item.best_reason.zh)) {
+            // Already a valid trilingual object — keep as-is
+          } else if (typeof item.best_reason === "string" && item.best_reason.trim()) {
+            // LLM returned a plain string — wrap it into trilingual (all langs get the same text;
+            // frontend will display the active lang and fall back to .en)
             item.best_reason = {
-              en: "Selected for a better balance of lower sodium, sugar, and saturated fat.",
-              ms: "Dipilih kerana keseimbangan natrium, gula, dan lemak tepu yang lebih rendah.",
-              zh: "因其钠、糖和饱和脂肪含量较低而被选为最佳选择。",
+              en: item.best_reason.trim(),
+              ms: item.best_reason.trim(),
+              zh: item.best_reason.trim(),
+            };
+          } else {
+            // Truly missing or empty — build a meaningful fallback from actual nutrition values
+            const riskLabel = item.risk === "Low" ? "lowest risk" : item.risk === "Medium" ? "moderate risk" : "best available option";
+            item.best_reason = {
+              en: `The best choice in this category with ${item.sugar}g sugar, ${item.salt}mg sodium, and ${item.fat}g fat — the ${riskLabel} among all scanned items.`,
+              ms: `Menduduki #1 dalam kategori ini dengan ${item.sugar}g gula, ${item.salt}mg natrium, dan ${item.fat}g lemak — pilihan dengan risiko ${item.risk === "Low" ? "terendah" : item.risk === "Medium" ? "sederhana" : "terbaik"} antara semua item yang diimbas.`,
+              zh: `在此类别中排名第一，含糖${item.sugar}克、钠${item.salt}毫克、脂肪${item.fat}克——是所有扫描食物中${item.risk === "Low" ? "风险最低" : item.risk === "Medium" ? "风险适中" : "最佳"}的选择。`,
             };
           }
         } else {
