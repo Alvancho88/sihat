@@ -2804,6 +2804,50 @@ function isBestChoiceQuestion(message: string): boolean {
 }
 
 /**
+ * Returns true when the user is asking about the current analysis result
+ * without using "best choice" phrasing.
+ *
+ * Examples:
+ *   EN: "what is the analysis result", "what did you find", "show me the result"
+ *   MS: "apa hasilnya", "tunjukkan keputusan"
+ *   ZH: "分析结果", "结果是什么"
+ *
+ * These messages must be routed through the scan-context path (Step 6) rather
+ * than falling through to the general Llama call without scan data.
+ */
+function isAnalysisResultQuestion(message: string): boolean {
+  const normalized = normalizeFoodText(message);
+  if (!normalized) return false;
+  if (/分析结果|分析結果|结果是什么|結果是什麼|看看结果|什么结果|查看结果|分析是什么|分析是什麼/.test(message)) return true;
+  const msPatterns = [
+    /apa.{0,5}hasil/,
+    /tunjuk.{0,5}keputusan/,
+    /keputusan analisis/,
+    /apa analisis/,
+  ];
+  if (msPatterns.some((p) => p.test(normalized))) return true;
+  const enPhrases = [
+    "what is the analyze result",
+    "what is the analysis result",
+    "whats the analysis result",
+    "what is the result",
+    "whats the result",
+    "what did you find",
+    "what did you get",
+    "show me the result",
+    "show the result",
+    "show me the analysis",
+    "the analysis result",
+    "analysis result",
+    "analyze result",
+    "what result",
+    "view result",
+    "see result",
+  ];
+  return enPhrases.some((p) => normalized.includes(normalizeFoodText(p)));
+}
+
+/**
  * Detects whether the user's message mentions a specific scan category
  * (Main Dish, Appetizer, Dessert, or Drinks) in any supported language.
  * Used when the user asks "what should I have for drinks?" or "主食里最好是什么?"
@@ -2836,9 +2880,9 @@ function detectScanCategory(message: string): ScanCategory | null {
 }
 
 /**
- * Returns true when the user's message is EXACTLY a category selection (e.g. "Main Dish", "饮料")
- * rather than a general question that happens to mention a category.
- * Used to decide whether to prompt the user to pick a category or show results directly.
+ * Returns true when the user's message is a category selection (e.g. "Main Dish", "饮料",
+ * "the main dish", "that dessert") rather than a general question mentioning a category.
+ * Also accepts messages with a leading article or demonstrative (the / that / this / those).
  */
 function isCategorySelectionMessage(message: string, category: ScanCategory | null): boolean {
   if (!category) return false;
@@ -2850,12 +2894,21 @@ function isCategorySelectionMessage(message: string, category: ScanCategory | nu
     Dessert: ["dessert", "desserts", "pencuci mulut", "甜点", "甜品"],
     Drinks: ["drink", "drinks", "minuman", "饮料"],
   };
-  return allowed[category].some((alias) => {
-    const normalizedAlias = normalizeFoodText(alias);
-    return hasCjk(normalizedAlias)
-      ? compact === normalizedAlias.replace(/\s+/g, "")
-      : normalized === normalizedAlias;
-  });
+  const matchesAlias = (text: string, textCompact: string) =>
+    allowed[category].some((alias) => {
+      const normalizedAlias = normalizeFoodText(alias);
+      return hasCjk(normalizedAlias)
+        ? textCompact === normalizedAlias.replace(/\s+/g, "")
+        : text === normalizedAlias;
+    });
+  // Exact alias match
+  if (matchesAlias(normalized, compact)) return true;
+  // Also accept with a leading article or demonstrative (e.g. "the main dish", "that dessert")
+  const stripped = normalized.replace(/^(the|that|this|those|these)\s+/, "");
+  if (stripped !== normalized) {
+    return matchesAlias(stripped, stripped.replace(/\s+/g, ""));
+  }
+  return false;
 }
 
 /**
@@ -3850,13 +3903,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ reply: formatDailyIntakeSummary(summary, requestLang) });
     }
 
-    // Step 6: Check for "best choice" questions or category selection.
+    // Step 6: Check for "best choice" questions, category selection, or general
+    // analysis-result questions ("what is the analysis result", "what did you find").
     // These require scan context to be present — return a "no food analysed" message if not.
     const bestChoiceQuestion = isBestChoiceQuestion(message);
     const selectedCategory = detectScanCategory(message);
     const scanCategory = bestChoiceQuestion ? findBestChoiceCategory(message) : selectedCategory;
     const categorySelection = isCategorySelectionMessage(message, selectedCategory);
-    if (bestChoiceQuestion || categorySelection) {
+    const analysisResultQuestion = isAnalysisResultQuestion(message);
+    if (bestChoiceQuestion || categorySelection || analysisResultQuestion) {
       if (!hasAnalysedFoods(scanContext)) {
         return NextResponse.json({ reply: noAnalysedFoodReply(requestLang) });
       }

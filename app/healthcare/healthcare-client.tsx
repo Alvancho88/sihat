@@ -433,7 +433,8 @@ export function HealthcareClient({ facilities}: Props) {
         sessionStorage.setItem("hc-consent", "dismissed")
         setShowConsent(false)
         setIsLocating(false)
-      }
+      },
+      { timeout: 10000, maximumAge: 300000, enableHighAccuracy: false }
     )
   }
 
