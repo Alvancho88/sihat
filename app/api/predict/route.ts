@@ -510,16 +510,16 @@ ${numberedChecklist}
 
 Rules:
 - Categories: Appetizer | Main Dish | Dessert | Drinks (beverages in cups/glasses = Drinks)
-- - Per ranked item: f (MUST be exact food name string from list — NEVER a number), sugar(g), salt(mg), fat(g), risk (Low/Medium/High), tip:{"en","ms","zh"} (advice to reduce salt/sugar/fat)
+- Per ranked item fields: f (MUST be exact food name string from list — NEVER a number), sugar(g), salt(mg), fat(g), risk (Low/Medium/High), tip:{"en":"...","ms":"...","zh":"..."} (advice to reduce salt/sugar/fat), and for rank #1 ONLY: best_reason:{"en":"...","ms":"...","zh":"..."} (why this item is the healthiest pick, citing its actual sugar/salt/fat numbers)
 - Risk: High if sugar>15 OR salt>600 OR fat>15; Medium if any 6-15g / 201-600mg / 6-15g; else Low
 - Max ${TOP_RANKED_PER_CATEGORY} items per category ranking array
-- best_reason on rank #1 per category ONLY — MUST be a trilingual object {"en":"...","ms":"...","zh":"..."} explaining why this item is the healthiest pick, referencing its actual sugar/salt/fat values. Example: {"en":"Air putih has 0g sugar, 0mg sodium and 0g fat — lowest across all drinks.","ms":"Air putih mengandungi 0g gula, 0mg natrium dan 0g lemak — paling rendah antara semua minuman.","zh":"白开水含糖0克、钠0毫克、脂肪0克——是所有饮品中最低的。"} — NEVER omit best_reason on rank #1 and NEVER output it as a plain string
-- Each non-empty category: alternative_suggestion (food NOT in list) with f, sugar, salt, fat, risk, tip, reason (trilingual)
+- CRITICAL: The first item (index 0) in every non-empty ranking array MUST include best_reason as a non-empty trilingual object. Example best_reason: {"en":"Air putih has 0g sugar, 0mg sodium and 0g fat — lowest across all drinks.","ms":"Air putih mengandungi 0g gula, 0mg natrium dan 0g lemak — paling rendah antara semua minuman.","zh":"白开水含糖0克、钠0毫克、脂肪0克——是所有饮品中最低的。"}. NEVER output best_reason as a plain string, null, or empty string.
+- Each non-empty category: alternative_suggestion (food NOT in list) with f, sugar, salt, fat, risk, tip:{"en","ms","zh"}, reason:{"en","ms","zh"}
 - Normalize: Char Kway Teow variants → "Char Kway Teow"; Hainanese Chicken Rice → "Chicken Rice"
 - uniqueFoodCount: ${expectedCount} (total items scanned, not items in ranking arrays)
 
-Shape:
-{"Appetizer":{"ranking":[],"all_high_risk":false,"alternative_suggestion":{...}},"Main Dish":{...},"Dessert":{...},"Drinks":{...},"uniqueFoodCount":${expectedCount}}`;
+Shape (rank #1 must have best_reason, ranks 2+ must NOT):
+{"Appetizer":{"ranking":[{"f":"Item Name","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"","ms":"","zh":""},"best_reason":{"en":"Item Name has 0g sugar, 0mg sodium and 0g fat — healthiest in this category.","ms":"Item Name mengandungi 0g gula, 0mg natrium dan 0g lemak — paling sihat dalam kategori ini.","zh":"Item Name含糖0克、钠0毫克、脂肪0克——是此类别中最健康的。"}},{"f":"Item 2","sugar":5,"salt":200,"fat":3,"risk":"Medium","tip":{"en":"","ms":"","zh":""}}],"all_high_risk":false,"alternative_suggestion":{"f":"...","sugar":0,"salt":0,"fat":0,"risk":"Low","tip":{"en":"","ms":"","zh":""},"reason":{"en":"","ms":"","zh":""}}},"Main Dish":{...},"Dessert":{...},"Drinks":{...},"uniqueFoodCount":${expectedCount}}`;
 }
 
 // ─── NUTRITIONAL ANALYSIS WITH GROQ (GPT-OSS 120B, trilingual en/ms/zh) ───────────
@@ -975,7 +975,7 @@ export async function POST(req: NextRequest) {
             // Truly missing or empty — build a meaningful fallback from actual nutrition values
             const riskLabel = item.risk === "Low" ? "lowest risk" : item.risk === "Medium" ? "moderate risk" : "best available option";
             item.best_reason = {
-              en: `The best choice in this category with ${item.sugar}g sugar, ${item.salt}mg sodium, and ${item.fat}g fat — the ${riskLabel} among all scanned items.`,
+              en: `The best choice in this category with ${item.sugar}g sugar, ${item.salt}mg sodium, and ${item.fat}g fat — the ${riskLabel} among all scanned items in the category.`,
               ms: `Menduduki #1 dalam kategori ini dengan ${item.sugar}g gula, ${item.salt}mg natrium, dan ${item.fat}g lemak — pilihan dengan risiko ${item.risk === "Low" ? "terendah" : item.risk === "Medium" ? "sederhana" : "terbaik"} antara semua item yang diimbas.`,
               zh: `在此类别中排名第一，含糖${item.sugar}克、钠${item.salt}毫克、脂肪${item.fat}克——是所有扫描食物中${item.risk === "Low" ? "风险最低" : item.risk === "Medium" ? "风险适中" : "最佳"}的选择。`,
             };
