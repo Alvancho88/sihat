@@ -945,8 +945,9 @@ export async function POST(req: NextRequest) {
       const allSorted = sorted.slice(0, TOP_RANKED_PER_CATEGORY);
 
       // Determine if ALL items in this category are high risk (using top 3 as representative sample)
-      const top3ForRiskCheck = allSorted.slice(0, 3);
-      const allHighRisk = allHighRiskFromLLM || (top3ForRiskCheck.length > 0 && top3ForRiskCheck.every((item) => normaliseRisk(item.risk) === "High"));
+      const allHighRisk = allSorted.length > 0 && allSorted.every(
+        (item) => normaliseRisk(item.risk) === "High"
+      );
 
       // ── BEST REASON RESOLUTION ────────────────────────────────────────────────
       // The root cause of the empty best_reason bug:
