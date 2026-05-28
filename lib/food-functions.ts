@@ -36,28 +36,28 @@ export function getLocalizedCategory(category: string, lang: "en" | "ms" | "zh")
 
 // Get level helpers
 export function getSugarLevel(sugar: string): "low" | "medium" | "high" {
-  const value = parseInt(sugar.replace(/[^0-9]/g, ''), 10)
+  const value = parseFloat(sugar.replace(/[^0-9.]/g, ''))
   if (value <= 5) return "low"
   if (value <= 15) return "medium"
   return "high"
 }
 
 export function getGILevel(gi: string): "low" | "medium" | "high" {
-  const value = parseInt(gi.replace(/[^0-9]/g, ''), 10)
+  const value = parseFloat(gi.replace(/[^0-9.]/g, ''))
   if (value <= 55) return "low"
   if (value <= 69) return "medium"
   return "high"
 }
 
 export function getFatLevel(fat: string): "low" | "medium" | "high" {
-  const value = parseInt(fat.replace(/[^0-9]/g, ''), 10)
+  const value = parseFloat(fat.replace(/[^0-9.]/g, ''))
   if (value <= 5) return "low"
   if (value <= 15) return "medium"
   return "high"
 }
 
 export function getSodiumLevel(sodium: string): "low" | "medium" | "high" {
-  const value = parseInt(sodium.replace(/[^0-9]/g, ''), 10)
+  const value = parseFloat(sodium.replace(/[^0-9.]/g, ''))
   if (value <= 300) return "low"
   if (value <= 600) return "medium"
   return "high"
