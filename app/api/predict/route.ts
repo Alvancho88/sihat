@@ -1021,18 +1021,17 @@ export async function POST(req: NextRequest) {
           // enough for the category's actual rank-#1, and far better than a
           // generic fallback. Only fall through to deterministic text when the
           // LLM returned absolutely nothing.
-          if (llmBestReason) {
+          if (llmBestReason && llmBestReasonItemName === backendRank1Name) {
+            // LLM and backend agree on rank-#1 — safe to use LLM's creative reason
             item.best_reason = llmBestReason;
           } else {
-            // Priority 2: Build a deterministic fallback using the actual post-sort, post-DB-merge item.
-            // This fires when the re-sort displaced the LLM's rank-#1 (the known bug scenario),
-            // or when the LLM simply returned no best_reason at all.
+            // Re-sort displaced the LLM's rank-#1 — build deterministic reason for actual rank-#1
             const name = String(item.f ?? "this item");
             if (isSingleItem) {
               item.best_reason = {
-                en: `${name} is the only ${cat} item, thus the healthiest among ${cat}. ${name} has the lowest overall sugar, sodium, and fat count — the best available option among all scanned items in this category.`,
-                ms: `${name} adalah satu-satunya item ${cat}, justeru paling sihat dalam ${cat}. ${name} mempunyai kandungan gula, natrium, dan lemak keseluruhan terendah — pilihan terbaik antara semua item yang diimbas dalam kategori ini.`,
-                zh: `${name}是唯一的${cat}类别食品，因此是${cat}中最健康的选择。${name}的整体糖分、钠和脂肪含量最低——是本类别所有扫描食品中最佳的选择。`,
+                en: `${name} is the only ${cat} item, thus the healthiest among ${cat}. It has the lowest overall sugar, sodium, and fat — the best available option in this category.`,
+                ms: `${name} adalah satu-satunya item ${cat}, justeru paling sihat dalam ${cat}. Ia mempunyai kandungan gula, natrium, dan lemak keseluruhan terendah — pilihan terbaik dalam kategori ini.`,
+                zh: `${name}是唯一的${cat}类别食品，因此是${cat}中最健康的选择。它的整体糖分、钠和脂肪含量最低——是本类别最佳选择。`,
               };
             } else {
               item.best_reason = {
