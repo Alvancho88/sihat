@@ -1799,11 +1799,11 @@ function FoodClientInner({ lang, initialFoods }: { lang: LangCode; initialFoods:
     if (!sortActive) return 0
     const getValue = (food: FoodItem) => {
       switch (sortBy) {
-        case "sugar": return parseInt(food.sugar.replace(/[^0-9]/g, ''), 10)
-        case "cal": return parseInt(food.calories.replace(/[^0-9]/g, ''), 10)
-        case "gi": return parseInt(food.gi.replace(/[^0-9]/g, ''), 10)
-        case "fat": return parseInt(food.fat.replace(/[^0-9]/g, ''), 10)
-        case "sodium": return parseInt(food.sodium.replace(/[^0-9]/g, ''), 10)
+        case "sugar": return parseFloat(food.sugar.replace(/[^0-9.]/g, ''))
+        case "cal": return parseFloat(food.calories.replace(/[^0-9.]/g, ''))
+        case "gi": return parseFloat(food.gi.replace(/[^0-9.]/g, ''))
+        case "fat": return parseFloat(food.fat.replace(/[^0-9.]/g, ''))
+        case "sodium": return parseFloat(food.sodium.replace(/[^0-9.]/g, ''))
       }
     }
     const aVal = getValue(a)
