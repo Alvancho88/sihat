@@ -510,6 +510,18 @@ ${numberedChecklist}
 
 Rules:
 - Categories: Appetizer | Main Dish | Dessert | Drinks (beverages in cups/glasses = Drinks)
+- MALAYSIAN DRINK GLOSSARY (always classify these as "Drinks"):
+  * Kopi / Teh [no suffix]: Hot coffee or tea with condensed milk + sugar. High sugar, high saturated fat.
+  * Kopi O / Teh O: Hot coffee or tea with sugar only, no milk. Dairy-free but high glycemic.
+  * Kopi C / Teh C: Hot coffee or tea with evaporated milk + sugar. Moderate saturated fat.
+  * Kopi Ais / Teh Ais: Iced version of the above; often extra sugar added to compensate for dilution.
+  * Kopi Kosong / Teh O Kosong: No sugar, no milk. Near-zero calories — classify as Low risk.
+  * Kurang Manis: Reduced sugar variant (~50–70% of standard). Still causes glucose elevation.
+  * Limau / Air Limau: Calamansi lime drink. Despite sounding healthy, hawkers add 5–6 tsp sugar syrup per glass. High glycemic unless ordered Kosong.
+  * Air Soya / Soya Bean: Local fresh soy milk with heavy added sugar syrup unless specified otherwise. High glycemic index.
+  * Sirap: Rose syrup cordial — pure refined sugar + water. Extremely high glycemic impact.
+  * Sirap Bandung: Rose syrup + condensed/evaporated milk. Double sugar + dairy fat combo. Very high risk.
+  * Cham: 50:50 coffee + black tea blend, heavily sweetened with condensed milk. Treat as Kopi/Teh baseline.
 - Per ranked item fields: f (MUST be exact food name string from list — NEVER a number), sugar(g), salt(mg), fat(g), risk (Low/Medium/High), tip:{"en":"...","ms":"...","zh":"..."} (advice to reduce salt/sugar/fat), and for rank #1 ONLY: best_reason:{"en":"...","ms":"...","zh":"..."} (why this item is the healthiest pick — see format rules below)
 - Risk: High if sugar>15 OR salt>600 OR fat>15; Medium if any 6-15g / 201-600mg / 6-15g; else Low
 - Max ${TOP_RANKED_PER_CATEGORY} items per category ranking array
