@@ -3288,7 +3288,7 @@ TONE & PERSONALITY:
 // in order to handle rate limiting and quota exhaustion gracefully.
 
 /** The Groq model used for all chatbot responses. */
-const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
+const GROQ_CHAT_MODEL = "qwen/qwen3.8-27b";
 
 /** The Groq OpenAI-compatible chat completions endpoint. */
 const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
