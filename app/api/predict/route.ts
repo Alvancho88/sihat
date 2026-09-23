@@ -1,6 +1,6 @@
 // app/api/predict/route.ts
 // Backend API endpoint for food analysis and recommendation system
-// Uses Groq AI models: Llama-4-Scout for OCR backup and openai/gpt-oss-120b for nutritional analysis (trilingual en/ms/zh)
+// Uses Groq AI models: qwen/qwen3.8-27b for OCR backup and openai/gpt-oss-120b for nutritional analysis (trilingual en/ms/zh)
 // Returns trilingual results (en/ms/zh) in a single response so the frontend can
 // switch languages without re-calling the API.
 
@@ -334,7 +334,7 @@ Formatting:
   return await res.json();
 }
 
-// ─── OCR BACKUP: Llama-4-Scout via Groq ──────────────────────────────────
+// ─── OCR BACKUP: Qwen3.8-27b via Groq ──────────────────────────────────
 async function executeLlama4ScoutOcrRequest(groqApiKey: string, base64: string, mimeType: string) {
   if (!groqApiKey) throw new Error("Groq API key is undefined or empty");
 
@@ -348,7 +348,7 @@ async function executeLlama4ScoutOcrRequest(groqApiKey: string, base64: string, 
       Authorization: `Bearer ${groqApiKey}`,
     },
     body: JSON.stringify({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      model: "qwen/qwen3.8-27b",
       messages: [
         {
           role: "user",
@@ -388,7 +388,7 @@ Formatting:
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    console.error("[predict] Groq Llama-4-Scout OCR error:", JSON.stringify(errorData, null, 2));
+    console.error("[predict] Groq Qwen3.8-27b OCR error:", JSON.stringify(errorData, null, 2));
     throw new Error(errorData?.error?.message || `Groq OCR error ${res.status}`);
   }
 
@@ -468,7 +468,7 @@ async function processSingleImage(arrayBuffer: ArrayBuffer, mimeType: string): P
   // 5. Last resort: Llama-4-Scout via Groq
   try {
     const result = await tryWithLlama4Scout();
-    console.log("[predict] ✅ OCR succeeded (GROQ_API_KEY backup, Llama-4-Scout 17B)");
+    console.log("[predict] ✅ OCR succeeded (GROQ_API_KEY backup, qwen/qwen3.8-27b)");
     return result;
   } catch (err) {
     console.error("[predict] ❌ All OCR attempts failed:", (err as any)?.message ?? err);
